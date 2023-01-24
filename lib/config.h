@@ -37,7 +37,9 @@
 
 // MS Visual C++ memory leak debug tracing
 #if !defined(DISABLE_CRTDBG_MAP_ALLOC) && defined(_MSC_VER) && defined(_DEBUG)
-#  define _CRTDBG_MAP_ALLOC
+#  ifndef _CRTDBG_MAP_ALLOC
+#    define _CRTDBG_MAP_ALLOC
+#  endif
 #  include <crtdbg.h>
 #endif
 

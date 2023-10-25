@@ -1345,7 +1345,7 @@ static void valueFlowArray(TokenList *tokenlist)
             // const array decl
             else if (tok->variable() && tok->variable()->isArray() && tok->variable()->isConst() &&
                      tok->variable()->nameToken() == tok && Token::Match(tok, "%var% [ %num%| ] = {")) {
-                const Token* rhstok = tok->next()->link()->tokAt(2);
+                Token* rhstok = tok->next()->link()->tokAt(2);
                 constantArrays[tok->varId()] = rhstok;
                 tok = rhstok->link();
             }
@@ -1365,16 +1365,16 @@ static void valueFlowArray(TokenList *tokenlist)
         }
 
         if (Token::Match(tok, "const %type% %var% [ %num%| ] = {")) {
-            const Token *vartok = tok->tokAt(2);
-            const Token *rhstok = vartok->next()->link()->tokAt(2);
+            Token *vartok = tok->tokAt(2);
+            Token *rhstok = vartok->next()->link()->tokAt(2);
             constantArrays[vartok->varId()] = rhstok;
             tok = rhstok->link();
             continue;
         }
 
         else if (Token::Match(tok, "const char %var% [ %num%| ] = %str% ;")) {
-            const Token *vartok = tok->tokAt(2);
-            const Token *strtok = vartok->next()->link()->tokAt(2);
+            Token *vartok = tok->tokAt(2);
+            Token *strtok = vartok->next()->link()->tokAt(2);
             constantArrays[vartok->varId()] = strtok;
             tok = strtok->next();
             continue;
@@ -4903,7 +4903,7 @@ static bool isStdMoveOrStdForwarded(Token * tok, ValueFlow::Value::MoveKind * mo
         variableToken = tok->tokAt(4);
         kind = ValueFlow::Value::MoveKind::MovedVariable;
     } else if (Token::simpleMatch(tok, "std :: forward <")) {
-        const Token * const leftAngle = tok->tokAt(3);
+        Token * const leftAngle = tok->tokAt(3);
         Token * rightAngle = leftAngle->link();
         if (Token::Match(rightAngle, "> ( %var% )")) {
             variableToken = rightAngle->tokAt(2);
@@ -5033,11 +5033,16 @@ static const Token* findIncompleteVar(const Token* start, const Token* end)
 static ValueFlow::Value makeConditionValue(long long val,
                                            const Token* condTok,
                                            bool assume,
+                                           bool impossible = false,
                                            const Settings* settings = nullptr,
                                            SourceLocation loc = SourceLocation::current())
 {
     ValueFlow::Value v(val);
     v.setKnown();
+    if (impossible) {
+        v.intvalue = !v.intvalue;
+        v.setImpossible();
+    }
     v.condition = condTok;
     if (assume)
         v.errorPath.emplace_back(condTok, "Assuming condition '" + condTok->expressionString() + "' is true");
@@ -5098,7 +5103,7 @@ static void valueFlowConditionExpressions(TokenList *tokenlist, SymbolDatabase* 
         for (const Token* tok = scope->bodyStart; tok != scope->bodyEnd; tok = tok->next()) {
             if (!Token::simpleMatch(tok, "if ("))
                 continue;
-            Token * parenTok = tok->next();
+            const Token * parenTok = tok->next();
             if (!Token::simpleMatch(parenTok->link(), ") {"))
                 continue;
             Token * blockTok = parenTok->link()->tokAt(1);
@@ -5116,7 +5121,8 @@ static void valueFlowConditionExpressions(TokenList *tokenlist, SymbolDatabase* 
             {
                 for (const Token* condTok2 : getConditions(condTok, "&&")) {
                     if (is1) {
-                        SameExpressionAnalyzer a1(condTok2, makeConditionValue(1, condTok2, true), tokenlist);
+                        const bool isBool = astIsBool(condTok2) || Token::Match(condTok2, "%comp%|%oror%|&&");
+                        SameExpressionAnalyzer a1(condTok2, makeConditionValue(1, condTok2, /*assume*/ true, !isBool), tokenlist); // don't set '1' for non-boolean expressions
                         valueFlowGenericForward(startTok, startTok->link(), a1, settings);
                     }
 
@@ -6157,22 +6163,24 @@ struct ConditionHandler {
             std::list<ValueFlow::Value> thenValues;
             std::list<ValueFlow::Value> elseValues;
 
+            bool inverted = cond.inverted;
+            Token* ctx = skipNotAndCasts(condTok, &inverted);
+            bool then = cond.inverted ? !inverted : true;
+
             if (!Token::Match(condTok, "!=|=|(|.") && condTok != cond.vartok) {
                 thenValues.insert(thenValues.end(), cond.true_values.cbegin(), cond.true_values.cend());
-                if (allowImpossible && isConditionKnown(condTok, false))
+                if (allowImpossible && isConditionKnown(ctx, !then))
                     insertImpossible(elseValues, cond.false_values);
             }
             if (!Token::Match(condTok, "==|!")) {
                 elseValues.insert(elseValues.end(), cond.false_values.cbegin(), cond.false_values.cend());
-                if (allowImpossible && isConditionKnown(condTok, true)) {
+                if (allowImpossible && isConditionKnown(ctx, then)) {
                     insertImpossible(thenValues, cond.true_values);
                     if (cond.isBool())
                         insertNegateKnown(thenValues, cond.true_values);
                 }
             }
 
-            bool inverted = cond.inverted;
-            Token* ctx = skipNotAndCasts(condTok, &inverted);
             if (inverted)
                 std::swap(thenValues, elseValues);
 
@@ -6824,7 +6832,7 @@ static void valueFlowForLoopSimplify(Token* const bodyStart,
             if ((tok2->str() == "&&" && !conditionIsTrue(tok2->astOperand1(), programMemory)) ||
                 (tok2->str() == "||" && !conditionIsFalse(tok2->astOperand1(), programMemory))) {
                 // Skip second expression..
-                const Token *parent = tok2;
+                Token *parent = tok2;
                 while (parent && parent->str() == tok2->str())
                     parent = parent->astParent();
                 // Jump to end of condition
@@ -7233,7 +7241,7 @@ static void valueFlowSwitchVariable(TokenList *tokenlist, SymbolDatabase* symbol
             continue;
         }
 
-        for (Token *tok = scope.bodyStart->next(); tok != scope.bodyEnd; tok = tok->next()) {
+        for (const Token *tok = scope.bodyStart->next(); tok != scope.bodyEnd; tok = tok->next()) {
             if (tok->str() == "{") {
                 tok = tok->link();
                 continue;

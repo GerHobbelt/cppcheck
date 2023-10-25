@@ -508,6 +508,24 @@ static bool isComputableValue(const Token* parent, const ValueFlow::Value& value
     return true;
 }
 
+static Library::Container::Yield getContainerYield(Token* tok, const Settings* settings, Token** parent = nullptr)
+{
+    if (Token::Match(tok, ". %name% (") && tok->astParent() == tok->tokAt(2) && tok->astOperand1() &&
+        tok->astOperand1()->valueType()) {
+        const Library::Container* c = getLibraryContainer(tok->astOperand1());
+        if (parent)
+            *parent = tok->astParent();
+        return c ? c->getYield(tok->strAt(1)) : Library::Container::Yield::NO_YIELD;
+    } else if (Token::Match(tok->previous(), "%name% (")) {
+        if (parent)
+            *parent = tok;
+        if (const Library::Function* f = settings->library.getFunction(tok->previous())) {
+            return f->containerYield;
+        }
+    }
+    return Library::Container::Yield::NO_YIELD;
+}
+
 /** Set token value for cast */
 static void setTokenValueCast(Token *parent, const ValueType &valueType, const ValueFlow::Value &value, const Settings *settings);
 
@@ -663,36 +681,25 @@ static void setTokenValue(Token* tok,
                 }
             }
         }
-        else if (Token::Match(parent, ". %name% (") && parent->astParent() == parent->tokAt(2) &&
-                 parent->astOperand1() && parent->astOperand1()->valueType()) {
-            const Library::Container* c = getLibraryContainer(parent->astOperand1());
-            const Library::Container::Yield yields = c ? c->getYield(parent->strAt(1)) : Library::Container::Yield::NO_YIELD;
-            if (yields == Library::Container::Yield::SIZE) {
-                ValueFlow::Value v(value);
-                v.valueType = ValueFlow::Value::ValueType::INT;
-                setTokenValue(parent->astParent(), std::move(v), settings);
-            } else if (yields == Library::Container::Yield::EMPTY) {
-                ValueFlow::Value v(value);
-                v.valueType = ValueFlow::Value::ValueType::INT;
-                if (value.isImpossible() && value.intvalue == 0)
+        Token* next = nullptr;
+        const Library::Container::Yield yields = getContainerYield(parent, settings, &next);
+        if (yields == Library::Container::Yield::SIZE) {
+            ValueFlow::Value v(value);
+            v.valueType = ValueFlow::Value::ValueType::INT;
+            setTokenValue(next, std::move(v), settings);
+        } else if (yields == Library::Container::Yield::EMPTY) {
+            ValueFlow::Value v(value);
+            v.valueType = ValueFlow::Value::ValueType::INT;
+            v.bound = ValueFlow::Value::Bound::Point;
+            if (value.isImpossible()) {
+                if (value.intvalue == 0)
                     v.setKnown();
                 else
-                    v.intvalue = !v.intvalue;
-                setTokenValue(parent->astParent(), std::move(v), settings);
+                    v.setPossible();
+            } else {
+                v.intvalue = !v.intvalue;
             }
-        } else if (Token::Match(parent->previous(), "%name% (")) {
-            if (const Library::Function* f = settings->library.getFunction(parent->previous())) {
-                if (f->containerYield == Library::Container::Yield::SIZE) {
-                    ValueFlow::Value v(value);
-                    v.valueType = ValueFlow::Value::ValueType::INT;
-                    setTokenValue(parent, std::move(v), settings);
-                } else if (f->containerYield == Library::Container::Yield::EMPTY) {
-                    ValueFlow::Value v(value);
-                    v.intvalue = !v.intvalue;
-                    v.valueType = ValueFlow::Value::ValueType::INT;
-                    setTokenValue(parent, std::move(v), settings);
-                }
-            }
+            setTokenValue(next, std::move(v), settings);
         }
         return;
     }
@@ -917,7 +924,10 @@ static void setTokenValue(Token* tok,
             if (val.isImpossible() && val.intvalue != 0)
                 continue;
             ValueFlow::Value v(val);
-            v.intvalue = !v.intvalue;
+            if (val.isImpossible())
+                v.setKnown();
+            else
+                v.intvalue = !v.intvalue;
             setTokenValue(parent, std::move(v), settings);
         }
     }
@@ -1859,7 +1869,7 @@ static void valueFlowImpossibleValues(TokenList* tokenList, const Settings* sett
             ValueFlow::Value value{0};
             value.setImpossible();
             setTokenValue(tok->linkAt(1)->next(), std::move(value), settings);
-        } else if (tokenList->isCPP() && Token::simpleMatch(tok, "this")) {
+        } else if ((tokenList->isCPP() && Token::simpleMatch(tok, "this")) || tok->isUnaryOp("&")) {
             ValueFlow::Value value{0};
             value.setImpossible();
             setTokenValue(tok, std::move(value), settings);
@@ -5960,6 +5970,39 @@ struct ConditionHandler {
             return findPath(true_values) | findPath(false_values);
         }
 
+        Token* getContextAndValues(Token* condTok,
+                                   std::list<ValueFlow::Value>& thenValues,
+                                   std::list<ValueFlow::Value>& elseValues,
+                                   bool known = false) const
+        {
+            const MathLib::bigint path = getPath();
+            const bool allowKnown = path == 0;
+            const bool allowImpossible = impossible && allowKnown;
+
+            bool inverted2 = inverted;
+            Token* ctx = skipNotAndCasts(condTok, &inverted2);
+            bool then = !inverted || !inverted2;
+
+            if (!Token::Match(condTok, "!=|=|(|.") && condTok != vartok) {
+                thenValues.insert(thenValues.end(), true_values.cbegin(), true_values.cend());
+                if (allowImpossible && (known || isConditionKnown(ctx, !then)))
+                    insertImpossible(elseValues, false_values);
+            }
+            if (!Token::Match(condTok, "==|!")) {
+                elseValues.insert(elseValues.end(), false_values.cbegin(), false_values.cend());
+                if (allowImpossible && (known || isConditionKnown(ctx, then))) {
+                    insertImpossible(thenValues, true_values);
+                    if (isBool())
+                        insertNegateKnown(thenValues, true_values);
+                }
+            }
+
+            if (inverted2)
+                std::swap(thenValues, elseValues);
+
+            return ctx;
+        }
+
         Condition() : vartok(nullptr), true_values(), false_values(), inverted(false), impossible(true) {}
     };
 
@@ -6188,31 +6231,11 @@ struct ConditionHandler {
 
             const MathLib::bigint path = cond.getPath();
             const bool allowKnown = path == 0;
-            const bool allowImpossible = cond.impossible && allowKnown;
 
             std::list<ValueFlow::Value> thenValues;
             std::list<ValueFlow::Value> elseValues;
 
-            bool inverted = cond.inverted;
-            Token* ctx = skipNotAndCasts(condTok, &inverted);
-            bool then = cond.inverted ? !inverted : true;
-
-            if (!Token::Match(condTok, "!=|=|(|.") && condTok != cond.vartok) {
-                thenValues.insert(thenValues.end(), cond.true_values.cbegin(), cond.true_values.cend());
-                if (allowImpossible && isConditionKnown(ctx, !then))
-                    insertImpossible(elseValues, cond.false_values);
-            }
-            if (!Token::Match(condTok, "==|!")) {
-                elseValues.insert(elseValues.end(), cond.false_values.cbegin(), cond.false_values.cend());
-                if (allowImpossible && isConditionKnown(ctx, then)) {
-                    insertImpossible(thenValues, cond.true_values);
-                    if (cond.isBool())
-                        insertNegateKnown(thenValues, cond.true_values);
-                }
-            }
-
-            if (inverted)
-                std::swap(thenValues, elseValues);
+            Token* ctx = cond.getContextAndValues(condTok, thenValues, elseValues);
 
             if (Token::Match(ctx->astParent(), "%oror%|&&")) {
                 Token* parent = ctx->astParent();
@@ -6227,12 +6250,16 @@ struct ConditionHandler {
                     if (astIsLHS(parent) && parent->astParent() && parent->astParent()->str() == parent->str()) {
                         nextExprs.push_back(parent->astParent()->astOperand2());
                     }
+                    std::list<ValueFlow::Value> andValues;
+                    std::list<ValueFlow::Value> orValues;
+                    cond.getContextAndValues(condTok, andValues, orValues, true);
+
                     const std::string& op(parent->str());
                     std::list<ValueFlow::Value> values;
                     if (op == "&&")
-                        values = thenValues;
+                        values = andValues;
                     else if (op == "||")
-                        values = elseValues;
+                        values = orValues;
                     if (allowKnown && (Token::Match(condTok, "==|!=") || cond.isBool()))
                         changePossibleToKnown(values);
                     if (astIsFloat(cond.vartok, false) ||
@@ -6666,16 +6693,7 @@ static void valueFlowInferCondition(TokenList* tokenlist,
             continue;
         if (tok->hasKnownIntValue())
             continue;
-        if (tok->variable() && (Token::Match(tok->astParent(), "?|&&|!|%oror%") ||
-                                Token::Match(tok->astParent()->previous(), "if|while ("))) {
-            std::vector<ValueFlow::Value> result = infer(IntegralInferModel{}, "!=", tok->values(), 0);
-            if (result.size() != 1)
-                continue;
-            ValueFlow::Value value = result.front();
-            value.intvalue = 1;
-            value.bound = ValueFlow::Value::Bound::Point;
-            setTokenValue(tok, std::move(value), settings);
-        } else if (Token::Match(tok, "%comp%|-") && tok->astOperand1() && tok->astOperand2()) {
+        if (Token::Match(tok, "%comp%|-") && tok->astOperand1() && tok->astOperand2()) {
             if (astIsIterator(tok->astOperand1()) || astIsIterator(tok->astOperand2())) {
                 static const std::array<ValuePtr<InferModel>, 2> iteratorModels = {EndIteratorInferModel{},
                                                                                    StartIteratorInferModel{}};
@@ -6694,6 +6712,15 @@ static void valueFlowInferCondition(TokenList* tokenlist,
                     setTokenValue(tok, std::move(value), settings);
                 }
             }
+        } else if (Token::Match(tok->astParent(), "?|&&|!|%oror%") ||
+                   Token::Match(tok->astParent()->previous(), "if|while (")) {
+            std::vector<ValueFlow::Value> result = infer(IntegralInferModel{}, "!=", tok->values(), 0);
+            if (result.size() != 1)
+                continue;
+            ValueFlow::Value value = result.front();
+            value.intvalue = 1;
+            value.bound = ValueFlow::Value::Bound::Point;
+            setTokenValue(tok, std::move(value), settings);
         }
     }
 }

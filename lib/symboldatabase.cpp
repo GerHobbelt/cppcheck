@@ -891,6 +891,8 @@ void SymbolDatabase::createSymbolDatabaseNeedInitialization()
             for (Scope& scope : scopeList) {
                 if (!scope.isClassOrStructOrUnion())
                     continue;
+                if (scope.classDef && Token::simpleMatch(scope.classDef->previous(), ">")) // skip uninstantiated template
+                    continue;
 
                 if (!scope.definedType) {
                     mBlankTypes.emplace_back();
@@ -4126,17 +4128,6 @@ static const Type* findVariableTypeIncludingUsedNamespaces(const SymbolDatabase*
 
 //---------------------------------------------------------------------------
 
-static const Token* findLambdaEndTokenWithoutAST(const Token* tok) {
-    if (!(Token::simpleMatch(tok, "[") && tok->link()))
-        return nullptr;
-    tok = tok->link()->next();
-    if (Token::simpleMatch(tok, "(") && tok->link())
-        tok = tok->link()->next();
-    if (!(Token::simpleMatch(tok, "{") && tok->link()))
-        return nullptr;
-    return tok->link()->next();
-}
-
 void Function::addArguments(const SymbolDatabase *symbolDatabase, const Scope *scope)
 {
     // check for non-empty argument list "( ... )"
@@ -6136,7 +6127,7 @@ void SymbolDatabase::setValueType(Token* tok, const ValueType& valuetype, Source
     if (!parent->astOperand1())
         return;
 
-    const ValueType *vt1 = parent->astOperand1() ? parent->astOperand1()->valueType() : nullptr;
+    const ValueType *vt1 = parent->astOperand1()->valueType();
     const ValueType *vt2 = parent->astOperand2() ? parent->astOperand2()->valueType() : nullptr;
 
     if (vt1 && Token::Match(parent, "<<|>>")) {
@@ -7202,8 +7193,13 @@ void SymbolDatabase::setValueTypeInTokenList(bool reportDebugWarnings, Token *to
 
     if (reportDebugWarnings && mSettings.debugwarnings) {
         for (Token *tok = tokens; tok; tok = tok->next()) {
-            if (tok->str() == "auto" && !tok->valueType())
+            if (tok->str() == "auto" && !tok->valueType()) {
+                if (Token::Match(tok->next(), "%name% ; %name% = [") && isLambdaCaptureList(tok->tokAt(5)))
+                    continue;
+                if (Token::Match(tok->next(), "%name% { [") && isLambdaCaptureList(tok->tokAt(3)))
+                    continue;
                 debugMessage(tok, "autoNoType", "auto token with no type.");
+            }
         }
     }
 

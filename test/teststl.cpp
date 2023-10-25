@@ -2319,6 +2319,16 @@ private:
               "    return sum;\n"
               "}\n");
         ASSERT_EQUALS("", errout.str());
+
+        const auto oldSettings = settings;
+        settings.daca = true;
+
+        check("void f() {\n"
+              "    const char a[][5] = { \"1\", \"true\", \"on\", \"yes\" };\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        settings = oldSettings;
     }
 
 
@@ -4730,6 +4740,16 @@ private:
               "    return debug_valueflow(it)->second;\n"
               "}\n");
         ASSERT_EQUALS("", errout.str());
+
+        // #11557
+        check("bool f(const std::vector<int*>& v, std::vector<int*>::iterator it, bool b) {\n"
+              "    if (it == v.end())\n"
+              "        return false;\n"
+              "    if (b && ((it + 1) == v.end() || (*(it + 1)) != nullptr))\n"
+              "        return false;\n"
+              "    return true;\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void dereferenceInvalidIterator2() {
@@ -5466,6 +5486,23 @@ private:
               true);
         ASSERT_EQUALS("[test.cpp:2]: (style) Consider using std::all_of or std::none_of algorithm instead of a raw loop.\n",
                       errout.str());
+
+        check("class C {\n"
+              "private:\n"
+              "    QString s;\n"
+              "public:\n"
+              "    C(QString);\n"
+              "private slots:\n"
+              "    void f() {\n"
+              "        QVERIFY(QDir(s).exists());\n"
+              "    }\n"
+              "    void f(const QStringList& d) {\n"
+              "        for (QString f : d)\n"
+              "          QDir(s);\n"
+              "    }\n"
+              "};\n",
+              true);
+        ASSERT_EQUALS("", errout.str());
     }
 
     void invalidContainer() {

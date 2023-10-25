@@ -23,6 +23,8 @@
 #include "fixture.h"
 #include "tokenize.h"
 
+#include <simplecpp.h>
+
 #include <sstream> // IWYU pragma: keep
 
 
@@ -60,15 +62,24 @@ private:
         TEST_CASE(deadStrcmp);
     }
 
-#define check(...) check_(__FILE__, __LINE__, __VA_ARGS__)
-    void check_(const char* file, int line, const char code[], const char filename[] = "test.cpp") {
+    void check(const char code[], const char filename[] = "test.cpp") {
         // Clear the error buffer..
         errout.str("");
 
+        // Raw tokens..
+        std::vector<std::string> files(1, filename);
+        std::istringstream istr(code);
+        const simplecpp::TokenList tokens1(istr, files, files[0]);
+
+        // Preprocess..
+        simplecpp::TokenList tokens2(files);
+        std::map<std::string, simplecpp::TokenList*> filedata;
+        simplecpp::preprocess(tokens2, tokens1, files, filedata, simplecpp::DUI());
+
         // Tokenize..
         Tokenizer tokenizer(&settings, this);
-        std::istringstream istr(code);
-        ASSERT_LOC(tokenizer.tokenize(istr, filename), file, line);
+        tokenizer.createTokens(std::move(tokens2));
+        tokenizer.simplifyTokens1("");
 
         // Check char variable usage..
         runChecks<CheckString>(tokenizer, this);
@@ -735,7 +746,9 @@ private:
               "  if('\\0'){}\n"
               "  if(L'\\0'){}\n"
               "}");
-        ASSERT_EQUALS("", errout.str());
+        ASSERT_EQUALS("[test.cpp:2]: (warning) Conversion of char literal '\\0' to bool always evaluates to false.\n"
+                      "[test.cpp:3]: (warning) Conversion of char literal L'\\0' to bool always evaluates to false.\n",
+                      errout.str());
 
         check("void f() {\n"
               "  if('\\0' || cond){}\n"
@@ -750,6 +763,28 @@ private:
               "    f(\"abc\");\n"
               "}\n");
         ASSERT_EQUALS("[test.cpp:4]: (warning) Conversion of string literal \"abc\" to bool always evaluates to true.\n", errout.str());
+
+        check("void g(bool);\n"
+              "    void f(std::map<std::string, std::vector<int>>&m) {\n"
+              "    if (m.count(\"abc\"))\n"
+              "        g(m[\"abc\"][0] ? true : false);\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void g(bool b);\n"
+              "void f() {\n"
+              "    g('\\0');\n"
+              "    g('a');\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:3]: (warning) Conversion of char literal '\\0' to bool always evaluates to false.\n"
+                      "[test.cpp:4]: (warning) Conversion of char literal 'a' to bool always evaluates to true.\n",
+                      errout.str());
+
+        check("#define ERROR(msg) if (msg) printf(\"%s\\n\", msg);\n"
+              "void f() {\n"
+              "	  ERROR(\"abc\")\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void deadStrcmp() {

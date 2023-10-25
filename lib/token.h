@@ -1216,7 +1216,6 @@ public:
     }
 
     bool hasKnownIntValue() const;
-    bool hasKnownBoolValue() const;
     bool hasKnownValue() const;
     bool hasKnownValue(ValueFlow::Value::ValueType t) const;
     bool hasKnownSymbolicValue(const Token* tok) const;
@@ -1484,6 +1483,9 @@ public:
     void setTokenDebug(TokenDebug td) {
         mImpl->mDebug = td;
     }
+
+    /** defaults to C++ if it cannot be determined */
+    bool isCpp() const;
 };
 
 Token* findTypeEnd(Token* tok);

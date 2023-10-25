@@ -234,7 +234,14 @@ private:
         TEST_CASE(xmlverunknown);
         TEST_CASE(xmlverinvalid);
         TEST_CASE(doc);
-        TEST_CASE(showtime);
+        TEST_CASE(showtimeFile);
+        TEST_CASE(showtimeFileTotal);
+        TEST_CASE(showtimeTop5);
+        TEST_CASE(showtimeTop5File);
+        TEST_CASE(showtimeTop5Summary);
+        TEST_CASE(showtimeNone);
+        TEST_CASE(showtimeEmpty);
+        TEST_CASE(showtimeInvalid);
         TEST_CASE(errorlist1);
         TEST_CASE(errorlistverbose1);
         TEST_CASE(errorlistverbose2);
@@ -274,6 +281,10 @@ private:
         TEST_CASE(typedefMaxTimeInvalid2);
         TEST_CASE(templateMaxTime);
         TEST_CASE(templateMaxTime);
+        TEST_CASE(project);
+        TEST_CASE(projectMultiple);
+        TEST_CASE(projectEmpty);
+        TEST_CASE(projectMissing);
 
         TEST_CASE(ignorepaths1);
         TEST_CASE(ignorepaths2);
@@ -1569,13 +1580,81 @@ private:
         ASSERT_EQUALS("", logger->str());
     }
 
-    void showtime() {
+    void showtimeSummary() {
         REDIRECT;
         const char * const argv[] = {"cppcheck", "--showtime=summary", "file.cpp"};
         settings->showtime = SHOWTIME_MODES::SHOWTIME_NONE;
         ASSERT(parser->parseFromArgs(3, argv));
         ASSERT(settings->showtime == SHOWTIME_MODES::SHOWTIME_SUMMARY);
         ASSERT_EQUALS("", logger->str());
+    }
+
+    void showtimeFile() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--showtime=file", "file.cpp"};
+        settings->showtime = SHOWTIME_MODES::SHOWTIME_NONE;
+        ASSERT(parser->parseFromArgs(3, argv));
+        ASSERT(settings->showtime == SHOWTIME_MODES::SHOWTIME_FILE);
+        ASSERT_EQUALS("", logger->str());
+    }
+
+    void showtimeFileTotal() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--showtime=file-total", "file.cpp"};
+        settings->showtime = SHOWTIME_MODES::SHOWTIME_NONE;
+        ASSERT(parser->parseFromArgs(3, argv));
+        ASSERT(settings->showtime == SHOWTIME_MODES::SHOWTIME_FILE_TOTAL);
+        ASSERT_EQUALS("", logger->str());
+    }
+
+    void showtimeTop5() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--showtime=top5", "file.cpp"};
+        settings->showtime = SHOWTIME_MODES::SHOWTIME_NONE;
+        ASSERT(parser->parseFromArgs(3, argv));
+        ASSERT(settings->showtime == SHOWTIME_MODES::SHOWTIME_TOP5_FILE);
+        ASSERT_EQUALS("cppcheck: --showtime=top5 is deprecated and will be removed in Cppcheck 2.14. Please use --showtime=top5_file or --showtime=top5_summary instead.\n", logger->str());
+    }
+
+    void showtimeTop5File() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--showtime=top5_file", "file.cpp"};
+        settings->showtime = SHOWTIME_MODES::SHOWTIME_NONE;
+        ASSERT(parser->parseFromArgs(3, argv));
+        ASSERT(settings->showtime == SHOWTIME_MODES::SHOWTIME_TOP5_FILE);
+        ASSERT_EQUALS("", logger->str());
+    }
+
+    void showtimeTop5Summary() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--showtime=top5_summary", "file.cpp"};
+        settings->showtime = SHOWTIME_MODES::SHOWTIME_NONE;
+        ASSERT(parser->parseFromArgs(3, argv));
+        ASSERT(settings->showtime == SHOWTIME_MODES::SHOWTIME_TOP5_SUMMARY);
+        ASSERT_EQUALS("", logger->str());
+    }
+
+    void showtimeNone() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--showtime=none", "file.cpp"};
+        settings->showtime = SHOWTIME_MODES::SHOWTIME_FILE;
+        ASSERT(parser->parseFromArgs(3, argv));
+        ASSERT(settings->showtime == SHOWTIME_MODES::SHOWTIME_NONE);
+        ASSERT_EQUALS("", logger->str());
+    }
+
+    void showtimeEmpty() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--showtime=", "file.cpp"};
+        ASSERT(!parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS("cppcheck: error: no mode provided for --showtime\n", logger->str());
+    }
+
+    void showtimeInvalid() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--showtime=top10", "file.cpp"};
+        ASSERT(!parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS("cppcheck: error: unrecognized --showtime mode: 'top10'. Supported modes: file, file-total, summary, top5, top5_file, top5_summary.\n", logger->str());
     }
 
     void errorlist1() {
@@ -1869,6 +1948,37 @@ private:
         const char * const argv[] = {"cppcheck", "--typedef-max-time=-1", "file.cpp"};
         ASSERT(!parser->parseFromArgs(3, argv));
         ASSERT_EQUALS("cppcheck: error: argument to '--typedef-max-time=' is not valid - needs to be positive.\n", logger->str());
+    }
+
+    void project() {
+        REDIRECT;
+        ScopedFile file("project.cppcheck", "<project></project>");
+        const char * const argv[] = {"cppcheck", "--project=project.cppcheck", "file.cpp"};
+        ASSERT(parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS(static_cast<int>(ImportProject::Type::CPPCHECK_GUI), static_cast<int>(settings->project.projectType));
+        ASSERT_EQUALS("", logger->str());
+    }
+
+    void projectMultiple() {
+        REDIRECT;
+        ScopedFile file("project.cppcheck", "<project></project>");
+        const char * const argv[] = {"cppcheck", "--project=project.cppcheck", "--project=project.cppcheck", "file.cpp"};
+        ASSERT(!parser->parseFromArgs(4, argv));
+        ASSERT_EQUALS("cppcheck: error: multiple --project options are not supported.\n", logger->str());
+    }
+
+    void projectEmpty() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--project=", "file.cpp"};
+        ASSERT(!parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS("cppcheck: error: failed to open project ''. The file does not exist.\n", logger->str());
+    }
+
+    void projectMissing() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--project=project.cppcheck", "file.cpp"};
+        ASSERT(!parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS("cppcheck: error: failed to open project 'project.cppcheck'. The file does not exist.\n", logger->str());
     }
 
     void ignorepaths1() {

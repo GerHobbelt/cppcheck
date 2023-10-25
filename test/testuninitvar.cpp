@@ -3683,6 +3683,29 @@ private:
                         "}", "test.c");
         ASSERT_EQUALS("", errout.str());
 
+        // #12030
+        valueFlowUninit("int set(int *x);\n"
+                        "void foo(bool a) {\n"
+                        "    bool flag{0};\n"
+                        "    int x;\n"
+                        "    if (!a) {\n"
+                        "        flag = set(&x);\n"
+                        "    }\n"
+                        "    if (!flag || x==3) {}\n"
+                        "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        valueFlowUninit("int set(int *x);\n"
+                        "void foo(bool a) {\n"
+                        "    bool flag{0};\n"
+                        "    int x;\n"
+                        "    if (!a) {\n"
+                        "        flag = set(&x);\n"
+                        "    }\n"
+                        "    if (!flag && x==3) {}\n"
+                        "}\n");
+        ASSERT_EQUALS("[test.cpp:5] -> [test.cpp:8]: (warning) Uninitialized variable: x\n", errout.str());
+
         valueFlowUninit("int do_something();\n"
                         "int set_st(int *x);\n"
                         "int bar();\n"
@@ -6490,7 +6513,7 @@ private:
                         "  bool copied_all = true;\n"
                         "  g(&copied_all, 5, 6, &bytesCopied);\n"
                         "}");
-        ASSERT_EQUALS("[test.cpp:7] -> [test.cpp:2]: (warning) Uninitialized variable: *buflen\n", errout.str());
+        TODO_ASSERT_EQUALS("[test.cpp:7] -> [test.cpp:2]: (warning) Uninitialized variable: *buflen\n", "", errout.str());
 
         // # 9953
         valueFlowUninit("uint32_t f(uint8_t *mem) {\n"

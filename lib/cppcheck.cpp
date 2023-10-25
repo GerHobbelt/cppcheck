@@ -383,7 +383,8 @@ static std::vector<picojson::value> executeAddon(const AddonInfo &addonInfo,
     if (!premiumArgs.empty() && !addonInfo.executable.empty())
         args += " " + premiumArgs;
 
-    const std::string fileArg = (endsWith(file, FILELIST, sizeof(FILELIST)-1) ? " --file-list " : " ") + cmdFileName(file);
+    const bool is_file_list = (file.find(FILELIST) != std::string::npos);
+    const std::string fileArg = (is_file_list ? " --file-list " : " ") + cmdFileName(file);
     args += fileArg;
 
     std::string result;
@@ -467,7 +468,6 @@ CppCheck::~CppCheck()
         delete mFileInfo.back();
         mFileInfo.pop_back();
     }
-    s_timerResults.showResults(mSettings.showtime);
 
     if (mPlistFile.is_open()) {
         mPlistFile << ErrorLogger::plistFooter();
@@ -1100,6 +1100,9 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
 
     mErrorList.clear();
 
+    if (mSettings.showtime == SHOWTIME_MODES::SHOWTIME_FILE || mSettings.showtime == SHOWTIME_MODES::SHOWTIME_TOP5_FILE)
+        printTimerResults(mSettings.showtime);
+
     return mExitCode;
 }
 
@@ -1492,7 +1495,7 @@ void CppCheck::executeAddons(const std::vector<std::string>& files)
     std::string fileList;
 
     if (files.size() >= 2 || endsWith(files[0], ".ctu-info")) {
-        fileList = Path::getPathFromFilename(files[0]) + FILELIST;
+        fileList = Path::getPathFromFilename(files[0]) + FILELIST + std::to_string(getPid());
         filesDeleter.addFile(fileList);
         std::ofstream fout(fileList);
         for (const std::string& f: files)
@@ -1902,4 +1905,15 @@ void CppCheck::removeCtuInfoFiles(const std::map<std::string, std::size_t> &file
             std::remove(ctuInfoFileName.c_str());
         }
     }
+}
+
+// cppcheck-suppress unusedFunction - only used in tests
+void CppCheck::resetTimerResults()
+{
+    s_timerResults.reset();
+}
+
+void CppCheck::printTimerResults(SHOWTIME_MODES mode)
+{
+    s_timerResults.showResults(mode);
 }

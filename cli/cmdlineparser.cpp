@@ -654,6 +654,12 @@ bool CmdLineParser::parseFromArgs(int argc, const char* const argv[])
 
             // --project
             else if (std::strncmp(argv[i], "--project=", 10) == 0) {
+                if (mSettings.project.projectType != ImportProject::Type::NONE)
+                {
+                    mLogger.printError("multiple --project options are not supported.");
+                    return false;
+                }
+
                 mSettings.checkAllConfigurations = false; // Can be overridden with --max-configs or --force
                 std::string projectFile = argv[i]+10;
                 ImportProject::Type projType = mSettings.project.import(projectFile, &mSettings);
@@ -817,12 +823,22 @@ bool CmdLineParser::parseFromArgs(int argc, const char* const argv[])
                     mSettings.showtime = SHOWTIME_MODES::SHOWTIME_FILE_TOTAL;
                 else if (showtimeMode == "summary")
                     mSettings.showtime = SHOWTIME_MODES::SHOWTIME_SUMMARY;
-                else if (showtimeMode == "top5")
-                    mSettings.showtime = SHOWTIME_MODES::SHOWTIME_TOP5;
-                else if (showtimeMode.empty())
+                else if (showtimeMode == "top5") {
+                    mSettings.showtime = SHOWTIME_MODES::SHOWTIME_TOP5_FILE;
+                    mLogger.printMessage("--showtime=top5 is deprecated and will be removed in Cppcheck 2.14. Please use --showtime=top5_file or --showtime=top5_summary instead.");
+                }
+                else if (showtimeMode == "top5_file")
+                    mSettings.showtime = SHOWTIME_MODES::SHOWTIME_TOP5_FILE;
+                else if (showtimeMode == "top5_summary")
+                    mSettings.showtime = SHOWTIME_MODES::SHOWTIME_TOP5_SUMMARY;
+                else if (showtimeMode == "none")
                     mSettings.showtime = SHOWTIME_MODES::SHOWTIME_NONE;
+                else if (showtimeMode.empty()) {
+                    mLogger.printError("no mode provided for --showtime");
+                    return false;
+                }
                 else {
-                    mLogger.printError("unrecognized showtime mode: \"" + showtimeMode + "\". Supported modes: file, file-total, summary, top5.");
+                    mLogger.printError("unrecognized --showtime mode: '" + showtimeMode + "'. Supported modes: file, file-total, summary, top5, top5_file, top5_summary.");
                     return false;
                 }
             }
@@ -1268,6 +1284,22 @@ void CmdLineParser::printHelp()
     "    --rule-file=<file>   Use given rule file. For more information, see:\n"
     "                         http://sourceforge.net/projects/cppcheck/files/Articles/\n"
 #endif
+    "    --showtime=<mode>    Show timing information.\n"
+    "                         The available modes are:\n"
+    "                          * none\n"
+    "                                 Show nothing (default)\n"
+    "                          * file\n"
+    "                                 Show for each processed file\n"
+    "                          * file-total\n"
+    "                                 Show total time only for each processed file\n"
+    "                          * summary\n"
+    "                                 Show a summary at the end\n"
+    "                          * top5_file\n"
+    "                                 Show the top 5 for each processed file\n"
+    "                          * top5_summary\n"
+    "                                 Show the top 5 summary at the end\n"
+    "                          * top5\n"
+    "                                 Alias for top5_file (deprecated)\n"
     "    --std=<id>           Set standard.\n"
     "                         The available options are:\n"
     "                          * c89\n"

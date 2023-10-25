@@ -20,7 +20,7 @@
 #include "check64bit.h"
 #include "errortypes.h"
 #include "settings.h"
-#include "testsuite.h"
+#include "fixture.h"
 #include "tokenize.h"
 
 #include <sstream> // IWYU pragma: keep
@@ -150,6 +150,11 @@ private:
               "};\n"
               "void f() {\n"
               "    std::array<double, 1> a = S::g(S::E::E0);\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        check("char* f(char* p) {\n"
+              "    return p ? p : 0;\n"
               "}\n");
         ASSERT_EQUALS("", errout.str());
     }

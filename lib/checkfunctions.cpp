@@ -29,6 +29,7 @@
 #include "token.h"
 #include "tokenize.h"
 #include "valueflow.h"
+#include "vfvalue.h"
 
 #include <iomanip>
 #include <sstream>
@@ -593,7 +594,7 @@ void CheckFunctions::memsetValueOutOfRangeError(const Token *tok, const std::str
 
 void CheckFunctions::checkLibraryMatchFunctions()
 {
-    if (!mSettings->checkLibrary || !mSettings->severity.isEnabled(Severity::information))
+    if (!mSettings->checkLibrary)
         return;
 
     bool insideNew = false;

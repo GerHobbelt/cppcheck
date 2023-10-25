@@ -65,10 +65,12 @@ private:
         TEST_CASE(cfp4);
         TEST_CASE(cfp5);
         TEST_CASE(cfp6);
+        TEST_CASE(cfp7);
         TEST_CASE(carray1);
         TEST_CASE(carray2);
         TEST_CASE(cdonotreplace1);
         TEST_CASE(cppfp1);
+        TEST_CASE(Generic1);
 
         TEST_CASE(simplifyTypedef1);
         TEST_CASE(simplifyTypedef2);
@@ -437,6 +439,13 @@ private:
         ASSERT_EQUALS("void ( * a [ 10 ] ) ( void ) ;", simplifyTypedef(code));
     }
 
+    void cfp7() {
+        const char code[] = "typedef uint32_t ((*fp)(uint32_t n));\n" // #11725
+                            "uint32_t g();\n"
+                            "fp f;\n";
+        ASSERT_EQUALS("uint32_t g ( ) ; uint32_t ( * f ) ( uint32_t n ) ;", simplifyTypedef(code));
+    }
+
     void carray1() {
         const char code[] = "typedef int t[20];\n"
                             "t x;";
@@ -461,6 +470,12 @@ private:
                             "typedef fp t;\n"
                             "void foo(t p);";
         ASSERT_EQUALS("void foo ( void ( * p ) ( void ) ) ;", tok(code));
+    }
+
+    void Generic1() {
+        const char code[] = "typedef void func(void);\n"
+                            "_Generic((x), func: 1, default: 2);";
+        ASSERT_EQUALS("_Generic ( x , void ( ) : 1 , default : 2 ) ;", tok(code));
     }
 
     void simplifyTypedef1() {

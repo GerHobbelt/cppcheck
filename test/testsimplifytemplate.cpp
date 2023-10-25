@@ -37,14 +37,10 @@ public:
     TestSimplifyTemplate() : TestFixture("TestSimplifyTemplate") {}
 
 private:
-    Settings settings;
+    // If there are unused templates, keep those
+    const Settings settings = settingsBuilder().severity(Severity::portability).checkUnusedTemplates().build();
 
     void run() override {
-        settings.severity.enable(Severity::portability);
-
-        // If there are unused templates, keep those
-        settings.checkUnusedTemplates = true;
-
         TEST_CASE(template1);
         TEST_CASE(template2);
         TEST_CASE(template3);
@@ -313,9 +309,8 @@ private:
     std::string tok_(const char* file, int line, const char code[], bool debugwarnings = false, cppcheck::Platform::Type type = cppcheck::Platform::Type::Native) {
         errout.str("");
 
-        settings.debugwarnings = debugwarnings;
-        PLATFORM(settings.platform, type);
-        Tokenizer tokenizer(&settings, this);
+        const Settings settings1 = settingsBuilder(settings).debugwarnings(debugwarnings).platform(type).build();
+        Tokenizer tokenizer(&settings1, this);
 
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
@@ -4054,6 +4049,26 @@ private:
                             "b<a100<int>> d100;";
         // don't bother checking the output because this is not instantiated properly
         tok(code); // don't crash
+
+        const char code2[] = "template<typename T> void f();\n" // #11489
+                             "template<typename T> void f(int);\n"
+                             "void g() {\n"
+                             "    f<int>();\n"
+                             "    f<char>(1);\n"
+                             "}\n"
+                             "template<typename T>\n"
+                             "void f(int) {}\n"
+                             "template<typename T>\n"
+                             "void f() {\n"
+                             "    f<T>(0);\n"
+                             "}\n";
+        const char exp2[] = "template < typename T > void f ( ) ; "
+                            "void f<int> ( int ) ; "
+                            "void f<char> ( int ) ; "
+                            "void g ( ) { f<int> ( ) ; f<char> ( 1 ) ; } "
+                            "void f<int> ( ) { f<int> ( 0 ) ; } "
+                            "void f<char> ( int ) { }";
+        ASSERT_EQUALS(exp2, tok(code2));
     }
 
     void template159() {  // #9886

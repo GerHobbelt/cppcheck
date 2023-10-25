@@ -52,7 +52,7 @@
 #include <unordered_set>
 //---------------------------------------------------------------------------
 
-SymbolDatabase::SymbolDatabase(const Tokenizer &tokenizer, const Settings &settings, ErrorLogger *errorLogger)
+SymbolDatabase::SymbolDatabase(Tokenizer& tokenizer, const Settings& settings, ErrorLogger* errorLogger)
     : mTokenizer(tokenizer), mSettings(settings), mErrorLogger(errorLogger)
 {
     if (!mTokenizer.tokens())
@@ -1105,7 +1105,7 @@ void SymbolDatabase::createSymbolDatabaseSetFunctionPointers(bool firstPass)
                 const Token *start = tok;
                 while (Token::Match(start->tokAt(-2), "%name% ::"))
                     start = start->tokAt(-2);
-                if (!Token::Match(start->previous(), "[(,<=]") && !Token::Match(start->tokAt(-2), "[(,<=] &") && !Token::Match(start, "%name% ;"))
+                if (!Token::Match(start->previous(), "[(,<=]") && !Token::simpleMatch(start->previous(), "::") && !Token::Match(start->tokAt(-2), "[(,<=] &") && !Token::Match(start, "%name% ;"))
                     continue;
                 isTemplateArg = Token::simpleMatch(start->previous(), "<") || Token::simpleMatch(start->tokAt(-2), "<");
             }
@@ -1230,7 +1230,7 @@ void SymbolDatabase::createSymbolDatabaseSetVariablePointers()
     };
 
     // Set variable pointers
-    for (const Token* tok = mTokenizer.list.front(); tok != mTokenizer.list.back(); tok = tok->next()) {
+    for (Token* tok = mTokenizer.list.front(); tok != mTokenizer.list.back(); tok = tok->next()) {
         if (!tok->isName() || tok->isKeyword() || tok->isStandardType())
             continue;
         if (tok->varId())
@@ -4462,13 +4462,6 @@ Scope::Scope(const SymbolDatabase *check_, const Token *classDef_, const Scope *
         className = nameTok->str();
 }
 
-bool Scope::hasDefaultConstructor() const
-{
-    return numConstructors > 0 && std::any_of(functionList.begin(), functionList.end(), [](const Function& func) {
-        return func.type == Function::eConstructor && func.argCount() == 0;
-    });
-}
-
 AccessControl Scope::defaultAccess() const
 {
     switch (type) {
@@ -5584,8 +5577,8 @@ const Function* SymbolDatabase::findFunction(const Token* const tok) const
         if (tok1->strAt(-1) == "::") {
             currScope = &scopeList.front();
 
-            if (Token::Match(tok1, "%name% ("))
-                return currScope->findFunction(tok);
+            if (const Function* f = currScope->findFunction(tok))
+                return f;
 
             currScope = currScope->findRecordInNestedList(tok1->str());
         }

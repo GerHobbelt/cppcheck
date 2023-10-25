@@ -39,7 +39,7 @@ public:
     TestProcessExecutor() : TestFixture("TestProcessExecutor") {}
 
 private:
-    Settings settings;
+    Settings settings = settingsBuilder().library("std.cfg").build();
 
     /**
      * Execute check using n jobs for y files which are have
@@ -80,8 +80,6 @@ private:
 
     void run() override {
 #if !defined(WIN32) && !defined(__MINGW32__) && !defined(__CYGWIN__)
-        LOAD_LIB_2(settings.library, "std.cfg");
-
         TEST_CASE(deadlock_with_many_errors);
         TEST_CASE(many_threads);
         TEST_CASE(many_threads_showtime);
@@ -191,7 +189,8 @@ private:
             "file_1.cp1", "file_2.cpp", "file_3.cp1", "file_4.cpp"
         };
 
-        check(2, 4, 4,
+        // the checks are not executed on the markup files => expected result is 2
+        check(2, 4, 2,
               "int main()\n"
               "{\n"
               "  char *a = malloc(10);\n"

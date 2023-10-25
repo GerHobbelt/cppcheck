@@ -41,7 +41,7 @@ public:
     TestSingleExecutor() : TestFixture("TestSingleExecutor") {}
 
 private:
-    Settings settings;
+    Settings settings = settingsBuilder().library("std.cfg").build();
 
     static std::string zpad3(int i)
     {
@@ -89,8 +89,6 @@ private:
     }
 
     void run() override {
-        LOAD_LIB_2(settings.library, "std.cfg");
-
         TEST_CASE(many_files);
         TEST_CASE(many_files_showtime);
         TEST_CASE(many_files_plist);
@@ -195,7 +193,8 @@ private:
             "file_1.cp1", "file_2.cpp", "file_3.cp1", "file_4.cpp"
         };
 
-        check(4, 4,
+        // checks are not executed on markup files => expected result is 2
+        check(4, 2,
               "int main()\n"
               "{\n"
               "  char *a = malloc(10);\n"

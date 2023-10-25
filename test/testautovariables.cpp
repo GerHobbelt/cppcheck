@@ -32,30 +32,24 @@ public:
     TestAutoVariables() : TestFixture("TestAutoVariables") {}
 
 private:
-    Settings settings;
+    const Settings settings = settingsBuilder().severity(Severity::warning).severity(Severity::style).library("std.cfg").library("qt.cfg").build();
 
 #define check(...) check_(__FILE__, __LINE__, __VA_ARGS__)
     void check_(const char* file, int line, const char code[], bool inconclusive = true, const char* filename = "test.cpp") {
         // Clear the error buffer..
         errout.str("");
 
-        settings.certainty.setEnabled(Certainty::inconclusive, inconclusive);
+        const Settings settings1 = settingsBuilder(settings).certainty(Certainty::inconclusive, inconclusive).build();
 
         // Tokenize..
-        Tokenizer tokenizer(&settings, this);
+        Tokenizer tokenizer(&settings1, this);
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, filename), file, line);
 
-        runChecks<CheckAutoVariables>(&tokenizer, &settings, this);
+        runChecks<CheckAutoVariables>(&tokenizer, &settings1, this);
     }
 
     void run() override {
-        settings.severity.enable(Severity::warning);
-        settings.severity.enable(Severity::style);
-        LOAD_LIB_2(settings.library, "std.cfg");
-        LOAD_LIB_2(settings.library, "qt.cfg");
-        settings.libraries.emplace_back("qt");
-
         TEST_CASE(testautovar1);
         TEST_CASE(testautovar2);
         TEST_CASE(testautovar3); // ticket #2925
@@ -2274,7 +2268,7 @@ private:
               "}");
         ASSERT_EQUALS("", errout.str());
 
-        check("auto f() {\n"
+        check("std::vector<int>::iterator f() {\n"
               "    std::vector<int> x;\n"
               "    auto it = x.begin();\n"
               "    return it;\n"
@@ -2288,7 +2282,7 @@ private:
               "}");
         ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:2] -> [test.cpp:4]: (error) Returning iterator to local container 'x' that will be invalid when returning.\n", errout.str());
 
-        check("auto f() {\n"
+        check("int* f() {\n"
               "    std::vector<int> x;\n"
               "    auto p = x.data();\n"
               "    return p;\n"
@@ -2315,7 +2309,7 @@ private:
             "[test.cpp:3] -> [test.cpp:4] -> [test.cpp:2] -> [test.cpp:4]: (error) Returning pointer to local variable 'v' that will be invalid when returning.\n",
             errout.str());
 
-        check("auto f(std::vector<int> x) {\n"
+        check("std::vector<int>::iterator f(std::vector<int> x) {\n"
               "    auto it = x.begin();\n"
               "    return it;\n"
               "}");
@@ -2447,11 +2441,12 @@ private:
                       errout.str());
 
         check("std::vector<int> g();\n"
-              "auto f() {\n"
+              "std::vector<int>::iterator f() {\n"
               "    auto it = g().begin();\n"
               "    return it;\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:4]: (error) Returning iterator that will be invalid when returning.\n",
+        ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:3] -> [test.cpp:4]: (error) Using iterator that is a temporary.\n"
+                      "[test.cpp:3] -> [test.cpp:4]: (error) Returning iterator that will be invalid when returning.\n",
                       errout.str());
 
         check("std::vector<int> g();\n"

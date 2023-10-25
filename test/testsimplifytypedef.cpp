@@ -40,19 +40,12 @@ public:
 
 
 private:
-    Settings settings0;
-    Settings settings1;
-    Settings settings2;
+    // If there are unused templates, keep those
+    const Settings settings0 = settingsBuilder().severity(Severity::style).checkUnusedTemplates().build();
+    const Settings settings1 = settingsBuilder().checkUnusedTemplates().build();
+    const Settings settings2 = settingsBuilder().severity(Severity::style).checkUnusedTemplates().build();
 
     void run() override {
-        settings0.severity.enable(Severity::style);
-        settings2.severity.enable(Severity::style);
-
-        // If there are unused templates, keep those
-        settings0.checkUnusedTemplates = true;
-        settings1.checkUnusedTemplates = true;
-        settings2.checkUnusedTemplates = true;
-
         TEST_CASE(c1);
         TEST_CASE(c2);
         TEST_CASE(canreplace1);
@@ -234,10 +227,9 @@ private:
     std::string tok_(const char* file, int line, const char code[], bool simplify = true, cppcheck::Platform::Type type = cppcheck::Platform::Type::Native, bool debugwarnings = true) {
         errout.str("");
 
-        settings0.certainty.enable(Certainty::inconclusive);
-        settings0.debugwarnings = debugwarnings;   // show warnings about unhandled typedef
-        PLATFORM(settings0.platform, type);
-        Tokenizer tokenizer(&settings0, this);
+        // show warnings about unhandled typedef
+        const Settings settings = settingsBuilder(settings0).certainty(Certainty::inconclusive).debugwarnings(debugwarnings).platform(type).build();
+        Tokenizer tokenizer(&settings, this);
 
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
@@ -286,9 +278,9 @@ private:
     void checkSimplifyTypedef_(const char code[], const char* file, int line) {
         errout.str("");
         // Tokenize..
-        settings2.certainty.enable(Certainty::inconclusive);
-        settings2.debugwarnings = true;   // show warnings about unhandled typedef
-        Tokenizer tokenizer(&settings2, this);
+        // show warnings about unhandled typedef
+        const Settings settings = settingsBuilder(settings2).certainty(Certainty::inconclusive).debugwarnings().build();
+        Tokenizer tokenizer(&settings, this);
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
     }
@@ -3277,7 +3269,8 @@ private:
         ASSERT_EQUALS("struct X { } ; std :: vector < X > v ;", tok(code));
     }
 
-    void simplifyTypedef145() { // #11634
+    void simplifyTypedef145() {
+        // #11634
         const char* code{};
         code = "int typedef i;\n"
                "i main() {}\n";
@@ -3292,6 +3285,11 @@ private:
         code = "struct {} typedef S;\n" // don't crash
                "S();\n";
         ASSERT_EQUALS("struct S { } ; struct S ( ) ;", tok(code));
+
+        // #11693
+        code = "typedef unsigned char unsigned char;\n" // don't hang
+               "void f(char);\n";
+        ASSERT_EQUALS("void f ( char ) ;", tok(code));
     }
 
     void simplifyTypedefFunction1() {

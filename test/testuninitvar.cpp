@@ -3682,6 +3682,27 @@ private:
                         "    ++c;\n"
                         "}", "test.c");
         ASSERT_EQUALS("", errout.str());
+
+        valueFlowUninit("int do_something();\n"
+                        "int set_st(int *x);\n"
+                        "int bar();\n"
+                        "void foo() {\n"
+                        "    int x, y;\n"
+                        "    int status = 1;\n"
+                        "    if (bar() == 1) {\n"
+                        "        status = 0;\n"
+                        "    }\n"
+                        "    if (status == 1) {\n"
+                        "        status = set_st(&x);\n"
+                        "    }\n"
+                        "    for (int i = 0; status == 1 && i < x; i++) {\n"
+                        "        if (do_something() == 0) {\n"
+                        "            status = 0;\n"
+                        "        }\n"
+                        "    }\n"
+                        "    if(status == 1 && x > 0){}\n"
+                        "}\n");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void valueFlowUninit_uninitvar2()
@@ -7371,9 +7392,9 @@ private:
 
         // Check code..
         std::list<Check::FileInfo*> fileInfo;
-        CheckUninitVar check(&tokenizer, &settings, this);
-        fileInfo.push_back(check.getFileInfo(&tokenizer, &settings));
-        check.analyseWholeProgram(ctu, fileInfo, settings, *this);
+        Check& c = getCheck<CheckUninitVar>();
+        fileInfo.push_back(c.getFileInfo(&tokenizer, &settings));
+        c.analyseWholeProgram(ctu, fileInfo, settings, *this);
         while (!fileInfo.empty()) {
             delete fileInfo.back();
             fileInfo.pop_back();

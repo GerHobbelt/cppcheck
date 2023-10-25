@@ -1323,7 +1323,7 @@ void SymbolDatabase::createSymbolDatabaseSetVariablePointers()
                 Token* memberTok = tok->next()->link()->tokAt(2);
                 const Scope* scope = vt->containerTypeToken->scope();
                 const Type* contType{};
-                const std::string typeStr = vt->containerTypeToken->expressionString();
+                const std::string& typeStr = vt->containerTypeToken->str(); // TODO: handle complex type expressions
                 while (scope && !contType) {
                     contType = scope->findType(typeStr); // find the type stored in the container
                     scope = scope->nestedIn;
@@ -1373,11 +1373,15 @@ void SymbolDatabase::createSymbolDatabaseEnums()
 
     // find enumerators
     for (const Token* tok = mTokenizer->list.front(); tok != mTokenizer->list.back(); tok = tok->next()) {
-        if (tok->tokType() != Token::eName)
+        const bool isVariable = (tok->tokType() == Token::eVariable && !tok->variable());
+        if (tok->tokType() != Token::eName && !isVariable)
             continue;
         const Enumerator * enumerator = findEnumerator(tok, tokensThatAreNotEnumeratorValues);
-        if (enumerator)
-            const_cast<Token *>(tok)->enumerator(enumerator);
+        if (enumerator) {
+            if (isVariable)
+                const_cast<Token*>(tok)->varId(0);
+            const_cast<Token*>(tok)->enumerator(enumerator);
+        }
     }
 }
 
@@ -1743,7 +1747,7 @@ bool SymbolDatabase::isFunction(const Token *tok, const Scope* outerScope, const
     // function returning function pointer? '... ( ... %name% ( ... ))( ... ) {'
     // function returning reference to array '... ( & %name% ( ... ))[ ... ] {'
     // TODO: Activate this again
-    if (false && tok->str() == "(" && tok->strAt(1) != "*" &&
+    if ((false) && tok->str() == "(" && tok->strAt(1) != "*" &&
         (tok->link()->previous()->str() == ")" || Token::simpleMatch(tok->link()->tokAt(-2), ") const"))) {
         const Token* tok2 = tok->link()->next();
         if (tok2 && tok2->str() == "(" && Token::Match(tok2->link()->next(), "{|;|const|=")) {
@@ -2272,7 +2276,7 @@ void Variable::setValueType(const ValueType &valueType)
         setFlag(fIsSmartPointer, true);
 }
 
-const Type *Variable::smartPointerType() const
+const Type* Variable::smartPointerType() const
 {
     if (!isSmartPointer())
         return nullptr;
@@ -2280,12 +2284,19 @@ const Type *Variable::smartPointerType() const
     if (mValueType->smartPointerType)
         return mValueType->smartPointerType;
 
-    // TODO: Cache result
-    const Token *ptrType = typeStartToken();
-    while (Token::Match(ptrType, "%name%|::"))
-        ptrType = ptrType->next();
-    if (Token::Match(ptrType, "< %name% >"))
-        return ptrType->scope()->findType(ptrType->next()->str());
+    // TODO: Cache result, handle more complex type expression
+    const Token* typeTok = typeStartToken();
+    while (Token::Match(typeTok, "%name%|::"))
+        typeTok = typeTok->next();
+    if (Token::Match(typeTok, "< %name% >")) {
+        const Scope* scope = typeTok->scope();
+        const Type* ptrType{};
+        while (scope && !ptrType) {
+            ptrType = scope->findType(typeTok->next()->str());
+            scope = scope->nestedIn;
+        }
+        return ptrType;
+    }
     return nullptr;
 }
 
@@ -4140,10 +4151,10 @@ void Function::addArguments(const SymbolDatabase *symbolDatabase, const Scope *s
                 nameTok = tok->tokAt(2);
                 endTok = nameTok->previous();
                 tok = tok->link();
-            } else if (tok != startTok && !nameTok && Token::Match(tok, "( * %var% ) ( ) [,)]")) {
+            } else if (tok != startTok && !nameTok && Token::Match(tok, "( * %var% ) (") && Token::Match(tok->link()->linkAt(1), ") [,)]")) {
                 nameTok = tok->tokAt(2);
                 endTok = nameTok->previous();
-                tok = tok->link()->tokAt(2);
+                tok = tok->link()->linkAt(1);
             } else if (tok != startTok && !nameTok && Token::Match(tok, "( * %var% ) [")) {
                 nameTok = tok->tokAt(2);
                 endTok = nameTok->previous();
@@ -4919,6 +4930,12 @@ const Enumerator * SymbolDatabase::findEnumerator(const Token * tok, std::set<st
         if (enumerator && !(enumerator->scope && enumerator->scope->enumClass))
             return enumerator;
 
+        if (Token::simpleMatch(tok->astParent(), ".")) {
+            const Token* varTok = tok->astParent()->astOperand1();
+            if (varTok && varTok->variable() && varTok->variable()->type() && varTok->variable()->type()->classScope)
+                scope = varTok->variable()->type()->classScope;
+        }
+
         for (std::vector<Scope *>::const_iterator s = scope->nestedList.cbegin(); s != scope->nestedList.cend(); ++s) {
             enumerator = (*s)->findEnumerator(tokStr);
 
@@ -5433,6 +5450,8 @@ const Function* Scope::findFunction(const Token *tok, bool requireConst) const
                     if (rml)
                         valuetok = rml->previous();
                 }
+                if (vartok->isEnumerator())
+                    valuetok = vartok;
                 const ValueType::MatchResult res = ValueType::matchParameter(valuetok->valueType(), var, funcarg);
                 if (res == ValueType::MatchResult::SAME)
                     ++same;
@@ -7026,7 +7045,8 @@ void SymbolDatabase::setValueTypeInTokenList(bool reportDebugWarnings, Token *to
                     }
                 }
 
-                if (typestr.empty() || typestr == "iterator") {
+                const bool isReturnIter = typestr == "iterator";
+                if (typestr.empty() || isReturnIter) {
                     if (Token::simpleMatch(tok->astOperand1(), ".") &&
                         tok->astOperand1()->astOperand1() &&
                         tok->astOperand1()->astOperand2() &&
@@ -7044,6 +7064,25 @@ void SymbolDatabase::setValueTypeInTokenList(bool reportDebugWarnings, Token *to
                                 vt.containerTypeToken =
                                     tok->astOperand1()->astOperand1()->valueType()->containerTypeToken;
                                 setValueType(tok, vt);
+                                continue;
+                            }
+                        }
+                    }
+                    if (isReturnIter) {
+                        const std::vector<const Token*> args = getArguments(tok);
+                        if (!args.empty()) {
+                            const Library::ArgumentChecks::IteratorInfo* info = mSettings->library.getArgIteratorInfo(tok->previous(), 1);
+                            if (info && info->it) {
+                                const Token* contTok = args[0];
+                                if (Token::simpleMatch(args[0]->astOperand1(), ".") && args[0]->astOperand1()->astOperand1())
+                                    contTok = args[0]->astOperand1()->astOperand1();
+                                if (contTok && contTok->variable() && contTok->variable()->valueType() && contTok->variable()->valueType()->container) {
+                                    ValueType vt;
+                                    vt.type = ValueType::Type::ITERATOR;
+                                    vt.container = contTok->variable()->valueType()->container;
+                                    vt.containerTypeToken = contTok->variable()->valueType()->containerTypeToken;
+                                    setValueType(tok, vt);
+                                }
                             }
                         }
                     }

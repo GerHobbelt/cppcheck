@@ -224,6 +224,7 @@ private:
         TEST_CASE(vardecl28);
         TEST_CASE(vardecl29); // #9282
         TEST_CASE(vardecl30);
+        TEST_CASE(vardecl31); // function pointer init
         TEST_CASE(vardecl_stl_1);
         TEST_CASE(vardecl_stl_2);
         TEST_CASE(vardecl_stl_3);
@@ -304,7 +305,6 @@ private:
         TEST_CASE(bitfields10);
         TEST_CASE(bitfields12); // ticket #3485 (segmentation fault)
         TEST_CASE(bitfields13); // ticket #3502 (segmentation fault)
-        TEST_CASE(bitfields14); // ticket #4561 (segfault for 'class a { signals: };')
         TEST_CASE(bitfields15); // ticket #7747 (enum Foo {A,B}:4;)
         TEST_CASE(bitfields16); // Save bitfield bit count
 
@@ -314,10 +314,6 @@ private:
         TEST_CASE(microsoftString);
 
         TEST_CASE(borland);
-
-        TEST_CASE(simplifyQtSignalsSlots1);
-        TEST_CASE(simplifyQtSignalsSlots2);
-
         TEST_CASE(simplifySQL);
 
         TEST_CASE(simplifyCAlternativeTokens);
@@ -2528,6 +2524,14 @@ private:
                       tokenizeAndStringify(code, true, Settings::Native, "test.c"));
     }
 
+    void vardecl31() {
+        const char code1[] = "void foo() { int (*fptr)() = 0; }";
+        ASSERT_EQUALS("void foo ( ) { int ( * fptr ) ( ) ; fptr = 0 ; }", tokenizeAndStringify(code1));
+
+        const char code2[] = "void foo() { int (*fptr)(int) = 0; }";
+        ASSERT_EQUALS("void foo ( ) { int ( * fptr ) ( int ) ; fptr = 0 ; }", tokenizeAndStringify(code2));
+    }
+
     void volatile_variables() {
         {
             const char code[] = "volatile int a=0;\n"
@@ -3562,7 +3566,7 @@ private:
         ASSERT_EQUALS("unsigned int ( * f ) ( ) ;", tokenizeAndStringify("unsigned int (*f)();"));
         ASSERT_EQUALS("unsigned int * ( * f ) ( ) ;", tokenizeAndStringify("unsigned int * (*f)();"));
         ASSERT_EQUALS("void ( * f [ 2 ] ) ( ) ;", tokenizeAndStringify("void (*f[2])();"));
-        TODO_ASSERT_EQUALS("void ( * f [ 2 ] ) ( ) ;", "void ( * f ) ( ) [ 2 ] ;", tokenizeAndStringify("typedef void func_t(void); func_t *f[2];"));
+        TODO_ASSERT_EQUALS("void ( * f [ 2 ] ) ( ) ;", "void ( * f ) ( void ) [ 2 ] ;", tokenizeAndStringify("typedef void func_t(void); func_t *f[2];"));
     }
 
     void simplifyFunctionPointers2() {
@@ -3603,7 +3607,7 @@ private:
 
     void simplifyFunctionPointers5() {
         const char code[] = ";void (*fp[])(int a) = {0,0,0};";
-        const char expected[] = "1: ; void ( * fp@1 [ ] ) ( ) = { 0 , 0 , 0 } ;\n"; // TODO: Array dimension
+        const char expected[] = "1: ; void ( * fp@1 [ ] ) ( int ) = { 0 , 0 , 0 } ;\n"; // TODO: Array dimension
         ASSERT_EQUALS(expected, tokenizeDebugListing(code));
     }
 
@@ -3714,7 +3718,7 @@ private:
 
     void functionAttributeBefore3() { // #10978
         const char code[] = "void __attribute__((__noreturn__)) (*func_notret)(void);";
-        const char expected[] = "void ( * func_notret ) ( ) ;";
+        const char expected[] = "void ( * func_notret ) ( void ) ;";
 
         errout.str("");
 
@@ -4475,10 +4479,6 @@ private:
         ASSERT_EQUALS("x y ;", tokenizeAndStringify("struct{x y:};\n"));
     }
 
-    void bitfields14() { // #4561 - crash for 'signals:'
-        ASSERT_EQUALS("class x { protected: } ;", tokenizeAndStringify("class x { signals: };\n"));
-    }
-
     void bitfields15() { // #7747 - enum Foo {A,B}:4;
         ASSERT_EQUALS("struct AB {\n"
                       "enum Foo { A , B } ; enum Foo Anonymous ;\n"
@@ -4696,128 +4696,6 @@ private:
         // __property
         ASSERT_EQUALS("class Fred { ; __property ; } ;",
                       tokenizeAndStringify("class Fred { __property int x = { } };", true, Settings::Win32A));
-    }
-
-    void simplifyQtSignalsSlots1() {
-        const char code1[] = "class Counter : public QObject "
-                             "{ "
-                             "    Q_OBJECT "
-                             "public: "
-                             "    Counter() { m_value = 0; } "
-                             "    int value() const { return m_value; } "
-                             "public slots: "
-                             "    void setValue(int value); "
-                             "signals: "
-                             "    void valueChanged(int newValue); "
-                             "private: "
-                             "    int m_value; "
-                             "}; "
-                             "void Counter::setValue(int value) "
-                             "{ "
-                             "    if (value != m_value) { "
-                             "        m_value = value; "
-                             "        emit valueChanged(value); "
-                             "    } "
-                             "}";
-
-        const char result1[] = "class Counter : public QObject "
-                               "{ "
-                               "public: "
-                               "Counter ( ) { m_value = 0 ; } "
-                               "int value ( ) const { return m_value ; } "
-                               "public: "
-                               "void setValue ( int value ) ; "
-                               "protected: "
-                               "void valueChanged ( int newValue ) ; "
-                               "private: "
-                               "int m_value ; "
-                               "} ; "
-                               "void Counter :: setValue ( int value ) "
-                               "{ "
-                               "if ( value != m_value ) { "
-                               "m_value = value ; "
-                               "valueChanged ( value ) ; "
-                               "} "
-                               "}";
-
-        ASSERT_EQUALS(result1, tokenizeAndStringify(code1));
-
-        const char code2[] = "class Counter : public QObject "
-                             "{ "
-                             "    Q_OBJECT "
-                             "public: "
-                             "    Counter() { m_value = 0; } "
-                             "    int value() const { return m_value; } "
-                             "public Q_SLOTS: "
-                             "    void setValue(int value); "
-                             "Q_SIGNALS: "
-                             "    void valueChanged(int newValue); "
-                             "private: "
-                             "    int m_value; "
-                             "};"
-                             "void Counter::setValue(int value) "
-                             "{ "
-                             "    if (value != m_value) { "
-                             "        m_value = value; "
-                             "        emit valueChanged(value); "
-                             "    } "
-                             "}";
-
-        const char result2[] = "class Counter : public QObject "
-                               "{ "
-                               "public: "
-                               "Counter ( ) { m_value = 0 ; } "
-                               "int value ( ) const { return m_value ; } "
-                               "public: "
-                               "void setValue ( int value ) ; "
-                               "protected: "
-                               "void valueChanged ( int newValue ) ; "
-                               "private: "
-                               "int m_value ; "
-                               "} ; "
-                               "void Counter :: setValue ( int value ) "
-                               "{ "
-                               "if ( value != m_value ) { "
-                               "m_value = value ; "
-                               "valueChanged ( value ) ; "
-                               "} "
-                               "}";
-
-        ASSERT_EQUALS(result2, tokenizeAndStringify(code2));
-
-        const char code3[] = "class MyObject : public QObject {"
-                             "    MyObject() {}"
-                             "    ~MyObject() {}"
-                             "    public slots:"
-                             "    signals:"
-                             "        void test() {}"
-                             "};";
-        const char result3[] = "class MyObject : public QObject { "
-                               "MyObject ( ) { } "
-                               "~ MyObject ( ) { } "
-                               "public: "
-                               "protected: "
-                               "void test ( ) { } "
-                               "} ;";
-
-        ASSERT_EQUALS(result3, tokenizeAndStringify(code3));
-        ASSERT_EQUALS("", errout.str());
-
-        const char code4[] = "class MyObject : public QObject {"
-                             "    Q_OBJECT "
-                             "public slots:"
-                             "};";
-        const char result4[] = "class MyObject : public QObject { "
-                               "public: "
-                               "} ;";
-
-        ASSERT_EQUALS(result4, tokenizeAndStringify(code4));
-    }
-
-    void simplifyQtSignalsSlots2() {
-        const char code1[] = "class Foo::Bar: public QObject { private slots: };";
-        const char result1[] = "class Foo :: Bar : public QObject { private: } ;";
-        ASSERT_EQUALS(result1, tokenizeAndStringify(code1));
     }
 
     void simplifySQL() {
@@ -6391,6 +6269,9 @@ private:
         ASSERT_EQUALS("unoRef:: var0(", testAst(code1));
 
         ASSERT_EQUALS("vary=", testAst("std::string var = y;"));
+
+        ASSERT_EQUALS("", testAst("void *(*var)(int);"));
+
 
         // create ast for decltype
         ASSERT_EQUALS("decltypex( var1=", testAst("decltype(x) var = 1;"));

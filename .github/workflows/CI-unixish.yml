@@ -280,23 +280,6 @@ jobs:
           qmake CONFIG+=debug CONFIG+=ccache
           make -j$(nproc)
 
-  build_fuzz:
-
-    strategy:
-      matrix:
-        os: [ubuntu-20.04, ubuntu-22.04] # only needs to build on ubuntu
-      fail-fast: false # Prefer quick result
-
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Build Fuzzer
-        run: |
-          pushd oss-fuzz
-          make -j$(nproc) CXX=clang++ CXXFLAGS="-fsanitize=address" fuzz-client translate
-
   build:
 
     strategy:
@@ -331,7 +314,7 @@ jobs:
         if: contains(matrix.os, 'macos')
         run: |
           # pcre was removed from runner images in November 2022
-          brew install coreutils python3 pcre
+          brew install coreutils python3 pcre gnu-sed
 
       - name: Install missing Python packages
         run: |
@@ -352,9 +335,8 @@ jobs:
         run: |
           make -j$(nproc) check HAVE_RULES=yes
 
-      # the script uses sed parameters not supported by MacOS
+      # requires "gnu-sed" installed on macos
       - name: Run extra tests
-        if: contains(matrix.os, 'ubuntu')
         run: |
           tools/generate_and_run_more_tests.sh
 
@@ -368,9 +350,8 @@ jobs:
           cd 'cpp check/test/cli'
           python3 -m pytest test-*.py
 
-      # fails on macos since some includes (e.g. sys/epoll.h) are not available
       - name: Run cfg tests
-        if: contains(matrix.os, 'ubuntu') && matrix.os != 'ubuntu-22.04'
+        if: matrix.os != 'ubuntu-22.04'
         run: |
           make -j$(nproc) checkcfg
 
@@ -381,9 +362,7 @@ jobs:
         env:
           STRICT: 1
 
-      # it seems macos has no "wc" command
       - name: Run showtimetop5 tests
-        if: contains(matrix.os, 'ubuntu')
         run: |
           ./tools/test_showtimetop5.sh
 

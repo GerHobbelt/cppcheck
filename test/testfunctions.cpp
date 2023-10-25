@@ -1966,12 +1966,35 @@ private:
               "}\n");
         ASSERT_EQUALS("", errout.str());
 
+        check("struct S {\n" // #11543
+              "    S() {}\n"
+              "    std::vector<std::shared_ptr<S>> v;\n"
+              "    void f(int i) const;\n"
+              "};\n"
+              "void S::f(int i) const {\n"
+              "    for (const std::shared_ptr<S>& c : v)\n"
+              "        c->f(i);\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+
         check("namespace N {\n"
               "    struct S { static const std::set<std::string> s; };\n"
               "}\n"
               "void f() {\n"
               "    const auto& t = N::S::s;\n"
               "    if (t.find(\"abc\") != t.end()) {}\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f(std::vector<std::unordered_map<int, std::unordered_set<int>>>& v, int i, int j) {\n"
+              "    auto& s = v[i][j];\n"
+              "    s.insert(0);\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        check("int f(const std::vector<std::string>& v, int i, char c) {\n"
+              "    const auto& s = v[i];\n"
+              "    return s.find(c);\n"
               "}\n");
         ASSERT_EQUALS("", errout.str());
 

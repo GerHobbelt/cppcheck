@@ -4987,9 +4987,6 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
     if (Settings::terminated())
         return false;
 
-    // Remove Qt signals and slots
-    simplifyQtSignalsSlots();
-
     // remove Borland stuff..
     simplifyBorland();
 
@@ -6176,20 +6173,26 @@ void Tokenizer::simplifyFunctionPointers()
             endTok->deleteNext();
 
         // ok simplify this function pointer to an ordinary pointer
-        Token::eraseTokens(tok->link(), endTok->next());
         if (Token::simpleMatch(tok->link()->previous(), ") )")) {
             // Function returning function pointer
             // void (*dostuff(void))(void) {}
+            Token::eraseTokens(tok->link(), endTok->next());
             tok->link()->deleteThis();
             tok->deleteThis();
         } else {
-            // Function pointer variable
-            // void (*p)(void) {}
-            tok->link()->insertToken("(");
-            Token *par1 = tok->link()->next();
-            par1->insertToken(")");
-            par1->link(par1->next());
-            par1->next()->link(par1);
+            Token::eraseTokens(tok->link()->linkAt(1), endTok->next());
+
+            // remove variable names
+            for (Token* tok3 = tok->link()->tokAt(2); Token::Match(tok3, "%name%|*|&|[|(|::|,|<"); tok3 = tok3->next()) {
+                if (tok3->str() == "<" && tok3->link())
+                    tok3 = tok3->link();
+                else if (Token::Match(tok3, "[|("))
+                    tok3 = tok3->link();
+                if (Token::Match(tok3, "%type%|*|&|> %name% [,)[]"))
+                    tok3->deleteNext();
+            }
+
+            // TODO Keep this info
             while (Token::Match(tok, "( %type% ::"))
                 tok->deleteNext(2);
         }
@@ -6427,8 +6430,10 @@ void Tokenizer::simplifyVarDecl(Token * tokBegin, const Token * const tokEnd, co
                 varName = varName->next();
             }
             // Function pointer
-            if (Token::simpleMatch(varName, "( *") && Token::Match(varName->link()->previous(), "%name% ) ( ) =")) {
-                Token *endDecl = varName->link()->tokAt(2);
+            if (Token::simpleMatch(varName, "( *") &&
+                Token::Match(varName->link()->previous(), "%name% ) (") &&
+                Token::simpleMatch(varName->link()->linkAt(1), ") =")) {
+                Token *endDecl = varName->link()->linkAt(1);
                 varName = varName->link()->previous();
                 endDecl->insertToken(";");
                 endDecl = endDecl->next();
@@ -9131,65 +9136,6 @@ void Tokenizer::simplifyBorland()
                         tok2->previous()->insertToken(";");
                     }
                 }
-            }
-        }
-    }
-}
-
-// Remove Qt signals and slots
-void Tokenizer::simplifyQtSignalsSlots()
-{
-    if (isC())
-        return;
-    if (std::none_of(mSettings->libraries.cbegin(), mSettings->libraries.cend(), [](const std::string& lib) {
-        return lib == "qt";
-    }))
-        return;
-    for (Token *tok = list.front(); tok; tok = tok->next()) {
-        // check for emit which can be outside of class
-        if (Token::Match(tok, "emit|Q_EMIT %name% (") &&
-            Token::simpleMatch(tok->linkAt(2), ") ;")) {
-            tok->deleteThis();
-        } else if (!Token::Match(tok, "class %name% :|::|{"))
-            continue;
-
-        if (tok->previous() && tok->previous()->str() == "enum") {
-            tok = tok->tokAt(2);
-            continue;
-        }
-
-        // count { and } for tok2
-        int indentlevel = 0;
-        for (Token *tok2 = tok; tok2; tok2 = tok2->next()) {
-            if (tok2->str() == "{") {
-                ++indentlevel;
-                if (indentlevel == 1)
-                    tok = tok2;
-                else
-                    tok2 = tok2->link();
-            } else if (tok2->str() == "}") {
-                if (indentlevel<2)
-                    break;
-                else
-                    --indentlevel;
-            } else if (tok2->str() == ";" && indentlevel == 0)
-                break;
-
-            if (tok2->strAt(1) == "Q_OBJECT")
-                tok2->deleteNext();
-
-            if (Token::Match(tok2->next(), "public|protected|private slots|Q_SLOTS :")) {
-                tok2 = tok2->next();
-                tok2->str(tok2->str() + ":");
-                tok2->deleteNext(2);
-                tok2 = tok2->previous();
-            } else if (Token::Match(tok2->next(), "signals|Q_SIGNALS :")) {
-                tok2 = tok2->next();
-                tok2->str("protected:");
-                tok2->deleteNext();
-            } else if (Token::Match(tok2->next(), "emit|Q_EMIT %name% (") &&
-                       Token::simpleMatch(tok2->linkAt(3), ") ;")) {
-                tok2->deleteNext();
             }
         }
     }

@@ -2139,7 +2139,7 @@ void CheckOther::checkMisusedScopedObject()
         return;
 
     auto getConstructorTok = [](const Token* tok, std::string& typeStr) -> const Token* {
-        if (!Token::Match(tok, "[;{}] %name%"))
+        if (!Token::Match(tok, "[;{}] %name%") || tok->next()->isKeyword())
             return nullptr;
         tok = tok->next();
         typeStr.clear();
@@ -3388,7 +3388,7 @@ void CheckOther::checkAccessOfMovedVariable()
                 else
                     inconclusive = true;
             } else {
-                const ExprUsage usage = getExprUsage(tok, 0, mSettings);
+                const ExprUsage usage = getExprUsage(tok, 0, mSettings, mTokenizer->isCPP());
                 if (usage == ExprUsage::Used)
                     accessOfMoved = true;
                 if (usage == ExprUsage::PassedByReference)

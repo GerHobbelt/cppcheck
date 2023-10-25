@@ -26,7 +26,6 @@
 #include "fixture.h"
 #include "tokenize.h"
 
-#include <list>
 #include <map>
 #include <sstream> // IWYU pragma: keep
 #include <string>
@@ -1656,6 +1655,16 @@ private:
               "    printf(\"%d: %s\\n\", err, msg);\n"
               "}\n");
         ASSERT_EQUALS("", errout.str());
+
+        check("char* g(char* dst, const char* src);\n"
+              "void f(int err, const char* src) {\n"
+              "    const char* msg = \"Success\";\n"
+              "    char buf[42];\n"
+              "    if (err != 0)\n"
+              "        g(buf, src);\n"
+              "    printf(\"%d: %s\\n\", err, msg);\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:4]: (style) The scope of the variable 'buf' can be reduced.\n", errout.str());
     }
 
 #define checkOldStylePointerCast(code) checkOldStylePointerCast_(code, __FILE__, __LINE__)
@@ -3011,7 +3020,10 @@ private:
               "void ah();\n"
               "void an();\n"
               "void h();");
-        ASSERT_EQUALS("", errout.str());
+        ASSERT_EQUALS("[test.cpp:131]: (style) Variable 'tm' can be declared as pointer to const\n"
+                      "[test.cpp:136]: (style) Variable 'af' can be declared as pointer to const\n"
+                      "[test.cpp:137]: (style) Variable 'ag' can be declared as pointer to const\n",
+                      errout.str());
 
         check("class C\n"
               "{\n"
@@ -3783,6 +3795,11 @@ private:
               "}\n");
         ASSERT_EQUALS("[test.cpp:2]: (style) Parameter 's' can be declared as pointer to const\n",
                       errout.str());
+
+        check("size_t f(char* p) {\n" // #11842
+              "    return strlen(p);\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:1]: (style) Parameter 'p' can be declared as pointer to const\n", errout.str());
     }
 
     void switchRedundantAssignmentTest() {

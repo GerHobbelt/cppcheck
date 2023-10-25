@@ -36,31 +36,10 @@ public:
     TestClass() : TestFixture("TestClass") {}
 
 private:
-    Settings settings0 = settingsBuilder().severity(Severity::style).build();
-    Settings settings1 = settingsBuilder().severity(Severity::warning).build();
+    Settings settings0 = settingsBuilder().severity(Severity::style).library("std.cfg").build();
+    Settings settings1 = settingsBuilder().severity(Severity::warning).library("std.cfg").build();
 
     void run() override {
-        // Load std.cfg configuration
-        {
-            const char xmldata[] = "<?xml version=\"1.0\"?>\n"
-                                   "<def>\n"
-                                   "  <memory>\n"
-                                   "    <alloc init=\"false\">malloc</alloc>\n"
-                                   "    <dealloc>free</dealloc>\n"
-                                   "  </memory>\n"
-                                   "  <smart-pointer class-name=\"std::shared_ptr\"/>\n"
-                                   "  <container id=\"stdVector\" startPattern=\"std :: vector &lt;\" itEndPattern=\"&gt; :: const_iterator\">\n"
-                                   "    <access>\n"
-                                   "      <function name=\"begin\" yields=\"start-iterator\"/>\n"
-                                   "      <function name=\"end\" yields=\"end-iterator\"/>\n"
-                                   "    </access>\n"
-                                   "  </container>\n"
-                                   "</def>";
-            ASSERT(settings0.library.loadxmldata(xmldata, sizeof(xmldata)));
-            ASSERT(settings1.library.loadxmldata(xmldata, sizeof(xmldata)));
-        }
-
-
         TEST_CASE(virtualDestructor1);      // Base class not found => no error
         TEST_CASE(virtualDestructor2);      // Base class doesn't have a destructor
         TEST_CASE(virtualDestructor3);      // Base class has a destructor, but it's not virtual
@@ -200,6 +179,7 @@ private:
         TEST_CASE(const87);
         TEST_CASE(const88);
         TEST_CASE(const89);
+        TEST_CASE(const90);
 
         TEST_CASE(const_handleDefaultParameters);
         TEST_CASE(const_passThisToMemberOfOtherClass);
@@ -2650,6 +2630,27 @@ private:
                                "    delete p;\n"
                                "}");
         ASSERT_EQUALS("[test.cpp:7]: (error) Class 'Base' which is inherited by class 'Derived' does not have a virtual destructor.\n", errout.str());
+
+        checkVirtualDestructor("using namespace std;\n"
+                               "struct A\n"
+                               "{\n"
+                               "    A()  { cout << \"A is constructing\\n\"; }\n"
+                               "    ~A() { cout << \"A is destructing\\n\"; }\n"
+                               "};\n"
+                               " \n"
+                               "struct Base {};\n"
+                               " \n"
+                               "struct Derived : Base\n"
+                               "{\n"
+                               "    A a;\n"
+                               "};\n"
+                               " \n"
+                               "int main(void)\n"
+                               "{\n"
+                               "    Base* p = new Derived();\n"
+                               "    delete p;\n"
+                               "}");
+        ASSERT_EQUALS("[test.cpp:8]: (error) Class 'Base' which is inherited by class 'Derived' does not have a virtual destructor.\n", errout.str());
     }
 
     void virtualDestructor3() {
@@ -6529,10 +6530,17 @@ private:
                       "[test.cpp:3]: (style, inconclusive) Technically the member function 'S::g' can be const.\n"
                       "[test.cpp:4]: (style, inconclusive) Technically the member function 'S::h' can be const.\n",
                       errout.str());
+
+        checkConst("struct S {\n"
+                   "    bool f() { return p.get() != nullptr; }\n"
+                   "    std::shared_ptr<int> p;\n"
+                   "};\n");
+        ASSERT_EQUALS("[test.cpp:2]: (style, inconclusive) Technically the member function 'S::f' can be const.\n",
+                      errout.str());
     }
 
-    void const89() { // #11654
-        checkConst("struct S {\n"
+    void const89() {
+        checkConst("struct S {\n" // #11654
                    "    void f(bool b);\n"
                    "    int i;\n"
                    "};\n"
@@ -6552,6 +6560,39 @@ private:
                    "        f(i);\n"
                    "}\n");
         ASSERT_EQUALS("", errout.str());
+
+        checkConst("struct S {\n" // #11744
+                   "    S* p;\n"
+                   "    int f() {\n"
+                   "        if (p)\n"
+                   "            return 1 + p->f();\n"
+                   "        return 1;\n"
+                   "    }\n"
+                   "    int g(int i) {\n"
+                   "        if (i > 0)\n"
+                   "            return i + g(i - 1);\n"
+                   "        return 0;\n"
+                   "    }\n"
+                   "};\n");
+        ASSERT_EQUALS("[test.cpp:3]: (style, inconclusive) Technically the member function 'S::f' can be const.\n"
+                      "[test.cpp:8]: (performance, inconclusive) Technically the member function 'S::g' can be static (but you may consider moving to unnamed namespace).\n",
+                      errout.str());
+    }
+
+    void const90() { // #11637
+        checkConst("class S {};\n"
+                   "struct C {\n"
+                   "    C(const S*);\n"
+                   "    C(const S&);\n"
+                   "};\n"
+                   "class T {\n"
+                   "    S s;\n"
+                   "    void f1() { C c = C{ &s }; }\n"
+                   "    void f2() { C c = C{ s }; }\n"
+                   "};\n");
+        ASSERT_EQUALS("[test.cpp:8]: (style, inconclusive) Technically the member function 'T::f1' can be const.\n"
+                      "[test.cpp:9]: (style, inconclusive) Technically the member function 'T::f2' can be const.\n",
+                      errout.str());
     }
 
     void const_handleDefaultParameters() {

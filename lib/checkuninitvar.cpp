@@ -1244,7 +1244,7 @@ const Token* CheckUninitVar::isVariableUsage(bool cpp, const Token *vartok, cons
                 tok = tok->astParent();
         }
         if (Token::simpleMatch(tok->astParent(), "=")) {
-            if (astIsLhs(tok))
+            if (astIsLhs(tok) && (alloc == ARRAY || !derefValue || !derefValue->astOperand1() || !derefValue->astOperand1()->isCast()))
                 return nullptr;
             if (alloc != NO_ALLOC && astIsRhs(valueExpr))
                 return nullptr;
@@ -1698,7 +1698,7 @@ bool CheckUninitVar::analyseWholeProgram(const CTU::FileInfo *ctu, const std::li
 
     const std::map<std::string, std::list<const CTU::FileInfo::CallBase *>> callsMap = ctu->getCallsMap();
 
-    for (Check::FileInfo *fi1 : fileInfo) {
+    for (const Check::FileInfo* fi1 : fileInfo) {
         const MyFileInfo *fi = dynamic_cast<const MyFileInfo*>(fi1);
         if (!fi)
             continue;

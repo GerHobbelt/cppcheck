@@ -1049,8 +1049,11 @@ bool CheckOther::checkInnerScope(const Token *tok, const Variable* var, bool& us
         if (Token::Match(tok, "& %varid%", var->declarationId())) // Taking address of variable
             return false;
 
-        if (Token::Match(tok, "%varid% =", var->declarationId()))
+        if (Token::Match(tok, "%varid% =", var->declarationId())) {
+            if (!bFirstAssignment && var->isInit() && Token::findmatch(tok->tokAt(2), "%varid%", Token::findsimplematch(tok->tokAt(3), ";"), var->declarationId()))
+                return false;
             bFirstAssignment = true;
+        }
 
         if (!bFirstAssignment && Token::Match(tok, "* %varid%", var->declarationId())) // dereferencing means access to previous content
             return false;
@@ -1640,6 +1643,10 @@ void CheckOther::checkConstPointer()
                             continue;
                     }
                 }
+            }
+            else if (Token::simpleMatch(parent, "(")) {
+                if (parent->isCast() && parent->valueType() && var->valueType() && parent->valueType()->isConst(var->valueType()->pointer))
+                    continue;
             }
         }
         nonConstPointers.emplace_back(var);

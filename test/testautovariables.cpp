@@ -524,6 +524,18 @@ private:
               "    argv[0] = &a[0];\n"
               "}\n");
         ASSERT_EQUALS("", errout.str());
+
+        check("void f(char* c[]) {\n"
+              "    char a[] = \"abc\";\n"
+              "    c[0] = a;\n"
+              "}\n"
+              "void g(char* c[]) {\n"
+              "    std::string a = \"abc\";\n"
+              "    c[0] = a.data();\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:3]: (error) Address of local auto-variable assigned to a function parameter.\n"
+                      "[test.cpp:7]: (error) Address of local auto-variable assigned to a function parameter.\n",
+                      errout.str());
     }
 
     void testautovar_normal() {
@@ -2981,7 +2993,7 @@ private:
               "    return ptr.get();\n"
               "}\n");
         ASSERT_EQUALS(
-            "[test.cpp:4] -> [test.cpp:3] -> [test.cpp:4]: (error) Returning object that points to local variable 'ptr' that will be invalid when returning.\n",
+            "[test.cpp:4] -> [test.cpp:3] -> [test.cpp:4]: (error) Returning pointer to local variable 'ptr' that will be invalid when returning.\n",
             errout.str());
     }
     void danglingLifetime() {

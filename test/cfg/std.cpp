@@ -36,6 +36,7 @@
 #include <istream>
 #include <iterator>
 #include <map>
+#include <memory>
 #include <numeric>
 #include <string_view>
 #include <unordered_map>
@@ -4488,6 +4489,7 @@ void getline()
     in.close();
 }
 
+// cppcheck-suppress passedByValue
 void stream_write(std::ofstream& s, std::vector<char> v) {
     if (v.empty()) {}
     s.write(v.data(), v.size());
@@ -4633,18 +4635,26 @@ void stdspan()
     // cppcheck-suppress unreadVariable
     std::span spn2 = spn;
 
+    //cppcheck-suppress ignoredReturnValue
     spn.begin();
+    //cppcheck-suppress ignoredReturnValue
     spn.end();
+    //cppcheck-suppress ignoredReturnValue
     spn.rbegin();
-    spn.end();
 
+    //cppcheck-suppress ignoredReturnValue
     spn.front();
+    //cppcheck-suppress ignoredReturnValue
     spn.back();
     //cppcheck-suppress constStatement
     spn[0];
+    //cppcheck-suppress ignoredReturnValue
     spn.data();
+    //cppcheck-suppress ignoredReturnValue
     spn.size();
+    //cppcheck-suppress ignoredReturnValue
     spn.size_bytes();
+    //cppcheck-suppress ignoredReturnValue
     spn.empty();
     //cppcheck-suppress ignoredReturnValue
     spn.first(2);
@@ -4703,4 +4713,13 @@ void beginEnd()
     std::cend(arr);
     //cppcheck-suppress ignoredReturnValue
     std::crend(arr);
+}
+
+void smartPtr_get()
+{
+    std::unique_ptr<int> p;
+    //cppcheck-suppress ignoredReturnValue
+    p.get();
+    //cppcheck-suppress nullPointer
+    *p = 1;
 }

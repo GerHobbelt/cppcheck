@@ -105,6 +105,7 @@ private:
         TEST_CASE(varScope31);      // #11099
         TEST_CASE(varScope32);      // #11441
         TEST_CASE(varScope33);
+        TEST_CASE(varScope34);
 
         TEST_CASE(oldStylePointerCast);
         TEST_CASE(invalidPointerCast);
@@ -1612,6 +1613,19 @@ private:
                       "[test.cpp:31]: (style) The scope of the variable 'i' can be reduced.\n"
                       "[test.cpp:37]: (style) The scope of the variable 'k' can be reduced.\n",
                       errout.str());
+    }
+
+    void varScope34() { // #11742
+        check("void f() {\n"
+              "    bool b = false;\n"
+              "    int i = 1;\n"
+              "    for (int k = 0; k < 20; ++k) {\n"
+              "        b = !b;\n"
+              "        if (b)\n"
+              "            i++;\n"
+              "    }\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
     }
 
 #define checkOldStylePointerCast(code) checkOldStylePointerCast_(code, __FILE__, __LINE__)
@@ -3173,6 +3187,22 @@ private:
               "    }\n"
               "};\n");
         ASSERT_EQUALS("", errout.str());
+
+        check("struct A {\n" // #11225
+              "    A();\n"
+              "    virtual ~A();\n"
+              "};\n"
+              "struct B : A {};\n"
+              "void f(A* a) {\n"
+              "    const B* b = dynamic_cast<const B*>(a);\n"
+              "}\n"
+              "void g(A* a) {\n"
+              "    const B* b = (const B*)a;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:10]: (style) C-style pointer casting\n"
+                      "[test.cpp:6]: (style) Parameter 'a' can be declared as pointer to const\n"
+                      "[test.cpp:9]: (style) Parameter 'a' can be declared as pointer to const\n",
+                      errout.str());
     }
 
     void constParameterCallback() {

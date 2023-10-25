@@ -3025,21 +3025,21 @@ bool Function::returnsReference(const Function* function, bool unknown, bool inc
 
 bool Function::returnsPointer(const Function* function, bool unknown)
 {
-    return checkReturns(function, unknown, false, [](UNUSED const Token* defStart, const Token* defEnd) {
+    return checkReturns(function, unknown, false, [](const Token* /*defStart*/, const Token* defEnd) {
         return Token::simpleMatch(defEnd->previous(), "*");
     });
 }
 
 bool Function::returnsStandardType(const Function* function, bool unknown)
 {
-    return checkReturns(function, unknown, true, [](UNUSED const Token* defStart, const Token* defEnd) {
+    return checkReturns(function, unknown, true, [](const Token* /*defStart*/, const Token* defEnd) {
         return defEnd->previous() && defEnd->previous()->isStandardType();
     });
 }
 
 bool Function::returnsVoid(const Function* function, bool unknown)
 {
-    return checkReturns(function, unknown, true, [](UNUSED const Token* defStart, const Token* defEnd) {
+    return checkReturns(function, unknown, true, [](const Token* /*defStart*/, const Token* defEnd) {
         return Token::simpleMatch(defEnd->previous(), "void");
     });
 }
@@ -6552,6 +6552,11 @@ void SymbolDatabase::setValueType(Token* tok, const ValueType& valuetype, Source
                     setValueType(parent, *vt1);
                 return;
             }
+
+            if (vt1->isTypeEqual(vt2)) {
+                setValueType(parent, *vt1);
+                return;
+            }
         }
 
         if (vt1->pointer != 0U) {
@@ -7637,7 +7642,7 @@ void ValueType::setDebugPath(const Token* tok, SourceLocation ctx, SourceLocatio
     std::string file = ctx.file_name();
     if (file.empty())
         return;
-    std::string s = Path::stripDirectoryPart(file) + ":" + MathLib::toString(ctx.line()) + ": " + ctx.function_name() +
+    std::string s = Path::stripDirectoryPart(file) + ":" + std::to_string(ctx.line()) + ": " + ctx.function_name() +
                     " => " + local.function_name();
     debugPath.emplace_back(tok, std::move(s));
 }

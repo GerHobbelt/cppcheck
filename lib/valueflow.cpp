@@ -132,7 +132,7 @@ static void bailoutInternal(const std::string& type, TokenList &tokenlist, Error
         function = "(valueFlow)";
     std::list<ErrorMessage::FileLocation> callstack(1, ErrorMessage::FileLocation(tok, &tokenlist));
     ErrorMessage errmsg(callstack, tokenlist.getSourceFilePath(), Severity::debug,
-                        Path::stripDirectoryPart(file) + ":" + MathLib::toString(line) + ":" + function + " bailout: " + what, type, Certainty::normal);
+                        Path::stripDirectoryPart(file) + ":" + std::to_string(line) + ":" + function + " bailout: " + what, type, Certainty::normal);
     errorLogger->reportErr(errmsg);
 }
 
@@ -169,7 +169,7 @@ static void setSourceLocation(ValueFlow::Value& v,
     std::string file = ctx.file_name();
     if (file.empty())
         return;
-    std::string s = Path::stripDirectoryPart(file) + ":" + MathLib::toString(ctx.line()) + ": " + ctx.function_name() +
+    std::string s = Path::stripDirectoryPart(file) + ":" + std::to_string(ctx.line()) + ": " + ctx.function_name() +
                     " => " + local.function_name() + ": " + debugString(v);
     v.debugPath.emplace_back(tok, std::move(s));
 }
@@ -4256,28 +4256,33 @@ private:
     }
 };
 
-static bool isOwningVariables(const std::list<Variable>& vars, int depth = 10)
+static bool hasBorrowingVariables(const std::list<Variable>& vars, const std::vector<const Token*>& args, int depth = 10)
 {
     if (depth < 0)
         return false;
-    return vars.empty() || std::all_of(vars.cbegin(), vars.cend(), [&](const Variable& var) {
-        if (var.isReference() || var.isPointer())
-            return false;
+    return std::any_of(vars.cbegin(), vars.cend(), [&](const Variable& var) {
         const ValueType* vt = var.valueType();
         if (vt) {
-            if (vt->pointer > 0)
+            if (vt->pointer > 0 &&
+                std::none_of(args.begin(), args.end(), [vt](const Token* arg) {
+                return arg->valueType() && arg->valueType()->type == vt->type;
+            }))
                 return false;
+            if (vt->pointer > 0)
+                return true;
+            if (vt->reference != Reference::None)
+                return true;
             if (vt->isPrimitive())
-                return true;
+                return false;
             if (vt->isEnum())
-                return true;
+                return false;
             // TODO: Check container inner type
             if (vt->type == ValueType::CONTAINER && vt->container)
-                return !vt->container->view;
+                return vt->container->view;
             if (vt->typeScope)
-                return isOwningVariables(vt->typeScope->varlist, depth - 1);
+                return hasBorrowingVariables(vt->typeScope->varlist, args, depth - 1);
         }
-        return false;
+        return true;
     });
 }
 
@@ -4354,7 +4359,7 @@ static void valueFlowLifetimeUserConstructor(Token* tok,
             else
                 ls.byVal(tok, tokenlist, errorLogger, settings);
         });
-    } else if (!isOwningVariables(constructor->nestedIn->varlist)) {
+    } else if (hasBorrowingVariables(constructor->nestedIn->varlist, args)) {
         LifetimeStore::forEach(args,
                                "Passed to constructor of '" + name + "'.",
                                ValueFlow::Value::LifetimeKind::SubObject,
@@ -6671,7 +6676,7 @@ struct ConditionHandler {
             }
         });
     }
-    virtual ~ConditionHandler() {}
+    virtual ~ConditionHandler() = default;
     ConditionHandler(const ConditionHandler&) = default;
 protected:
     ConditionHandler() = default;
@@ -7608,7 +7613,7 @@ static void valueFlowSubFunction(TokenList& tokenlist, SymbolDatabase& symboldat
 
                 // Error path..
                 for (ValueFlow::Value &v : argvalues) {
-                    const std::string nr = MathLib::toString(argnr + 1) + getOrdinalText(argnr + 1);
+                    const std::string nr = std::to_string(argnr + 1) + getOrdinalText(argnr + 1);
 
                     v.errorPath.emplace_back(argtok,
                                              "Calling function '" +
@@ -9033,7 +9038,7 @@ static void valueFlowDynamicBufferSize(const TokenList& tokenlist, const SymbolD
                 continue;
 
             ValueFlow::Value value(sizeValue);
-            value.errorPath.emplace_back(tok->tokAt(2), "Assign " + tok->strAt(1) + ", buffer with size " + MathLib::toString(sizeValue));
+            value.errorPath.emplace_back(tok->tokAt(2), "Assign " + tok->strAt(1) + ", buffer with size " + std::to_string(sizeValue));
             value.valueType = ValueFlow::Value::ValueType::BUFFER_SIZE;
             value.setKnown();
             valueFlowForward(const_cast<Token*>(rhs), functionScope->bodyEnd, tok->next(), std::move(value), tokenlist, settings);
@@ -9184,12 +9189,12 @@ static void valueFlowSafeFunctions(TokenList& tokenlist, const SymbolDatabase& s
             std::list<ValueFlow::Value> argValues;
             if (isLow) {
                 argValues.emplace_back(low);
-                argValues.back().errorPath.emplace_back(arg.nameToken(), std::string(safeLow ? "Safe checks: " : "") + "Assuming argument has value " + MathLib::toString(low));
+                argValues.back().errorPath.emplace_back(arg.nameToken(), std::string(safeLow ? "Safe checks: " : "") + "Assuming argument has value " + std::to_string(low));
                 argValues.back().safe = safeLow;
             }
             if (isHigh) {
                 argValues.emplace_back(high);
-                argValues.back().errorPath.emplace_back(arg.nameToken(), std::string(safeHigh ? "Safe checks: " : "") + "Assuming argument has value " + MathLib::toString(high));
+                argValues.back().errorPath.emplace_back(arg.nameToken(), std::string(safeHigh ? "Safe checks: " : "") + "Assuming argument has value " + std::to_string(high));
                 argValues.back().safe = safeHigh;
             }
 
@@ -9286,7 +9291,7 @@ struct ValueFlowPass {
     virtual void run(const ValueFlowState& state) const = 0;
     // Returns true if pass needs C++
     virtual bool cpp() const = 0;
-    virtual ~ValueFlowPass() noexcept {}
+    virtual ~ValueFlowPass() noexcept = default;
 };
 
 struct ValueFlowPassRunner {

@@ -317,7 +317,7 @@ private:
         ASSERT_LOC(tokenizer.tokenize(istr, filename ? filename : "test.cpp"), file, line);
 
         // Check..
-        runChecks<CheckOther>(&tokenizer, settings, this);
+        runChecks<CheckOther>(tokenizer, this);
 
         (void)runSimpleChecks; // TODO Remove this
     }
@@ -358,7 +358,7 @@ private:
         tokenizer.simplifyTokens1("");
 
         // Check..
-        runChecks<CheckOther>(&tokenizer, settings, this);
+        runChecks<CheckOther>(tokenizer, this);
     }
 
     void checkInterlockedDecrement(const char code[]) {
@@ -11290,6 +11290,12 @@ private:
               "    memcpy(&a[0], &a[4], 4u);\n"
               "}");
         ASSERT_EQUALS("", errout.str());
+
+        check("_Bool a[10];\n" // #10350
+              "void foo() {\n"
+              "    memcpy(&a[5], &a[4], 2u * sizeof(a[0]));\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:3]: (error) Overlapping read/write in memcpy() is undefined behavior\n", errout.str());
 
         // wmemcpy
         check("void foo() {\n"

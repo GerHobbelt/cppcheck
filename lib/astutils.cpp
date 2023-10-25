@@ -341,7 +341,7 @@ static bool match(const Token *tok, const std::string &rhs)
 {
     if (tok->str() == rhs)
         return true;
-    if (!tok->varId() && tok->hasKnownIntValue() && MathLib::toString(tok->values().front().intvalue) == rhs)
+    if (!tok->varId() && tok->hasKnownIntValue() && std::to_string(tok->values().front().intvalue) == rhs)
         return true;
     return false;
 }
@@ -900,9 +900,16 @@ bool extractForLoopValues(const Token *forToken,
     if (!initExpr || !initExpr->isBinaryOp() || initExpr->str() != "=" || !Token::Match(initExpr->astOperand1(), "%var%"))
         return false;
     std::vector<MathLib::bigint> minInitValue = getMinValue(ValueFlow::makeIntegralInferModel(), initExpr->astOperand2()->values());
+    if (minInitValue.empty()) {
+        const ValueFlow::Value* v = initExpr->astOperand2()->getMinValue(true);
+        if (v)
+            minInitValue.push_back(v->intvalue);
+    }
+    if (minInitValue.empty())
+        return false;
     varid = initExpr->astOperand1()->varId();
     knownInitValue = initExpr->astOperand2()->hasKnownIntValue();
-    initValue = minInitValue.empty() ? 0 : minInitValue.front();
+    initValue = minInitValue.front();
     partialCond = Token::Match(condExpr, "%oror%|&&");
     visitAstNodes(condExpr, [varid, &condExpr](const Token *tok) {
         if (Token::Match(tok, "%oror%|&&"))
@@ -1455,6 +1462,19 @@ bool isUsedAsBool(const Token* const tok)
 static bool astIsBoolLike(const Token* tok)
 {
     return astIsBool(tok) || isUsedAsBool(tok);
+}
+
+bool isBooleanFuncArg(const Token* tok) {
+    if (tok->variable() && tok->variable()->valueType() && tok->variable()->valueType()->type == ValueType::BOOL) // skip trivial case: bool passed as bool
+        return false;
+    int argn{};
+    const Token* ftok = getTokenArgumentFunction(tok, argn);
+    if (!ftok)
+        return false;
+    std::vector<const Variable*> argvars = getArgumentVars(ftok, argn);
+    if (argvars.size() != 1)
+        return false;
+    return !argvars[0]->isReference() && argvars[0]->valueType() && argvars[0]->valueType()->type == ValueType::BOOL;
 }
 
 bool isSameExpression(bool cpp, bool macro, const Token *tok1, const Token *tok2, const Library& library, bool pure, bool followVar, ErrorPath* errors)

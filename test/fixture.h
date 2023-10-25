@@ -125,10 +125,10 @@ protected:
     }
 
     template<typename T>
-    static void runChecks(const Tokenizer *tokenizer, const Settings *settings, ErrorLogger *errorLogger)
+    static void runChecks(const Tokenizer &tokenizer, ErrorLogger *errorLogger)
     {
         T& check = getCheck<T>();
-        check.runChecks(tokenizer, settings, errorLogger);
+        check.runChecks(tokenizer, errorLogger);
     }
 
     class SettingsBuilder
@@ -241,7 +241,6 @@ public:
     const std::string classname;
 
     explicit TestFixture(const char * const _name);
-    ~TestFixture() override {}
 
     static std::size_t runTests(const options& args);
 };

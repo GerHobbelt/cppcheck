@@ -43,6 +43,7 @@ ErrorMessage::ErrorMessage()
     : severity(Severity::none), cwe(0U), certainty(Certainty::normal), hash(0)
 {}
 
+// TODO: id and msg are swapped compared to other calls
 ErrorMessage::ErrorMessage(std::list<FileLocation> callStack, std::string file1, Severity::SeverityType severity, const std::string &msg, std::string id, Certainty certainty) :
     callStack(std::move(callStack)), // locations for this error message
     id(std::move(id)),               // set the message id
@@ -57,7 +58,7 @@ ErrorMessage::ErrorMessage(std::list<FileLocation> callStack, std::string file1,
 }
 
 
-
+// TODO: id and msg are swapped compared to other calls
 ErrorMessage::ErrorMessage(std::list<FileLocation> callStack, std::string file1, Severity::SeverityType severity, const std::string &msg, std::string id, const CWE &cwe, Certainty certainty) :
     callStack(std::move(callStack)), // locations for this error message
     id(std::move(id)),               // set the message id
@@ -211,22 +212,6 @@ void ErrorMessage::setmsg(const std::string &msg)
     }
 }
 
-Suppressions::ErrorMessage ErrorMessage::toSuppressionsErrorMessage() const
-{
-    Suppressions::ErrorMessage ret;
-    ret.hash = hash;
-    ret.errorId = id;
-    if (!callStack.empty()) {
-        ret.setFileName(callStack.back().getfile(false));
-        ret.lineNumber = callStack.back().line;
-    } else {
-        ret.lineNumber = Suppressions::Suppression::NO_LINE;
-    }
-    ret.certainty = certainty;
-    ret.symbolNames = mSymbolNames;
-    return ret;
-}
-
 static void serializeString(std::string &oss, const std::string & str)
 {
     oss += std::to_string(str.length());
@@ -240,8 +225,8 @@ std::string ErrorMessage::serialize() const
     std::string oss;
     serializeString(oss, id);
     serializeString(oss, Severity::toString(severity));
-    serializeString(oss, MathLib::toString(cwe.id));
-    serializeString(oss, MathLib::toString(hash));
+    serializeString(oss, std::to_string(cwe.id));
+    serializeString(oss, std::to_string(hash));
     serializeString(oss, file0);
     if (certainty == Certainty::inconclusive) {
         const std::string text("inconclusive");
@@ -461,7 +446,7 @@ std::string ErrorMessage::toXML() const
     if (cwe.id)
         printer.PushAttribute("cwe", cwe.id);
     if (hash)
-        printer.PushAttribute("hash", MathLib::toString(hash).c_str());
+        printer.PushAttribute("hash", std::to_string(hash).c_str());
     if (certainty == Certainty::inconclusive)
         printer.PushAttribute("inconclusive", "true");
 
@@ -624,14 +609,14 @@ std::string ErrorMessage::toString(bool verbose, const std::string &templateForm
         pos1 = result.find("{inconclusive:", pos1);
     }
     findAndReplace(result, "{severity}", Severity::toString(severity));
-    findAndReplace(result, "{cwe}", MathLib::toString(cwe.id));
+    findAndReplace(result, "{cwe}", std::to_string(cwe.id));
     findAndReplace(result, "{message}", verbose ? mVerboseMessage : mShortMessage);
     if (!callStack.empty()) {
         if (result.find("{callstack}") != std::string::npos)
             findAndReplace(result, "{callstack}", ErrorLogger::callStackToString(callStack));
         findAndReplace(result, "{file}", callStack.back().getfile());
-        findAndReplace(result, "{line}", MathLib::toString(callStack.back().line));
-        findAndReplace(result, "{column}", MathLib::toString(callStack.back().column));
+        findAndReplace(result, "{line}", std::to_string(callStack.back().line));
+        findAndReplace(result, "{column}", std::to_string(callStack.back().column));
         if (result.find("{code}") != std::string::npos) {
             const std::string::size_type pos = result.find('\r');
             const char *endl;
@@ -660,8 +645,8 @@ std::string ErrorMessage::toString(bool verbose, const std::string &templateForm
             std::string text = templateLocation;
 
             findAndReplace(text, "{file}", fileLocation.getfile());
-            findAndReplace(text, "{line}", MathLib::toString(fileLocation.line));
-            findAndReplace(text, "{column}", MathLib::toString(fileLocation.column));
+            findAndReplace(text, "{line}", std::to_string(fileLocation.line));
+            findAndReplace(text, "{column}", std::to_string(fileLocation.column));
             findAndReplace(text, "{info}", fileLocation.getinfo().empty() ? mShortMessage : fileLocation.getinfo());
             if (text.find("{code}") != std::string::npos) {
                 const std::string::size_type pos = text.find('\r');
@@ -679,39 +664,6 @@ std::string ErrorMessage::toString(bool verbose, const std::string &templateForm
     }
 
     return result;
-}
-
-bool ErrorLogger::reportUnmatchedSuppressions(const std::list<Suppressions::Suppression> &unmatched)
-{
-    bool err = false;
-    // Report unmatched suppressions
-    for (const Suppressions::Suppression &s : unmatched) {
-        // don't report "unmatchedSuppression" as unmatched
-        if (s.errorId == "unmatchedSuppression")
-            continue;
-
-        // check if this unmatched suppression is suppressed
-        bool suppressed = false;
-        for (const Suppressions::Suppression &s2 : unmatched) {
-            if (s2.errorId == "unmatchedSuppression") {
-                if ((s2.fileName.empty() || s2.fileName == "*" || s2.fileName == s.fileName) &&
-                    (s2.lineNumber == Suppressions::Suppression::NO_LINE || s2.lineNumber == s.lineNumber)) {
-                    suppressed = true;
-                    break;
-                }
-            }
-        }
-
-        if (suppressed)
-            continue;
-
-        std::list<ErrorMessage::FileLocation> callStack;
-        if (!s.fileName.empty())
-            callStack.emplace_back(s.fileName, s.lineNumber, 0);
-        reportErr(ErrorMessage(callStack, emptyString, Severity::information, "Unmatched suppression: " + s.errorId, "unmatchedSuppression", Certainty::normal));
-        err = true;
-    }
-    return err;
 }
 
 std::string ErrorLogger::callStackToString(const std::list<ErrorMessage::FileLocation> &callStack)

@@ -112,6 +112,7 @@ private:
         TEST_CASE(deallocuse8); // #1765
         TEST_CASE(deallocuse9); // #9781
         TEST_CASE(deallocuse10);
+        TEST_CASE(deallocuse11); // #8302
 
         TEST_CASE(doublefree1);
         TEST_CASE(doublefree2);
@@ -193,6 +194,7 @@ private:
         TEST_CASE(return7); // #9343 return (uint8_t*)x
         TEST_CASE(return8);
         TEST_CASE(return9);
+        TEST_CASE(return10);
 
         // General tests: variable type, allocation type, etc
         TEST_CASE(test1);
@@ -838,6 +840,22 @@ private:
               "    return p[1];\n"
               "}\n");
         ASSERT_EQUALS("[test.c:2] -> [test.c:3]: (error) Returning/dereferencing 'p' after it is deallocated / released\n", errout.str());
+    }
+
+    void deallocuse11() { // #8302
+        check("int f() {\n"
+              "  int *array = new int[42];\n"
+              "  delete [] array;\n"
+              "  return array[1];" // <<
+              "}", true);
+        ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:4]: (error) Returning/dereferencing 'array' after it is deallocated / released\n", errout.str());
+
+        check("int f() {\n"
+              "  int *array = (int*)malloc(40);\n"
+              "  free(array);\n"
+              "  return array[1];" // <<
+              "}");
+        ASSERT_EQUALS("[test.c:3] -> [test.c:4]: (error) Returning/dereferencing 'array' after it is deallocated / released\n", errout.str());
     }
 
     void doublefree1() {  // #3895
@@ -2373,6 +2391,30 @@ private:
               "    return x + sizeof (struct alloc);\n"
               "}", true);
         ASSERT_EQUALS("", errout.str());
+    }
+
+    void return10() {
+        check("char f() {\n" // #11758
+              "    char* p = (char*)malloc(1);\n"
+              "    p[0] = 'x';\n"
+              "    return p[0];\n"
+              "}");
+        ASSERT_EQUALS("[test.c:4]: (error) Memory leak: p\n", errout.str());
+
+        check("struct S { int f(); };\n" // #11746
+              "int g() {\n"
+              "    S* s = new S;\n"
+              "    delete s;\n"
+              "    return s->f();\n"
+              "}", true);
+        ASSERT_EQUALS("[test.cpp:4] -> [test.cpp:5]: (error) Returning/dereferencing 's' after it is deallocated / released\n", errout.str());
+
+        check("int f() {\n"
+              "    int* p = new int(3);\n"
+              "    delete p;\n"
+              "    return *p;\n"
+              "}", true);
+        ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:4]: (error) Returning/dereferencing 'p' after it is deallocated / released\n", errout.str());
     }
 
     void test1() {

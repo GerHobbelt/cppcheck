@@ -3489,6 +3489,20 @@ private:
             ASSERT_EQUALS(true, tok1->link() == tok2);
             ASSERT_EQUALS(true, tok2->link() == tok1);
         }
+
+        { // #11275
+            const char code[] = "void f() {\n"
+                                "    []<typename T>() {};\n"
+                                "}\n";
+            errout.str("");
+            Tokenizer tokenizer(&settings0, this);
+            std::istringstream istr(code);
+            ASSERT(tokenizer.tokenize(istr, "test.cpp"));
+            const Token* tok1 = Token::findsimplematch(tokenizer.tokens(), "< T");
+            const Token* tok2 = Token::findsimplematch(tok1, "> (");
+            ASSERT_EQUALS(true, tok1->link() == tok2);
+            ASSERT_EQUALS(true, tok2->link() == tok1);
+        }
     }
 
     void simplifyString() {
@@ -6178,6 +6192,10 @@ private:
         ASSERT_EQUALS("intnewdelete", testAst("void f() { delete new int; }"));
         ASSERT_EQUALS("pint3[new1+=", testAst("p = (new int[3]) + 1;")); // #11327
         ASSERT_EQUALS("aType2[T1T2,{new=", testAst("a = new Type *[2] {T1, T2};")); // #11745
+        ASSERT_EQUALS("pSthis(new=", testAst("p = new S*(this);")); // #10809
+        ASSERT_EQUALS("pint0{new=", testAst("p = new int*{ 0 };"));
+        ASSERT_EQUALS("pint5[{new=", testAst("p = new int* [5]{};"));
+        ASSERT_EQUALS("pint5[0{new=", testAst("p = new int* [5]{ 0 };"));
 
         // placement new
         ASSERT_EQUALS("X12,3,(new ab,c,", testAst("new (a,b,c) X(1,2,3);"));
@@ -6266,6 +6284,7 @@ private:
         ASSERT_EQUALS("fori10=i{;;( i--", testAst("for (i=10;i;({i--;}) ) {}"));
         ASSERT_EQUALS("c{1{,{2.3f{,(",
                       testAst("c({{}, {1}}, {2.3f});"));
+        ASSERT_EQUALS("x{{= e0= assert0(", testAst("x = {({ int e = 0; assert(0); e; })};"));
 
         // function pointer
         TODO_ASSERT_EQUALS("todo", "va_argapvoid((,(*0=", testAst("*va_arg(ap, void(**) ()) = 0;"));
@@ -7263,6 +7282,12 @@ private:
                                              "void c() {\n"
                                              "  a bar;\n"
                                              "  (decltype(bar.b)::value_type){};\n"
+                                             "}\n"));
+
+        ASSERT_NO_THROW(tokenizeAndStringify("struct S { char c{}; };\n" // #11400
+                                             "void takesFunc(auto f) {}\n"
+                                             "int main() { \n"
+                                             "    takesFunc([func = [](S s) { return s.c; }] {});\n"
                                              "}\n"));
     }
     void checkIfCppCast() {

@@ -4711,6 +4711,17 @@ private:
                "void f() { string str = to_string(1); }\n";
         expected = "void f ( ) { std :: string str ; str = std :: to_string ( 1 ) ; }";
         ASSERT_EQUALS(expected, tokenizeAndStringify(code));
+
+        code = "using namespace std;\n"
+               "vector<int>&& f(vector<int>& v) {\n"
+               "    v.push_back(1);\n"
+               "    return move(v);\n"
+               "}\n";
+        expected = "std :: vector < int > && f ( std :: vector < int > & v ) {\n"
+                   "v . push_back ( 1 ) ;\n"
+                   "return std :: move ( v ) ;\n"
+                   "}";
+        ASSERT_EQUALS(expected, tokenizeAndStringify(code));
     }
 
     void microsoftMemory() {
@@ -6464,6 +6475,24 @@ private:
         ASSERT_EQUALS("AB: abc+=", testAst("struct A : public B<C*> { void f() { a=b+c; } };"));
 
         ASSERT_EQUALS("xfts(=", testAst("; auto x = f(ts...);"));
+
+        ASSERT_EQUALS("da((new= ifd(", testAst("template <typename a, typename... b>\n" // #10199
+                                               "void c(b... e) {\n"
+                                               "    a d = new a((e)...);\n"
+                                               "    if (d) {}\n"
+                                               "}\n"));
+
+        ASSERT_EQUALS("ad*astdforward::e((new= ifd(", testAst("struct a {};\n" // #11103
+                                                              "template <class... b> void c(b... e) {\n"
+                                                              "    a* d = new a(std::forward<b>(e)...);\n"
+                                                              "    if (d) {}\n"
+                                                              "}\n"));
+
+        ASSERT_EQUALS("stddir::Args...&&, dir\"abc\"+= dirconcatstdforward::args((+return",
+                      testAst("template <typename ...Args> std::string concat(std::string dir, Args&& ...args) {\n" // #10492
+                              "    dir += \"abc\";\n"
+                              "    return dir + concat(std::forward<Args>(args)...);\n"
+                              "}\n"));
 
         // #11369
         ASSERT_NO_THROW(tokenizeAndStringify("int a;\n"

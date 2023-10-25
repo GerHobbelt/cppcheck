@@ -1131,15 +1131,13 @@ void Tokenizer::simplifyTypedef()
 
 void Tokenizer::simplifyTypedefCpp()
 {
-    std::vector<Space> spaceInfo;
     bool isNamespace = false;
-    std::string className;
-    std::string fullClassName;
+    std::string className, fullClassName;
     bool hasClass = false;
     bool goback = false;
 
     // add global namespace
-    spaceInfo.emplace_back(/*Space{}*/);
+    std::vector<Space> spaceInfo(1);
 
     // Convert "using a::b;" to corresponding typedef statements
     simplifyUsingToTypedef();
@@ -5013,8 +5011,7 @@ void Tokenizer::setVarIdPass2()
         const std::string &scopeName(getScopeName(scopeInfo));
         const std::string scopeName2(scopeName.empty() ? std::string() : (scopeName + " :: "));
 
-        std::list<const Token *> classnameTokens;
-        classnameTokens.push_back(tok->next());
+        std::list<const Token*> classnameTokens{ tok->next() };
         Token* tokStart = tok->tokAt(2);
         while (Token::Match(tokStart, ":: %name%") || tokStart->str() == "<") {
             if (tokStart->str() == "<") {
@@ -9766,7 +9763,7 @@ void Tokenizer::simplifyMicrosoftStringFunctions()
     if (!mSettings->platform.isWindows())
         return;
 
-    const bool ansi = mSettings->platform.type == cppcheck::Platform::Type::Win32A;
+    const bool ansi = mSettings->platform.type == Platform::Type::Win32A;
     for (Token *tok = list.front(); tok; tok = tok->next()) {
         if (tok->strAt(1) != "(")
             continue;
@@ -10274,13 +10271,13 @@ void Tokenizer::prepareTernaryOpForAST()
     }
 }
 
-void Tokenizer::reportError(const Token* tok, const Severity::SeverityType severity, const std::string& id, const std::string& msg, bool inconclusive) const
+void Tokenizer::reportError(const Token* tok, const Severity severity, const std::string& id, const std::string& msg, bool inconclusive) const
 {
     const std::list<const Token*> callstack(1, tok);
     reportError(callstack, severity, id, msg, inconclusive);
 }
 
-void Tokenizer::reportError(const std::list<const Token*>& callstack, Severity::SeverityType severity, const std::string& id, const std::string& msg, bool inconclusive) const
+void Tokenizer::reportError(const std::list<const Token*>& callstack, Severity severity, const std::string& id, const std::string& msg, bool inconclusive) const
 {
     const ErrorMessage errmsg(callstack, &list, severity, id, msg, inconclusive ? Certainty::inconclusive : Certainty::normal);
     if (mErrorLogger)

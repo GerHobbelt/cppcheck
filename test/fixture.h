@@ -118,7 +118,7 @@ protected:
     static T& getCheck()
     {
         for (Check *check : Check::instances()) {
-            //cppcheck-suppress [constVariablePointer, useStlAlgorithm] - TODO: fix constVariable FP
+            //cppcheck-suppress useStlAlgorithm
             if (T* c = dynamic_cast<T*>(check))
                 return *c;
         }
@@ -138,7 +138,7 @@ protected:
         explicit SettingsBuilder(const TestFixture &fixture) : fixture(fixture) {}
         SettingsBuilder(const TestFixture &fixture, Settings settings) : fixture(fixture), settings(std::move(settings)) {}
 
-        SettingsBuilder& severity(Severity::SeverityType sev, bool b = true) {
+        SettingsBuilder& severity(Severity sev, bool b = true) {
             if (REDUNDANT_CHECK && settings.severity.isEnabled(sev) == b)
                 throw std::runtime_error("redundant setting: severity");
             settings.severity.setEnabled(sev, b);
@@ -200,7 +200,7 @@ protected:
 
         SettingsBuilder& libraryxml(const char xmldata[], std::size_t len);
 
-        SettingsBuilder& platform(cppcheck::Platform::Type type);
+        SettingsBuilder& platform(Platform::Type type);
 
         SettingsBuilder& checkConfiguration() {
             if (REDUNDANT_CHECK && settings.checkConfiguration)
@@ -274,6 +274,6 @@ extern std::ostringstream output;
 #define LOAD_LIB_2_EXE( LIB, NAME, EXE ) do { if (((LIB).load((EXE), NAME).errorcode != Library::ErrorCode::OK)) throw std::runtime_error("library '" + std::string(NAME) + "' not found"); } while (false)
 #define LOAD_LIB_2( LIB, NAME ) LOAD_LIB_2_EXE(LIB, NAME, exename.c_str())
 
-#define PLATFORM( P, T ) do { std::string errstr; assertEquals(__FILE__, __LINE__, true, P.set(cppcheck::Platform::toString(T), errstr, {exename}), errstr); } while (false)
+#define PLATFORM( P, T ) do { std::string errstr; assertEquals(__FILE__, __LINE__, true, P.set(Platform::toString(T), errstr, {exename}), errstr); } while (false)
 
 #endif // fixtureH

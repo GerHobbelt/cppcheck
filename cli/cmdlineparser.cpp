@@ -618,9 +618,9 @@ bool CmdLineParser::parseFromArgs(int argc, const char* const argv[])
                 // these are loaded via external files and thus have Settings::PlatformFile set instead.
                 // override the type so they behave like the regular platforms.
                 if (platform == "unix32-unsigned")
-                    mSettings.platform.type = cppcheck::Platform::Type::Unix32;
+                    mSettings.platform.type = Platform::Type::Unix32;
                 else if (platform == "unix64-unsigned")
-                    mSettings.platform.type = cppcheck::Platform::Type::Unix64;
+                    mSettings.platform.type = Platform::Type::Unix64;
             }
 
             // Write results in results.plist
@@ -791,7 +791,7 @@ bool CmdLineParser::parseFromArgs(int argc, const char* const argv[])
                         if (message) {
                             const tinyxml2::XMLElement *severity = message->FirstChildElement("severity");
                             if (severity)
-                                rule.severity = Severity::fromString(severity->GetText());
+                                rule.severity = severityFromString(severity->GetText());
 
                             const tinyxml2::XMLElement *id = message->FirstChildElement("id");
                             if (id)

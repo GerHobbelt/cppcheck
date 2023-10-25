@@ -895,7 +895,7 @@ namespace {
         bool canReplace(const Token* tok) {
             if (mNameToken == tok)
                 return false;
-            if (!Token::Match(tok->previous(), "%name%|;|{|}|(|,|<") && !Token::Match(tok, "%name% ("))
+            if (!Token::Match(tok->previous(), "%name%|;|{|}|(|,|<") && !Token::Match(tok->previous(), "!!. %name% ("))
                 return false;
             if (!Token::Match(tok, "%name% %name%|*|&|&&|;|(|)|,|::")) {
                 if (Token::Match(tok->previous(), "( %name% =") && Token::Match(tok->linkAt(-1), ") %name%|{") && !tok->tokAt(-2)->isKeyword())
@@ -3251,8 +3251,14 @@ bool Tokenizer::simplifyTokens1(const std::string &configuration)
 
     mConfiguration = configuration;
 
-    if (!simplifyTokenList1(list.getFiles().front().c_str()))
-        return false;
+    if (mTimerResults) {
+        Timer t("Tokenizer::simplifyTokens1::simplifyTokenList1", mSettings->showtime, mTimerResults);
+        if (!simplifyTokenList1(list.getFiles().front().c_str()))
+            return false;
+    } else {
+        if (!simplifyTokenList1(list.getFiles().front().c_str()))
+            return false;
+    }
 
     if (mTimerResults) {
         Timer t("Tokenizer::simplifyTokens1::createAst", mSettings->showtime, mTimerResults);
@@ -5298,7 +5304,7 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
 
     // Bail out if code is garbage
     if (mTimerResults) {
-        Timer t("Tokenizer::tokenize::findGarbageCode", mSettings->showtime, mTimerResults);
+        Timer t("Tokenizer::simplifyTokens1::simplifyTokenList1::findGarbageCode", mSettings->showtime, mTimerResults);
         findGarbageCode();
     } else {
         findGarbageCode();
@@ -5469,7 +5475,7 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
 
     // typedef..
     if (mTimerResults) {
-        Timer t("Tokenizer::tokenize::simplifyTypedef", mSettings->showtime, mTimerResults);
+        Timer t("Tokenizer::simplifyTokens1::simplifyTokenList1::simplifyTypedef", mSettings->showtime, mTimerResults);
         simplifyTypedef();
     } else {
         simplifyTypedef();
@@ -5577,7 +5583,7 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
     if (!isC()) {
         // Handle templates..
         if (mTimerResults) {
-            Timer t("Tokenizer::tokenize::simplifyTemplates", mSettings->showtime, mTimerResults);
+            Timer t("Tokenizer::simplifyTokens1::simplifyTokenList1::simplifyTemplates", mSettings->showtime, mTimerResults);
             simplifyTemplates();
         } else {
             simplifyTemplates();
@@ -5607,7 +5613,7 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
     validate(); // #6772 "segmentation fault (invalid code) in Tokenizer::setVarId"
 
     if (mTimerResults) {
-        Timer t("Tokenizer::tokenize::setVarId", mSettings->showtime, mTimerResults);
+        Timer t("Tokenizer::simplifyTokens1::simplifyTokenList1::setVarId", mSettings->showtime, mTimerResults);
         setVarId();
     } else {
         setVarId();
@@ -5719,6 +5725,8 @@ void Tokenizer::dump(std::ostream &out) const
     // The idea is not that this will be readable for humans. It's a
     // data dump that 3rd party tools could load and get useful info from.
 
+    std::set<const Library::Container*> containers;
+
     // tokens..
     out << "  <tokenlist>" << std::endl;
     for (const Token *tok = list.front(); tok; tok = tok->next()) {
@@ -5798,6 +5806,7 @@ void Tokenizer::dump(std::ostream &out) const
             const std::string vt = tok->valueType()->dump();
             if (!vt.empty())
                 out << ' ' << vt;
+            containers.insert(tok->valueType()->container);
         }
         if (!tok->varId() && tok->scope()->isExecutable() && Token::Match(tok, "%name% (")) {
             if (mSettings->library.isnoreturn(tok))
@@ -5809,6 +5818,18 @@ void Tokenizer::dump(std::ostream &out) const
     out << "  </tokenlist>" << std::endl;
 
     mSymbolDatabase->printXml(out);
+
+    containers.erase(nullptr);
+    if (!containers.empty()) {
+        out << "  <containers>\n";
+        for (const Library::Container* c: containers) {
+            out << "    <container id=\"" << c << "\" array-like-index-op=\""
+                << (c->arrayLike_indexOp ? "true" : "false") << "\" "
+                << "std-string-like=\"" << (c->stdStringLike ? "true" : "false") << "\"/>\n";
+        }
+        out << "  </containers>\n";
+    }
+
     if (list.front())
         list.front()->printValueFlow(true, out);
 
@@ -8804,36 +8825,35 @@ void Tokenizer::simplifyCPPAttribute()
     if (mSettings->standards.cpp < Standards::CPP11 || isC())
         return;
 
-    for (Token *tok = list.front(); tok; tok = tok->next()) {
+    for (Token *tok = list.front(); tok;) {
         if (!isCPPAttribute(tok) && !isAlignAttribute(tok)) {
+            tok = tok->next();
             continue;
         }
         if (isCPPAttribute(tok)) {
             if (Token::findsimplematch(tok->tokAt(2), "noreturn", tok->link())) {
-                Token * head = skipCPPOrAlignAttribute(tok);
+                Token * head = skipCPPOrAlignAttribute(tok)->next();
                 while (isCPPAttribute(head) || isAlignAttribute(head))
-                    head = skipCPPOrAlignAttribute(head);
-                head = head->next();
+                    head = skipCPPOrAlignAttribute(head)->next();
                 while (Token::Match(head, "%name%|::|*|&|<|>|,")) // skip return type
                     head = head->next();
                 if (head && head->str() == "(" && isFunctionHead(head, "{|;")) {
                     head->previous()->isAttributeNoreturn(true);
                 }
             } else if (Token::findsimplematch(tok->tokAt(2), "nodiscard", tok->link())) {
-                Token * head = skipCPPOrAlignAttribute(tok);
+                Token * head = skipCPPOrAlignAttribute(tok)->next();
                 while (isCPPAttribute(head) || isAlignAttribute(head))
-                    head = skipCPPOrAlignAttribute(head);
-                head = head->next();
+                    head = skipCPPOrAlignAttribute(head)->next();
                 while (Token::Match(head, "%name%|::|*|&|<|>|,"))
                     head = head->next();
                 if (head && head->str() == "(" && isFunctionHead(head, "{|;")) {
                     head->previous()->isAttributeNodiscard(true);
                 }
             } else if (Token::findsimplematch(tok->tokAt(2), "maybe_unused", tok->link())) {
-                Token* head = skipCPPOrAlignAttribute(tok);
+                Token* head = skipCPPOrAlignAttribute(tok)->next();
                 while (isCPPAttribute(head) || isAlignAttribute(head))
-                    head = skipCPPOrAlignAttribute(head);
-                head->next()->isAttributeMaybeUnused(true);
+                    head = skipCPPOrAlignAttribute(head)->next();
+                head->isAttributeMaybeUnused(true);
             } else if (Token::Match(tok->previous(), ") [ [ expects|ensures|assert default|audit|axiom| : %name% <|<=|>|>= %num% ] ]")) {
                 const Token *vartok = tok->tokAt(4);
                 if (vartok->str() == ":")
@@ -8863,14 +8883,7 @@ void Tokenizer::simplifyCPPAttribute()
             }
         }
         Token::eraseTokens(tok, skipCPPOrAlignAttribute(tok)->next());
-        // fix iterator after removing
-        if (tok->previous()) {
-            tok = tok->previous();
-            tok->next()->deleteThis();
-        } else {
-            tok->deleteThis();
-            tok = list.front();
-        }
+        tok->deleteThis();
     }
 }
 

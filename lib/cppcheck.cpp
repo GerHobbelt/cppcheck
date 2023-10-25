@@ -902,10 +902,7 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
                 checkRawTokens(tokenizer);
 
                 // Simplify tokens into normal form, skip rest of iteration if failed
-                Timer timer2("Tokenizer::simplifyTokens1", mSettings.showtime, &s_timerResults);
-                const bool result = tokenizer.simplifyTokens1(mCurrentConfig);
-                timer2.stop();
-                if (!result)
+                if (!tokenizer.simplifyTokens1(mCurrentConfig))
                     continue;
 
                 // dump xml if --dump
@@ -1652,25 +1649,26 @@ void CppCheck::reportProgress(const std::string &filename, const char stage[], c
     mErrorLogger.reportProgress(filename, stage, value);
 }
 
-void CppCheck::getErrorMessages()
+void CppCheck::getErrorMessages(ErrorLogger &errorlogger)
 {
-    Settings s(mSettings);
+    Settings s;
     s.severity.enable(Severity::warning);
     s.severity.enable(Severity::style);
     s.severity.enable(Severity::portability);
     s.severity.enable(Severity::performance);
     s.severity.enable(Severity::information);
 
-    purgedConfigurationMessage(emptyString,emptyString);
-
-    mTooManyConfigs = true;
-    tooManyConfigsError(emptyString,0U);
+    CppCheck cppcheck(errorlogger, true, nullptr);
+    cppcheck.purgedConfigurationMessage(emptyString,emptyString);
+    cppcheck.mTooManyConfigs = true;
+    cppcheck.tooManyConfigsError(emptyString,0U);
+    // TODO: add functions to get remaining error messages
 
     // call all "getErrorMessages" in all registered Check classes
     for (std::list<Check *>::const_iterator it = Check::instances().cbegin(); it != Check::instances().cend(); ++it)
-        (*it)->getErrorMessages(this, &s);
+        (*it)->getErrorMessages(&errorlogger, &s);
 
-    Preprocessor::getErrorMessages(this, &s);
+    Preprocessor::getErrorMessages(&errorlogger, &s);
 }
 
 void CppCheck::analyseClangTidy(const ImportProject::FileSettings &fileSettings)

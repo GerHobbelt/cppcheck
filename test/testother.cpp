@@ -11033,6 +11033,18 @@ private:
               "}");
         ASSERT_EQUALS("", errout.str());
 
+        // #11894
+        check("struct S {\n"
+              "    int *p, n;\n"
+              "};\n"
+              "S* g() {\n"
+              "    S* s = static_cast<S*>(calloc(1, sizeof(S)));\n"
+              "    s->n = 100;\n"
+              "    s->p = static_cast<int*>(malloc(s->n * sizeof(int)));\n"
+              "    return s;\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+
         // #11679
         check("bool g(int);\n"
               "void h(int);\n"
@@ -11041,6 +11053,35 @@ private:
               "    if (g(k(i))) {}\n"
               "}\n");
         ASSERT_EQUALS("", errout.str());
+
+        // #11889
+        check("struct S {\n"
+              "    int a[5];\n"
+              "    void f(int i);\n"
+              "}\n"
+              "void g(int);\n"
+              "void S::f(int i) {\n"
+              "    if (a[i] == 1) {\n"
+              "        a[i] = 0;\n"
+              "        g(a[i]);\n"
+              "    }\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        // #11927
+        check("void f(func_t func, int i) {\n"
+              "    (func)(i, 0);\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        check("struct S { int i; };\n"
+              "void f(int i) {\n"
+              "    const int a[] = { i - 1 * i, 0 };\n"
+              "    auto s = S{ i - 1 * i };\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:3]: (style) Argument 'i-1*i' to init list { is always 0. It does not matter what value 'i' has.\n"
+                      "[test.cpp:4]: (style) Argument 'i-1*i' to constructor S is always 0. It does not matter what value 'i' has.\n",
+                      errout.str());
     }
 
     void knownArgumentHiddenVariableExpression() {

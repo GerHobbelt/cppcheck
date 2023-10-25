@@ -454,8 +454,9 @@ unsigned int TemplateSimplifier::templateParameters(const Token *tok)
                 if (level == 1)
                     return numberOfParameters;
                 level -= 2;
-            } else if (tok->str() == "," && level == 0) {
-                ++numberOfParameters;
+            } else if (tok->str() == ",") {
+                if (level == 0)
+                    ++numberOfParameters;
                 tok = tok->next();
                 continue;
             }
@@ -498,7 +499,7 @@ unsigned int TemplateSimplifier::templateParameters(const Token *tok)
             return 0;
 
         // num/type ..
-        if (!tok->isNumber() && tok->tokType() != Token::eChar && !tok->isName() && !tok->isOp())
+        if (!tok->isNumber() && tok->tokType() != Token::eChar && tok->tokType() != Token::eString && !tok->isName() && !tok->isOp())
             return 0;
         tok = tok->next();
         if (!tok)

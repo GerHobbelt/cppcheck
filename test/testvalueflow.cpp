@@ -5292,6 +5292,18 @@ private:
                "}";
         ASSERT_EQUALS(0U, tokenValues(code, "x )").size());
 
+        // initialization
+        code = "int foo() {\n"
+               "  int x;\n"
+               "  *((int *)(&x)) = 12;"
+               "  a = x + 1;\n"
+               "}";
+        values = tokenValues(code, "x +");
+        ASSERT_EQUALS(true, values.empty());
+        // ASSERT_EQUALS(1U, values.size());
+        // ASSERT(values.front().isIntValue());
+        // ASSERT_EQUALS(12, values.front().intvalue);
+
         // #8036
         code = "void foo() {\n"
                "    int x;\n"
@@ -5392,7 +5404,7 @@ private:
                "  int c;\n"
                "  if (d)\n"
                "    c = 0;\n"
-               " else if (e)\n"
+               "  else if (e)\n"
                "   c = 0;\n"
                "  c++;\n"
                "}\n";
@@ -5406,7 +5418,7 @@ private:
                "  int c;\n"
                "  if (d)\n"
                "    c = 0;\n"
-               " else if (!d)\n"
+               "  else if (!d)\n"
                "   c = 0;\n"
                "  c++;\n"
                "}\n";
@@ -5509,6 +5521,15 @@ private:
                "    }\n"
                "}\n";
         values = tokenValues(code, "i ++", ValueFlow::Value::ValueType::UNINIT);
+        ASSERT_EQUALS(0, values.size());
+
+        // #11688
+        code = "void f() {\n"
+               "    int n;\n"
+               "    for (int i = 0; i < 4; i = n)\n" // <- n is initialized in the loop body
+               "        n = 10;\n"
+               "}";
+        values = tokenValues(code, "n )", ValueFlow::Value::ValueType::UNINIT);
         ASSERT_EQUALS(0, values.size());
     }
 
@@ -7030,7 +7051,7 @@ private:
         valueOfTok(code, "c");
 
         code = "class T {\n"
-               "private slots:\n"
+               "private:\n"
                "    void f() { D& r = dynamic_cast<D&>(*m); }\n"
                "    void g() { m.reset(new D); }\n"
                "private:\n"

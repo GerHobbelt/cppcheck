@@ -127,7 +127,7 @@ private:
         TEST_CASE(knownConditionIncrementLoop); // #9808
     }
 
-    void check(const char code[], Settings &settings, const char* filename = "test.cpp") {
+    void check(const char code[], const Settings &settings, const char* filename = "test.cpp") {
         // Clear the error buffer..
         errout.str("");
 
@@ -154,7 +154,7 @@ private:
     }
 
     void check(const char code[], const char* filename = "test.cpp", bool inconclusive = false) {
-        Settings settings = settingsBuilder(settings0).certainty(Certainty::inconclusive, inconclusive).build();
+        const Settings settings = settingsBuilder(settings0).certainty(Certainty::inconclusive, inconclusive).build();
         check(code, settings, filename);
     }
 
@@ -5013,6 +5013,16 @@ private:
               "    if(!s.empty()) {}\n"
               "}\n");
         ASSERT_EQUALS("", errout.str());
+
+        check("int f(std::string s) {\n"
+              "    if (s.empty())\n"
+              "        return -1;\n"
+              "    s += '\\n';\n"
+              "    if (s.empty())\n"
+              "        return -1;\n"
+              "    return -1;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:5]: (style) Condition 's.empty()' is always false\n", errout.str());
     }
 
     void alwaysTrueLoop()
@@ -5645,7 +5655,7 @@ private:
     }
 
     void compareOutOfTypeRange() {
-        Settings settingsUnix64 = settingsBuilder().severity(Severity::style).platform(cppcheck::Platform::Type::Unix64).build();
+        const Settings settingsUnix64 = settingsBuilder().severity(Severity::style).platform(cppcheck::Platform::Type::Unix64).build();
 
         check("void f(unsigned char c) {\n"
               "  if (c == 256) {}\n"

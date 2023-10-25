@@ -2564,19 +2564,22 @@ struct ValueFlowAnalyzer : Analyzer {
         return read;
     }
 
-    virtual Action isAliasModified(const Token* tok) const {
+    virtual Action isAliasModified(const Token* tok, int indirect = -1) const {
         // Lambda function call
         if (Token::Match(tok, "%var% ("))
             // TODO: Check if modified in the lambda function
             return Action::Invalid;
-        int indirect = 0;
-        if (const ValueType* vt = tok->valueType()) {
-            indirect = vt->pointer;
-            if (vt->type == ValueType::ITERATOR)
-                ++indirect;
+        if (indirect == -1) {
+            indirect = 0;
+            if (const ValueType* vt = tok->valueType()) {
+                indirect = vt->pointer;
+                if (vt->type == ValueType::ITERATOR)
+                    ++indirect;
+            }
         }
-        if (isVariableChanged(tok, indirect, getSettings(), isCPP()))
-            return Action::Invalid;
+        for (int i = 0; i <= indirect; ++i)
+            if (isVariableChanged(tok, i, getSettings(), isCPP()))
+                return Action::Invalid;
         return Action::None;
     }
 
@@ -3110,18 +3113,14 @@ struct SingleValueFlowAnalyzer : ValueFlowAnalyzer {
 
 struct ExpressionAnalyzer : SingleValueFlowAnalyzer {
     const Token* expr;
-    bool local;
-    bool unknown;
-    bool dependOnThis;
-    bool uniqueExprId;
+    bool local = true;
+    bool unknown{};
+    bool dependOnThis{};
+    bool uniqueExprId{};
 
     ExpressionAnalyzer(const Token* e, ValueFlow::Value val, const TokenList& t, const Settings* s)
         : SingleValueFlowAnalyzer(std::move(val), t, s),
-        expr(e),
-        local(true),
-        unknown(false),
-        dependOnThis(false),
-        uniqueExprId(false)
+        expr(e)
     {
 
         assert(e && e->exprId() != 0 && "Not a valid expression");
@@ -3213,6 +3212,12 @@ struct ExpressionAnalyzer : SingleValueFlowAnalyzer {
     bool isVariable() const override {
         return expr->varId() > 0;
     }
+
+    Action isAliasModified(const Token* tok, int indirect) const override {
+        if (value.isSymbolicValue() && tok->exprId() == value.tokvalue->exprId())
+            indirect = 0;
+        return SingleValueFlowAnalyzer::isAliasModified(tok, indirect);
+    }
 };
 
 struct SameExpressionAnalyzer : ExpressionAnalyzer {
@@ -3231,7 +3236,7 @@ struct SameExpressionAnalyzer : ExpressionAnalyzer {
 };
 
 struct OppositeExpressionAnalyzer : ExpressionAnalyzer {
-    bool isNot;
+    bool isNot{};
 
     OppositeExpressionAnalyzer(bool pIsNot, const Token* e, ValueFlow::Value val, const TokenList& t, const Settings* s)
         : ExpressionAnalyzer(e, std::move(val), t, s), isNot(pIsNot)
@@ -3933,23 +3938,21 @@ static void valueFlowForwardLifetime(Token * tok, TokenList &tokenlist, ErrorLog
 }
 
 struct LifetimeStore {
-    const Token *argtok;
+    const Token* argtok{};
     std::string message;
-    ValueFlow::Value::LifetimeKind type;
+    ValueFlow::Value::LifetimeKind type = ValueFlow::Value::LifetimeKind::Object;
     ErrorPath errorPath;
-    bool inconclusive;
-    bool forward;
+    bool inconclusive{};
+    bool forward = true;
 
     struct Context {
-        Token* tok;
-        TokenList* tokenlist;
-        ErrorLogger* errorLogger;
-        const Settings* settings;
+        Token* tok{};
+        TokenList* tokenlist{};
+        ErrorLogger* errorLogger{};
+        const Settings* settings{};
     };
 
-    LifetimeStore()
-        : argtok(nullptr), message(), type(), errorPath(), inconclusive(false), forward(true), mContext(nullptr)
-    {}
+    LifetimeStore() = default;
 
     LifetimeStore(const Token* argtok,
                   std::string message,
@@ -3958,10 +3961,7 @@ struct LifetimeStore {
         : argtok(argtok),
         message(std::move(message)),
         type(type),
-        errorPath(),
-        inconclusive(inconclusive),
-        forward(true),
-        mContext(nullptr)
+        inconclusive(inconclusive)
     {}
 
     template<class F>
@@ -4217,7 +4217,7 @@ struct LifetimeStore {
     }
 
 private:
-    Context* mContext;
+    Context* mContext{};
     void forwardLifetime(Token* tok, TokenList& tokenlist, ErrorLogger* errorLogger, const Settings* settings) const {
         if (mContext) {
             mContext->tok = tok;
@@ -4651,12 +4651,6 @@ static void valueFlowLifetimeConstructor(Token* tok, TokenList& tokenlist, Error
 
 struct Lambda {
     explicit Lambda(const Token* tok)
-        : capture(nullptr),
-        arguments(nullptr),
-        returnTok(nullptr),
-        bodyTok(nullptr),
-        explicitCaptures(),
-        implicitCapture(LifetimeCapture::Undefined)
     {
         if (!Token::simpleMatch(tok, "[") || !tok->link())
             return;
@@ -4692,12 +4686,12 @@ struct Lambda {
         }
     }
 
-    const Token * capture;
-    const Token * arguments;
-    const Token * returnTok;
-    const Token * bodyTok;
+    const Token* capture{};
+    const Token* arguments{};
+    const Token* returnTok{};
+    const Token* bodyTok{};
     std::unordered_map<const Variable*, std::pair<const Token*, LifetimeCapture>> explicitCaptures;
-    LifetimeCapture implicitCapture;
+    LifetimeCapture implicitCapture = LifetimeCapture::Undefined;
 
     std::vector<const Token*> getCaptures() const {
         return getArguments(capture);
@@ -6038,7 +6032,7 @@ static void insertNegateKnown(std::list<ValueFlow::Value>& values, const std::li
 
 struct ConditionHandler {
     struct Condition {
-        const Token *vartok;
+        const Token* vartok{};
         std::list<ValueFlow::Value> true_values;
         std::list<ValueFlow::Value> false_values;
         bool inverted = false;
@@ -6100,8 +6094,6 @@ struct ConditionHandler {
 
             return ctx;
         }
-
-        Condition() : vartok(nullptr), true_values(), false_values(), inverted(false), impossible(true) {}
     };
 
     virtual std::vector<Condition> parse(const Token* tok, const Settings* settings) const = 0;
@@ -7159,7 +7151,7 @@ struct MultiValueFlowAnalyzer : ValueFlowAnalyzer {
     std::unordered_map<nonneg int, const Variable*> vars;
 
     MultiValueFlowAnalyzer(const std::unordered_map<const Variable*, ValueFlow::Value>& args, const TokenList& t, const Settings* set)
-        : ValueFlowAnalyzer(t, set), values(), vars() {
+        : ValueFlowAnalyzer(t, set) {
         for (const auto& p:args) {
             values[p.first->declarationId()] = p.second;
             vars[p.first->declarationId()] = p.first;
@@ -8814,6 +8806,29 @@ static void valueFlowContainerSize(TokenList& tokenlist,
                     value.setImpossible();
                     valueFlowForward(tok->linkAt(2), containerTok, value, tokenlist, settings);
                 }
+            } else if (Token::simpleMatch(tok, "+=") && astIsContainer(tok->astOperand1())) {
+                const Token* containerTok = tok->astOperand1();
+                const Token* valueTok = tok->astOperand2();
+                MathLib::bigint size = 0;
+                if (valueTok->tokType() == Token::eString)
+                    size = Token::getStrLength(valueTok);
+                else if (astIsGenericChar(tok) || valueTok->tokType() == Token::eChar)
+                    size = 1;
+                else if (const ValueFlow::Value* v1 = valueTok->getKnownValue(ValueFlow::Value::ValueType::TOK))
+                    size = Token::getStrLength(v1->tokvalue);
+                else if (const ValueFlow::Value* v2 =
+                             valueTok->getKnownValue(ValueFlow::Value::ValueType::CONTAINER_SIZE))
+                    size = v2->intvalue;
+                if (size == 0)
+                    continue;
+                ValueFlow::Value value(size - 1);
+                value.valueType = ValueFlow::Value::ValueType::CONTAINER_SIZE;
+                value.bound = ValueFlow::Value::Bound::Lower;
+                value.setImpossible();
+                Token* next = nextAfterAstRightmostLeaf(tok);
+                if (!next)
+                    next = tok->next();
+                valueFlowForward(next, containerTok, value, tokenlist, settings);
             }
         }
     }
@@ -9112,12 +9127,12 @@ static void valueFlowSafeFunctions(TokenList& tokenlist, const SymbolDatabase& s
                     std::list<ValueFlow::Value> argValues;
                     argValues.emplace_back(0);
                     argValues.back().valueType = ValueFlow::Value::ValueType::FLOAT;
-                    argValues.back().floatValue = isLow ? low : -1E25f;
+                    argValues.back().floatValue = isLow ? low : -1E25;
                     argValues.back().errorPath.emplace_back(arg.nameToken(), "Safe checks: Assuming argument has value " + MathLib::toString(argValues.back().floatValue));
                     argValues.back().safe = true;
                     argValues.emplace_back(0);
                     argValues.back().valueType = ValueFlow::Value::ValueType::FLOAT;
-                    argValues.back().floatValue = isHigh ? high : 1E25f;
+                    argValues.back().floatValue = isHigh ? high : 1E25;
                     argValues.back().errorPath.emplace_back(arg.nameToken(), "Safe checks: Assuming argument has value " + MathLib::toString(argValues.back().floatValue));
                     argValues.back().safe = true;
                     valueFlowForward(const_cast<Token*>(functionScope->bodyStart->next()),

@@ -6481,6 +6481,15 @@ private:
                "    return x;\n"
                "}\n";
         ASSERT_EQUALS(true, testValueOfXKnown(code, 4U, 0));
+
+        code = "std::vector<int> f() { return std::vector<int>(); }";
+        ASSERT_EQUALS("", isKnownContainerSizeValue(tokenValues(code, "( ) ;"), 0));
+
+        code = "std::vector<int> f() { return std::vector<int>{}; }";
+        TODO_ASSERT_EQUALS("", "values.size():0", isKnownContainerSizeValue(tokenValues(code, "{ } ;"), 0));
+
+        code = "std::vector<int> f() { return {}; }";
+        ASSERT_EQUALS("", isKnownContainerSizeValue(tokenValues(code, "{ } ;"), 0));
     }
 
     void valueFlowContainerElement()
@@ -6980,6 +6989,11 @@ private:
                "    void g(std::vector<int> (*f) () = nullptr);\n"
                "};\n";
         valueOfTok(code, "=");
+
+        code = "void f(bool b) {\n" // #11627
+               "    (*printf)(\"%s %i\", strerror(errno), b ? 0 : 1);\n"
+               "};\n";
+        valueOfTok(code, "?");
     }
 
     void valueFlowHang() {

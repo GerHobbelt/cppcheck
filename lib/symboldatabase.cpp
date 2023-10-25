@@ -1303,17 +1303,26 @@ void SymbolDatabase::createSymbolDatabaseSetVariablePointers()
                  (Token::Match(tok->next()->link(), ") . %name% !!(") ||
                   (Token::Match(tok->next()->link(), ") [") && Token::Match(tok->next()->link()->next()->link(), "] . %name% !!(")))) {
             const Type *type = tok->function()->retType;
+            Token* membertok;
+            if (tok->next()->link()->next()->str() == ".")
+                membertok = tok->next()->link()->next()->next();
+            else
+                membertok = tok->next()->link()->next()->link()->next()->next();
             if (type) {
-                Token *membertok;
-                if (tok->next()->link()->next()->str() == ".")
-                    membertok = tok->next()->link()->next()->next();
-                else
-                    membertok = tok->next()->link()->next()->link()->next()->next();
                 const Variable *membervar = membertok->variable();
                 if (!membervar) {
                     if (type->classScope) {
                         membervar = type->classScope->getVariable(membertok->str());
                         setMemberVar(membervar, membertok, tok->function()->retDef);
+                    }
+                }
+            } else if (mSettings.library.detectSmartPointer(tok->function()->retDef)) {
+                if (const Token* templateArg = Token::findsimplematch(tok->function()->retDef, "<")) {
+                    if (const Type* spType = findTypeInNested(templateArg->next(), tok->scope())) {
+                        if (spType->classScope) {
+                            const Variable* membervar = spType->classScope->getVariable(membertok->str());
+                            setMemberVar(membervar, membertok, tok->function()->retDef);
+                        }
                     }
                 }
             }
@@ -1466,7 +1475,7 @@ void SymbolDatabase::createSymbolDatabaseIncompleteVars()
             continue;
         if (Token::Match(tok->next(), "::|.|(|:|%var%"))
             continue;
-        if (Token::Match(tok->next(), "&|&&|* )|%var%"))
+        if (Token::Match(tok->next(), "&|&&|* )|,|%var%"))
             continue;
         if (Token::simpleMatch(tok->next(), ")") && Token::simpleMatch(tok->next()->link()->previous(), "catch ("))
             continue;
@@ -6379,11 +6388,12 @@ void SymbolDatabase::setValueType(Token* tok, const ValueType& valuetype, Source
                     const Token *smartPointerTypeTok = vt2->containerTypeToken;
                     while (Token::Match(smartPointerTypeTok, "%name%|::"))
                         smartPointerTypeTok = smartPointerTypeTok->next();
-                    if (Token::Match(smartPointerTypeTok, "< %name% > >") && smartPointerTypeTok->next()->type()) {
-                        setType = true;
-                        templateArgType = smartPointerTypeTok->next()->type();
-                        autovt.smartPointerType = templateArgType;
-                        autovt.type = ValueType::Type::NONSTD;
+                    if (Token::simpleMatch(smartPointerTypeTok, "<")) {
+                        if ((templateArgType = findTypeInNested(smartPointerTypeTok->next(), tok->scope()))) {
+                            setType = true;
+                            autovt.smartPointerType = templateArgType;
+                            autovt.type = ValueType::Type::NONSTD;
+                        }
                     }
                 } else if (parsedecl(vt2->containerTypeToken, &autovt, mDefaultSignedness, mSettings, mIsCpp)) {
                     setType = true;
@@ -7082,8 +7092,14 @@ void SymbolDatabase::setValueTypeInTokenList(bool reportDebugWarnings, Token *to
                             const Library::ArgumentChecks::IteratorInfo* info = mSettings.library.getArgIteratorInfo(tok->previous(), 1);
                             if (info && info->it) {
                                 const Token* contTok = args[0];
-                                if (Token::simpleMatch(args[0]->astOperand1(), ".") && args[0]->astOperand1()->astOperand1())
+                                if (Token::simpleMatch(args[0]->astOperand1(), ".") && args[0]->astOperand1()->astOperand1()) // .begin()
                                     contTok = args[0]->astOperand1()->astOperand1();
+                                else if (Token::simpleMatch(args[0], "(") && args[0]->astOperand2()) // std::begin()
+                                    contTok = args[0]->astOperand2();
+                                while (Token::simpleMatch(contTok, "[")) // move to container token
+                                    contTok = contTok->astOperand1();
+                                if (Token::simpleMatch(contTok, "."))
+                                    contTok = contTok->astOperand2();
                                 if (contTok && contTok->variable() && contTok->variable()->valueType() && contTok->variable()->valueType()->container) {
                                     ValueType vt;
                                     vt.type = ValueType::Type::ITERATOR;
@@ -7198,7 +7214,7 @@ void SymbolDatabase::setValueTypeInTokenList(bool reportDebugWarnings, Token *to
             if (tok->str() == "auto" && !tok->valueType()) {
                 if (Token::Match(tok->next(), "%name% ; %name% = [") && isLambdaCaptureList(tok->tokAt(5)))
                     continue;
-                if (Token::Match(tok->next(), "%name% { [") && isLambdaCaptureList(tok->tokAt(3)))
+                if (Token::Match(tok->next(), "%name% {|= [") && isLambdaCaptureList(tok->tokAt(3)))
                     continue;
                 debugMessage(tok, "autoNoType", "auto token with no type.");
             }

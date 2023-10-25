@@ -4723,3 +4723,35 @@ void smartPtr_get()
     //cppcheck-suppress nullPointer
     *p = 1;
 }
+
+void smartPtr_get2(std::vector<std::unique_ptr<int>>& v) 
+{
+    for (auto& u : v) {
+        int* p = u.get();
+        *p = 0;
+    }
+}
+
+void smartPtr_reset()
+{
+    std::unique_ptr<int> p(new int());
+    p.reset(nullptr);
+    //cppcheck-suppress nullPointer
+    *p = 1;
+}
+
+void smartPtr_release()
+{
+    std::unique_ptr<int> p{ new int() };
+    //cppcheck-suppress ignoredReturnValue
+    p.release();
+    //cppcheck-suppress nullPointer
+    *p = 1;
+}
+
+void std_vector_data_arithmetic()
+{
+	std::vector<char> buf;
+	buf.resize(1);
+	memcpy(buf.data() + 0, "", 1);
+}

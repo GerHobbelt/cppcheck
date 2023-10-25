@@ -1506,7 +1506,11 @@ bool isSameExpression(bool cpp, bool macro, const Token *tok1, const Token *tok2
     if (cpp) {
         if (tok1->str() == "." && tok1->astOperand1() && tok1->astOperand1()->str() == "this")
             tok1 = tok1->astOperand2();
+        while (Token::simpleMatch(tok1, "::") && tok1->astOperand2())
+            tok1 = tok1->astOperand2();
         if (tok2->str() == "." && tok2->astOperand1() && tok2->astOperand1()->str() == "this")
+            tok2 = tok2->astOperand2();
+        while (Token::simpleMatch(tok2, "::") && tok2->astOperand2())
             tok2 = tok2->astOperand2();
     }
     // Skip double not
@@ -1966,7 +1970,7 @@ bool isConstFunctionCall(const Token* ftok, const Library& library)
             return false;
         if (container->getYield(ftok->str()) != Library::Container::Yield::NO_YIELD)
             return true;
-        if (container->getAction(ftok->str()) == Library::Container::Action::FIND)
+        if (container->getAction(ftok->str()) == Library::Container::Action::FIND_CONST)
             return true;
         return false;
     } else if (const Library::Function* lf = library.getFunction(ftok)) {
@@ -1974,7 +1978,7 @@ bool isConstFunctionCall(const Token* ftok, const Library& library)
             return true;
         if (lf->containerYield != Library::Container::Yield::NO_YIELD)
             return true;
-        if (lf->containerAction == Library::Container::Action::FIND)
+        if (lf->containerAction == Library::Container::Action::FIND_CONST)
             return true;
         return false;
     } else {
@@ -3052,7 +3056,7 @@ const Token* getIteratorExpression(const Token* tok)
     return nullptr;
 }
 
-bool isIteratorPair(std::vector<const Token*> args)
+bool isIteratorPair(const std::vector<const Token*>& args)
 {
     if (args.size() != 2)
         return false;

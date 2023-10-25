@@ -132,8 +132,9 @@ static void bailoutInternal(const std::string& type, TokenList &tokenlist, Error
     if (function.find("operator") != std::string::npos)
         function = "(valueFlow)";
     std::list<ErrorMessage::FileLocation> callstack(1, ErrorMessage::FileLocation(tok, &tokenlist));
+    const std::string location = Path::stripDirectoryPart(file) + ":" + std::to_string(line) + ":";
     ErrorMessage errmsg(callstack, tokenlist.getSourceFilePath(), Severity::debug,
-                        Path::stripDirectoryPart(file) + ":" + std::to_string(line) + ":" + function + " bailout: " + what, type, Certainty::normal);
+                        (file.empty() ? "" : location) + function + " bailout: " + what, type, Certainty::normal);
     errorLogger->reportErr(errmsg);
 }
 
@@ -141,7 +142,7 @@ static void bailoutInternal(const std::string& type, TokenList &tokenlist, Error
 
 #define bailout(tokenlist, errorLogger, tok, what) bailout2("valueFlowBailout", tokenlist, errorLogger, tok, what)
 
-#define bailoutIncompleteVar(tokenlist, errorLogger, tok, what) bailout2("valueFlowBailoutIncompleteVar", tokenlist, errorLogger, tok, what)
+#define bailoutIncompleteVar(tokenlist, errorLogger, tok, what) bailoutInternal("valueFlowBailoutIncompleteVar", tokenlist, errorLogger, tok, what, "", 0, __func__)
 
 static std::string debugString(const ValueFlow::Value& v)
 {
@@ -4280,7 +4281,7 @@ static bool hasBorrowingVariables(const std::list<Variable>& vars, const std::ve
 static void valueFlowLifetimeUserConstructor(Token* tok,
                                              const Function* constructor,
                                              const std::string& name,
-                                             std::vector<const Token*> args,
+                                             const std::vector<const Token*>& args,
                                              TokenList& tokenlist,
                                              ErrorLogger* errorLogger,
                                              const Settings* settings)
@@ -8300,6 +8301,7 @@ bool ValueFlow::isContainerSizeChanged(const Token* tok, int indirect, const Set
         }
         break;
     case Library::Container::Action::FIND:
+    case Library::Container::Action::FIND_CONST:
     case Library::Container::Action::CHANGE_CONTENT:
     case Library::Container::Action::CHANGE_INTERNAL:
         break;

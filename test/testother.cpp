@@ -2159,6 +2159,14 @@ private:
               "T::T(std::string s) noexcept(true) : m(std::move(s)) {}\n");
         ASSERT_EQUALS("", errout.str());
 
+        check("namespace N {\n" // #12086
+              "    void g(int);\n"
+              "}\n"
+              "void f(std::vector<int> v) {\n"
+              "    N::g(v[0]);\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:4]: (performance) Function parameter 'v' should be passed by const reference.\n", errout.str());
+
         Settings settings1 = settingsBuilder().platform(Platform::Type::Win64).build();
         check("using ui64 = unsigned __int64;\n"
               "ui64 Test(ui64 one, ui64 two) { return one + two; }\n",
@@ -6866,6 +6874,31 @@ private:
         ASSERT_EQUALS("[test.cpp:3]: (style) The comparison '0 > E0' is always false.\n"
                       "[test.cpp:4]: (style) The comparison 'E0 > 0' is always false.\n"
                       "[test.cpp:5]: (style) The comparison 'E0 == 0' is always true.\n",
+                      errout.str());
+
+        check("struct S {\n" // #12040, #12044
+              "    static const int I = 0;\n"
+              "    enum { E0 };\n"
+              "    enum F { F0 };\n"
+              "    void f() {\n"
+              "        if (0 > I) {}\n"
+              "        if (0 > S::I) {}\n"
+              "        if (0 > E0) {}\n"
+              "        if (0 > S::E0) {}\n"
+              "    }\n"
+              "};\n"
+              "void g() {\n"
+              "    if (0 > S::I) {}\n"
+              "    if (0 > S::E0) {}\n"
+              "    if (0 > S::F::F0) {}\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:6]: (style) The comparison '0 > I' is always false.\n"
+                      "[test.cpp:2] -> [test.cpp:7]: (style) The comparison '0 > S::I' is always false.\n"
+                      "[test.cpp:8]: (style) The comparison '0 > E0' is always false.\n"
+                      "[test.cpp:9]: (style) The comparison '0 > S::E0' is always false.\n"
+                      "[test.cpp:2] -> [test.cpp:13]: (style) The comparison '0 > S::I' is always false.\n"
+                      "[test.cpp:14]: (style) The comparison '0 > S::E0' is always false.\n"
+                      "[test.cpp:15]: (style) The comparison '0 > S::F::F0' is always false.\n",
                       errout.str());
     }
 

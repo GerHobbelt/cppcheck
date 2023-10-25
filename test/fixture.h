@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2022 Cppcheck team.
+ * Copyright (C) 2007-2023 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 #ifndef fixtureH
 #define fixtureH
 
+#include "check.h"
 #include "color.h"
 #include "config.h"
 #include "errorlogger.h"
@@ -103,6 +104,24 @@ protected:
     }
 
     void processOptions(const options& args);
+
+    template<typename T>
+    static T& getCheck()
+    {
+        for (Check *check : Check::instances()) {
+            //cppcheck-suppress [constVariable, useStlAlgorithm] - TODO: fix constVariable FP
+            if (T* c = dynamic_cast<T*>(check))
+                return *c;
+        }
+        throw std::runtime_error("instance not found");
+    }
+
+    template<typename T>
+    static void runChecks(const Tokenizer *tokenizer, const Settings *settings, ErrorLogger *errorLogger)
+    {
+        T& check = getCheck<T>();
+        check.runChecks(tokenizer, settings, errorLogger);
+    }
 public:
     void reportOut(const std::string &outmsg, Color c = Color::Reset) override;
     void reportErr(const ErrorMessage &msg) override;

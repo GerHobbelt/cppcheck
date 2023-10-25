@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2022 Cppcheck team.
+ * Copyright (C) 2007-2023 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -727,7 +727,7 @@ static bool isSameIteratorContainerExpression(const Token* tok1,
 
 static ValueFlow::Value getLifetimeIteratorValue(const Token* tok, MathLib::bigint path = 0)
 {
-    std::vector<ValueFlow::Value> values = getLifetimeObjValues(tok, false, path);
+    std::vector<ValueFlow::Value> values = ValueFlow::getLifetimeObjValues(tok, false, path);
     auto it = std::find_if(values.cbegin(), values.cend(), [](const ValueFlow::Value& v) {
         return v.lifetimeKind == ValueFlow::Value::LifetimeKind::Iterator;
     });
@@ -1155,7 +1155,7 @@ void CheckStl::invalidContainer()
 
                             ErrorPath ep;
                             bool addressOf = false;
-                            const Variable* var = getLifetimeVariable(info.tok, ep, &addressOf);
+                            const Variable* var = ValueFlow::getLifetimeVariable(info.tok, ep, &addressOf);
                             // Check the reference is created before the change
                             if (var && var->declarationId() == r.tok->varId() && !addressOf) {
                                 // An argument always reaches
@@ -1976,8 +1976,9 @@ void CheckStl::string_c_str()
                     const Variable* var = tok->variable();
                     if (var->isPointer())
                         string_c_strError(tok);
-                } else if (printPerformance && Token::Match(tok->tokAt(2), "%var% . c_str|data ( ) ;")) {
-                    if (tok->variable() && tok->variable()->isStlStringType() && tok->tokAt(2)->variable() && tok->tokAt(2)->variable()->isStlStringType())
+                } else if (printPerformance && tok->tokAt(1)->astOperand2() && Token::Match(tok->tokAt(1)->astOperand2()->tokAt(-3), "%var% . c_str|data ( ) ;")) {
+                    const Token* vartok = tok->tokAt(1)->astOperand2()->tokAt(-3);
+                    if (tok->variable() && tok->variable()->isStlStringType() && vartok->variable() && vartok->variable()->isStlStringType())
                         string_c_strAssignment(tok);
                 }
             } else if (printPerformance && tok->function() && Token::Match(tok, "%name% ( !!)") && tok->str() != scope.className) {

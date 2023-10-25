@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2022 Cppcheck team.
+ * Copyright (C) 2007-2023 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -188,8 +188,7 @@ private:
         ASSERT_LOC(tokenizer.tokenize(istr, filename), file, line);
 
         // Check for null pointer dereferences..
-        CheckNullPointer checkNullPointer;
-        checkNullPointer.runChecks(&tokenizer, &settings, this);
+        runChecks<CheckNullPointer>(&tokenizer, &settings, this);
     }
 
     void checkP(const char code[]) {
@@ -214,8 +213,7 @@ private:
         tokenizer.simplifyTokens1("");
 
         // Check for null pointer dereferences..
-        CheckNullPointer checkNullPointer;
-        checkNullPointer.runChecks(&tokenizer, &settings, this);
+        runChecks<CheckNullPointer>(&tokenizer, &settings, this);
     }
 
 

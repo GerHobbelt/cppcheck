@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2022 Cppcheck team.
+ * Copyright (C) 2007-2023 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -167,8 +167,7 @@ private:
         tokenizer.setPreprocessor(&preprocessor);
 
         // Run checks..
-        CheckCondition checkCondition;
-        checkCondition.runChecks(&tokenizer, settings, this);
+        runChecks<CheckCondition>(&tokenizer, settings, this);
     }
 
     void check(const char code[], const char* filename = "test.cpp", bool inconclusive = false) {
@@ -569,8 +568,7 @@ private:
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
 
-        CheckCondition checkCondition;
-        checkCondition.runChecks(&tokenizer, &settings1, this);
+        runChecks<CheckCondition>(&tokenizer, &settings1, this);
     }
 
     void overlappingElseIfCondition() {

@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2022 Cppcheck team.
+ * Copyright (C) 2007-2023 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -59,8 +59,7 @@ private:
         ASSERT_LOC(tokenizer.tokenize(istr, filename), file, line);
 
         // Check for buffer overruns..
-        CheckBufferOverrun checkBufferOverrun;
-        checkBufferOverrun.runChecks(&tokenizer, &settings0, this);
+        runChecks<CheckBufferOverrun>(&tokenizer, &settings0, this);
     }
 
     void check_(const char* file, int line, const char code[], const Settings &settings, const char filename[] = "test.cpp") {
@@ -72,8 +71,7 @@ private:
         errout.str("");
 
         // Check for buffer overruns..
-        CheckBufferOverrun checkBufferOverrun(&tokenizer, &settings, this);
-        checkBufferOverrun.runChecks(&tokenizer, &settings, this);
+        runChecks<CheckBufferOverrun>(&tokenizer, &settings, this);
     }
 
     void checkP(const char code[], const char* filename = "test.cpp")
@@ -111,8 +109,7 @@ private:
         tokenizer.setPreprocessor(&preprocessor);
 
         // Check for buffer overruns..
-        CheckBufferOverrun checkBufferOverrun(&tokenizer, settings, this);
-        checkBufferOverrun.runChecks(&tokenizer, settings, this);
+        runChecks<CheckBufferOverrun>(&tokenizer, settings, this);
     }
 
     void run() override {
@@ -4894,8 +4891,7 @@ private:
 
     void getErrorMessages() {
         // Ticket #2292: segmentation fault when using --errorlist
-        CheckBufferOverrun c;
-        c.getErrorMessages(this, nullptr);
+        getCheck<CheckBufferOverrun>().getErrorMessages(this, nullptr);
     }
 
     void arrayIndexThenCheck() {

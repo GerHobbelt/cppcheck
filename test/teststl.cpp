@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2022 Cppcheck team.
+ * Copyright (C) 2007-2023 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -190,10 +190,9 @@ private:
         Tokenizer tokenizer(&settings, this);
         std::istringstream istr(code);
 
-        CheckStl checkStl(&tokenizer, &settings, this);
-
         ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
-        checkStl.runChecks(&tokenizer, &settings, this);
+
+        runChecks<CheckStl>(&tokenizer, &settings, this);
     }
 
     void check_(const char* file, int line, const std::string& code, const bool inconclusive = false) {
@@ -211,8 +210,7 @@ private:
         ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
 
         // Check..
-        CheckStl checkStl(&tokenizer, &settings, this);
-        checkStl.runChecks(&tokenizer, &settings, this);
+        runChecks<CheckStl>(&tokenizer, &settings, this);
     }
 
     void outOfBounds() {
@@ -4143,6 +4141,19 @@ private:
                       "[test.cpp:11]: (performance) Passing the result of c_str() to a stream is slow and redundant.\n"
                       "[test.cpp:12]: (performance) Passing the result of c_str() to a stream is slow and redundant.\n"
                       "[test.cpp:14]: (performance) Passing the result of c_str() to a stream is slow and redundant.\n",
+                      errout.str());
+
+        check("struct S { std::string str; };\n"
+              "struct T { S s; };\n"
+              "struct U { T t[1]; };\n"
+              "void f(const T& t, const U& u, std::string& str) {\n"
+              "    if (str.empty())\n"
+              "        str = t.s.str.c_str();\n"
+              "    else\n"
+              "        str = u.t[0].s.str.c_str();\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:6]: (performance) Assigning the result of c_str() to a std::string is slow and redundant.\n"
+                      "[test.cpp:8]: (performance) Assigning the result of c_str() to a std::string is slow and redundant.\n",
                       errout.str());
     }
 

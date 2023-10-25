@@ -39,6 +39,10 @@
 #include <string_view>
 #include <unordered_set>
 #include <vector>
+#include <version>
+#ifdef __cpp_lib_span
+#include <span>
+#endif
 
 int zerodiv_ldexp()
 {
@@ -4201,6 +4205,19 @@ void ignoredReturnValue_string_compare(std::string teststr, std::wstring testwst
     testwstr.compare(L"wtest");
 }
 
+// cppcheck-suppress constParameter
+void ignoredReturnValue_container_access(std::string& s, std::string_view& sv, std::vector<int>& v)
+{
+  // cppcheck-suppress ignoredReturnValue
+  s.begin();
+  // cppcheck-suppress ignoredReturnValue
+  v.end();
+  // cppcheck-suppress ignoredReturnValue
+  sv.front();
+  // cppcheck-suppress ignoredReturnValue
+  s.at(0);
+}
+
 void ignoredReturnValue_locale_global(const std::locale& loc)
 {
     // no ignoredReturnValue shall be shown for
@@ -4562,4 +4579,43 @@ void string_view_unused(std::string_view v)
 {
     // cppcheck-suppress ignoredReturnValue
     v.substr(1, 3);
+}
+
+void stdspan()
+{
+#ifndef __cpp_lib_span
+#warning "This compiler does not support std::span"
+#else
+    std::vector<int> vec{1,2,3,4};
+    std::span spn{vec};
+    // cppcheck-suppress unreadVariable
+    std::span spn2 = spn;
+
+    spn.begin();
+    spn.end();
+    spn.rbegin();
+    spn.end();
+
+    spn.front();
+    spn.back();
+    //cppcheck-suppress constStatement
+    spn[0];
+    spn.data();
+    spn.size();
+    spn.size_bytes();
+    spn.empty();
+    //cppcheck-suppress ignoredReturnValue
+    spn.first(2);
+    //cppcheck-suppress ignoredReturnValue
+    spn.last(2);
+    //cppcheck-suppress ignoredReturnValue
+    spn.subspan(1, 2);
+    spn.subspan<1>();
+
+    static constexpr std::array<int, 2> arr{1, 2};
+    constexpr std::span spn3{arr};
+    spn3.first<1>();
+    spn3.last<1>();
+    spn3.subspan<1, 1>();
+    #endif
 }

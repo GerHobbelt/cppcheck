@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2022 Cppcheck team.
+ * Copyright (C) 2007-2023 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,7 +33,7 @@ private:
     Settings settings;
 
 #define check(...) check_(__FILE__, __LINE__, __VA_ARGS__)
-    void check_(const char* file, int line, const char code[], bool inconclusive = false, const char* filename = "test.cpp") {
+    void check_(const char* file, int line, const char code[], bool inconclusive = true, const char* filename = "test.cpp") {
         // Clear the error buffer..
         errout.str("");
 
@@ -44,8 +44,7 @@ private:
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, filename), file, line);
 
-        CheckAutoVariables checkAutoVariables;
-        checkAutoVariables.runChecks(&tokenizer, &settings, this);
+        runChecks<CheckAutoVariables>(&tokenizer, &settings, this);
     }
 
     void run() override {
@@ -2800,6 +2799,91 @@ private:
               "}\n");
         ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:2] -> [test.cpp:3]: (error) Using object that is a temporary.\n",
                       errout.str());
+
+        check("std::span<int> f() {\n"
+              "    std::vector<int> v{};\n"
+              "    return v;\n"
+              "}\n");
+        ASSERT_EQUALS(
+            "[test.cpp:3] -> [test.cpp:2] -> [test.cpp:3]: (error) Returning object that points to local variable 'v' that will be invalid when returning.\n",
+            errout.str());
+
+        check("std::span<int> f() {\n"
+              "    std::vector<int> v;\n"
+              "    std::span sp = v;\n"
+              "    return sp;\n"
+              "}\n");
+        ASSERT_EQUALS(
+            "[test.cpp:3] -> [test.cpp:2] -> [test.cpp:4]: (error) Returning object that points to local variable 'v' that will be invalid when returning.\n",
+            errout.str());
+
+        check("std::span<int> f() {\n"
+              "    std::vector<int> v;\n"
+              "    return std::span{v};\n"
+              "}\n");
+        ASSERT_EQUALS(
+            "[test.cpp:3] -> [test.cpp:2] -> [test.cpp:3]: (error) Returning object that points to local variable 'v' that will be invalid when returning.\n",
+            errout.str());
+
+        check("int f() {\n"
+              "    std::span<int> s;\n"
+              "    {\n"
+              "        std::vector<int> v(1);"
+              "        s = v;\n"
+              "    }\n"
+              "return s.back()\n"
+              "}\n");
+        ASSERT_EQUALS(
+            "[test.cpp:4] -> [test.cpp:4] -> [test.cpp:6]: (error) Using object that points to local variable 'v' that is out of scope.\n",
+            errout.str());
+
+        check("int f() {\n"
+              "    std::span<int> s;\n"
+              "    {\n"
+              "        std::vector<int> v(1);"
+              "        s = v;\n"
+              "    }\n"
+              "return s.back()\n"
+              "}\n");
+        ASSERT_EQUALS(
+            "[test.cpp:4] -> [test.cpp:4] -> [test.cpp:6]: (error) Using object that points to local variable 'v' that is out of scope.\n",
+            errout.str());
+
+        check("int f() {\n"
+              "    std::span<int> s;\n"
+              "    {\n"
+              "        std::vector<int> v(1);"
+              "        s = v;\n"
+              "    }\n"
+              "return s.front()\n"
+              "}\n");
+        ASSERT_EQUALS(
+            "[test.cpp:4] -> [test.cpp:4] -> [test.cpp:6]: (error) Using object that points to local variable 'v' that is out of scope.\n",
+            errout.str());
+
+        check("int f() {\n"
+              "    std::span<int> s;\n"
+              "    {\n"
+              "        std::vector<int> v(1);"
+              "        s = v;\n"
+              "    }\n"
+              "return s.last(1)\n"
+              "}\n");
+        ASSERT_EQUALS(
+            "[test.cpp:4] -> [test.cpp:4] -> [test.cpp:6]: (error) Using object that points to local variable 'v' that is out of scope.\n",
+            errout.str());
+
+        check("int f() {\n"
+              "    std::span<int> s;\n"
+              "    {\n"
+              "        std::vector<int> v(1);"
+              "        s = v;\n"
+              "    }\n"
+              "return s.first(1)\n"
+              "}\n");
+        ASSERT_EQUALS(
+            "[test.cpp:4] -> [test.cpp:4] -> [test.cpp:6]: (error) Using object that points to local variable 'v' that is out of scope.\n",
+            errout.str());
     }
 
     void danglingLifetimeUniquePtr()
@@ -3591,21 +3675,16 @@ private:
     }
 
     void danglingTemporaryLifetime() {
-        check("struct MyClass\n" // FP - #11091
-              "{\n"
-              "    MyClass(MyClass& rhs);\n"
-              "    explicit MyClass(const wxString& name, const wxString& path = {});\n"
-              "    bool IsAnotherRunning() const;\n"
-              " \n"
-              "    wxString m_fn;\n"
+        check("struct C {\n" // #11091
+              "    C(C& rhs);\n"
+              "    explicit C(const S& n, const S& p = {});\n"
+              "    bool f() const;\n"
+              "    S m;\n"
               "};\n"
-              " \n"
-              "void bar()\n"
-              "{\n"
-              "    MyClass mutex(\"\");\n"
-              "    while (mutex.IsAnotherRunning())\n"
-              "        DoSomething();\n"
-              "}");
+              "void f() {\n"
+              "    C c(\"\");\n"
+              "    while (c.f()) {}\n"
+              "}\n");
         ASSERT_EQUALS("", errout.str());
 
         check("const int& g(const int& x) {\n"

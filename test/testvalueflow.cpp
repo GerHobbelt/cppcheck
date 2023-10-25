@@ -16,7 +16,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "library.h"
+#include "helpers.h"
 #include "mathlib.h"
 #include "platform.h"
 #include "settings.h"
@@ -32,14 +32,10 @@
 #include <cstring>
 #include <functional>
 #include <list>
-#include <map>
 #include <set>
 #include <sstream>
 #include <string>
-#include <utility>
 #include <vector>
-
-#include <simplecpp.h>
 
 class TestValueFlow : public TestFixture {
 public:
@@ -486,22 +482,17 @@ private:
         return false;
     }
 
-    void bailout(const char code[]) {
+#define bailout(...) bailout_(__FILE__, __LINE__, __VA_ARGS__)
+    void bailout_(const char* file, int line, const char code[]) {
         const Settings s = settingsBuilder().debugwarnings().build();
         errout.str("");
 
         std::vector<std::string> files(1, "test.cpp");
-        std::istringstream istr(code);
-        const simplecpp::TokenList tokens1(istr, files, files[0]);
-
-        simplecpp::TokenList tokens2(files);
-        std::map<std::string, simplecpp::TokenList*> filedata;
-        simplecpp::preprocess(tokens2, tokens1, files, filedata, simplecpp::DUI());
+        Tokenizer tokenizer(&s, this);
+        PreprocessorHelper::preprocess(code, files, tokenizer);
 
         // Tokenize..
-        Tokenizer tokenizer(&s, this);
-        tokenizer.createTokens(std::move(tokens2));
-        tokenizer.simplifyTokens1("");
+        ASSERT_LOC(tokenizer.simplifyTokens1(""), file, line);
     }
 
 #define tokenValues(...) tokenValues_(__FILE__, __LINE__, __VA_ARGS__)

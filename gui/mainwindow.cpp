@@ -18,6 +18,7 @@
 
 #include "mainwindow.h"
 
+#include "addoninfo.h"
 #include "applicationlist.h"
 #include "aboutdialog.h"
 #include "analyzerinfo.h"
@@ -48,12 +49,12 @@
 #include "ui_mainwindow.h"
 
 #include <algorithm>
-#include <functional>
 #include <iterator>
 #include <list>
 #include <set>
 #include <string>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <QApplication>
@@ -999,6 +1000,7 @@ Settings MainWindow::getCppcheckSettings()
 
             addonFilePath.replace(QChar('\\'), QChar('/'));
 
+            // TODO: use picojson to generate the JSON
             QString json;
             json += "{ \"script\":\"" + addonFilePath + "\"";
             if (!pythonCmd.isEmpty())
@@ -1014,6 +1016,9 @@ Settings MainWindow::getCppcheckSettings()
             }
             json += " }";
             result.addons.emplace(json.toStdString());
+            AddonInfo addonInfo;
+            addonInfo.getAddonInfo(json.toStdString(), result.exename);
+            result.addonInfos.emplace_back(std::move(addonInfo));
         }
 
         if (isCppcheckPremium()) {
@@ -1764,7 +1769,7 @@ void MainWindow::analyzeProject(const ProjectFile *projectFile, const bool check
         } catch (InternalError &e) {
             QMessageBox msg(QMessageBox::Critical,
                             tr("Cppcheck"),
-                            tr("Failed to import '%1', analysis is stopped").arg(prjfile),
+                            tr("Failed to import '%1' (%2), analysis is stopped").arg(prjfile).arg(QString::fromStdString(e.errorMessage)),
                             QMessageBox::Ok,
                             this);
             msg.exec();

@@ -38,8 +38,6 @@
 
 #include <tinyxml2.h>
 
-#include <simplecpp.h>
-
 #include "json.h"
 
 void ImportProject::ignorePaths(const std::vector<std::string> &ipaths)
@@ -397,7 +395,7 @@ bool ImportProject::importCompileCommands(std::istream &istr)
         if (!Path::acceptFile(file))
             continue;
 
-        struct FileSettings fs;
+        FileSettings fs;
         if (Path::isAbsolute(file))
             fs.filename = Path::simplifyPath(file);
 #ifdef _WIN32

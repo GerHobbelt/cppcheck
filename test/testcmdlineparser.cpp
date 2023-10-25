@@ -32,7 +32,6 @@
 
 #include <cstdint>
 #include <cstdio>
-#include <iostream>
 #include <list>
 #include <set>
 #include <string>
@@ -57,6 +56,11 @@ private:
         void printError(const std::string &message) override
         {
             printMessage("error: " + message);
+        }
+
+        void printRaw(const std::string &message) override
+        {
+            printInternal(message + '\n');
         }
 
         std::string str()
@@ -283,8 +287,11 @@ private:
         TEST_CASE(templateMaxTime);
         TEST_CASE(project);
         TEST_CASE(projectMultiple);
+        TEST_CASE(projectAndSource);
         TEST_CASE(projectEmpty);
         TEST_CASE(projectMissing);
+        TEST_CASE(projectNoPaths);
+        TEST_CASE(addon);
 
         TEST_CASE(ignorepaths1);
         TEST_CASE(ignorepaths2);
@@ -312,24 +319,24 @@ private:
         REDIRECT;
         const char * const argv[] = {"cppcheck"};
         ASSERT(parser->parseFromArgs(1, argv));
-        ASSERT(startsWith(GET_REDIRECT_OUTPUT, "Cppcheck - A tool for static C/C++ code analysis"));
-        ASSERT_EQUALS("", logger->str());
+        ASSERT(startsWith(logger->str(), "Cppcheck - A tool for static C/C++ code analysis"));
+        ASSERT_EQUALS("", GET_REDIRECT_OUTPUT);
     }
 
     void helpshort() {
         REDIRECT;
         const char * const argv[] = {"cppcheck", "-h"};
         ASSERT(parser->parseFromArgs(2, argv));
-        ASSERT(startsWith(GET_REDIRECT_OUTPUT, "Cppcheck - A tool for static C/C++ code analysis"));
-        ASSERT_EQUALS("", logger->str());
+        ASSERT(startsWith(logger->str(), "Cppcheck - A tool for static C/C++ code analysis"));
+        ASSERT_EQUALS("", GET_REDIRECT_OUTPUT);
     }
 
     void helplong() {
         REDIRECT;
         const char * const argv[] = {"cppcheck", "--help"};
         ASSERT(parser->parseFromArgs(2, argv));
-        ASSERT(startsWith(GET_REDIRECT_OUTPUT, "Cppcheck - A tool for static C/C++ code analysis"));
-        ASSERT_EQUALS("", logger->str());
+        ASSERT(startsWith(logger->str(), "Cppcheck - A tool for static C/C++ code analysis"));
+        ASSERT_EQUALS("", GET_REDIRECT_OUTPUT);
     }
 
     void showversion() {
@@ -1576,8 +1583,8 @@ private:
         const char * const argv[] = {"cppcheck", "--doc"};
         ASSERT(parser->parseFromArgs(2, argv));
         ASSERT(parser->exitAfterPrinting());
-        ASSERT(startsWith(GET_REDIRECT_OUTPUT, "## "));
-        ASSERT_EQUALS("", logger->str());
+        ASSERT(startsWith(logger->str(), "## "));
+        ASSERT_EQUALS("", GET_REDIRECT_OUTPUT);
     }
 
     void showtimeSummary() {
@@ -1952,10 +1959,18 @@ private:
 
     void project() {
         REDIRECT;
-        ScopedFile file("project.cppcheck", "<project></project>");
-        const char * const argv[] = {"cppcheck", "--project=project.cppcheck", "file.cpp"};
-        ASSERT(parser->parseFromArgs(3, argv));
+        ScopedFile file("project.cppcheck",
+                        "<project>\n"
+                        "<paths>\n"
+                        "<dir name=\"dir\"/>\n"
+                        "</paths>\n"
+                        "</project>");
+        const char * const argv[] = {"cppcheck", "--project=project.cppcheck"};
+        ASSERT(parser->parseFromArgs(2, argv));
         ASSERT_EQUALS(static_cast<int>(ImportProject::Type::CPPCHECK_GUI), static_cast<int>(settings->project.projectType));
+        ASSERT_EQUALS(1, parser->getPathNames().size());
+        auto it = parser->getPathNames().cbegin();
+        ASSERT_EQUALS("dir", *it);
         ASSERT_EQUALS("", logger->str());
     }
 
@@ -1965,6 +1980,14 @@ private:
         const char * const argv[] = {"cppcheck", "--project=project.cppcheck", "--project=project.cppcheck", "file.cpp"};
         ASSERT(!parser->parseFromArgs(4, argv));
         ASSERT_EQUALS("cppcheck: error: multiple --project options are not supported.\n", logger->str());
+    }
+
+    void projectAndSource() {
+        REDIRECT;
+        ScopedFile file("project.cppcheck", "<project></project>");
+        const char * const argv[] = {"cppcheck", "--project=project.cppcheck", "file.cpp"};
+        ASSERT(!parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS("cppcheck: error: --project cannot be used in conjunction with source files.\n", logger->str());
     }
 
     void projectEmpty() {
@@ -1979,6 +2002,23 @@ private:
         const char * const argv[] = {"cppcheck", "--project=project.cppcheck", "file.cpp"};
         ASSERT(!parser->parseFromArgs(3, argv));
         ASSERT_EQUALS("cppcheck: error: failed to open project 'project.cppcheck'. The file does not exist.\n", logger->str());
+    }
+
+    void projectNoPaths() {
+        ScopedFile file("project.cppcheck", "<project></project>");
+        const char * const argv[] = {"cppcheck", "--project=project.cppcheck"};
+        ASSERT(!parser->parseFromArgs(2, argv));
+        ASSERT_EQUALS("cppcheck: error: no C or C++ source files found.\n", logger->str());
+    }
+
+    void addon() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--addon=misra", "file.cpp"};
+        settings->addons.clear();
+        ASSERT(parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS(1, settings->addons.size());
+        ASSERT_EQUALS("misra", *settings->addons.cbegin());
+        ASSERT_EQUALS("", GET_REDIRECT_OUTPUT);
     }
 
     void ignorepaths1() {

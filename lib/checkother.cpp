@@ -329,7 +329,7 @@ void CheckOther::cstyleCastError(const Token *tok)
                 "C-style pointer casting detected. C++ offers four different kinds of casts as replacements: "
                 "static_cast, const_cast, dynamic_cast and reinterpret_cast. A C-style cast could evaluate to "
                 "any of those automatically, thus it is considered safer if the programmer explicitly states "
-                "which kind of cast is expected. See also: https://www.securecoding.cert.org/confluence/display/cplusplus/EXP05-CPP.+Do+not+use+C-style+casts.", CWE398, Certainty::normal);
+                "which kind of cast is expected.", CWE398, Certainty::normal);
 }
 
 //---------------------------------------------------------------------------
@@ -922,12 +922,14 @@ void CheckOther::checkVariableScope()
             continue;
 
         const Token* tok = var->nameToken()->next();
+        bool isConstructor = false;
         if (Token::Match(tok, "; %varid% =", var->declarationId())) { // bailout for assignment
             tok = tok->tokAt(2)->astOperand2();
             if (!isSimpleExpr(tok, var, mSettings))
                 continue;
         }
         else if (Token::Match(tok, "{|(")) { // bailout for constructor
+            isConstructor = true;
             const Token* argTok = tok->astOperand2();
             bool bail = false;
             while (argTok) {
@@ -946,7 +948,7 @@ void CheckOther::checkVariableScope()
                 continue;
         }
         // bailout if initialized with function call that has possible side effects
-        if (Token::Match(tok, "[(=]") && Token::simpleMatch(tok->astOperand2(), "("))
+        if (!isConstructor && Token::Match(tok, "[(=]") && Token::simpleMatch(tok->astOperand2(), "("))
             continue;
         bool reduce = true;
         bool used = false; // Don't warn about unused variables
@@ -1563,17 +1565,29 @@ void CheckOther::checkConstPointer()
             continue;
         pointers.emplace_back(var);
         const Token* const parent = tok->astParent();
-        bool deref = false;
+        enum Deref { NONE, DEREF, MEMBER } deref = NONE;
         if (parent && parent->isUnaryOp("*"))
-            deref = true;
+            deref = DEREF;
         else if (Token::simpleMatch(parent, "[") && parent->astOperand1() == tok && tok != nameTok)
-            deref = true;
+            deref = DEREF;
         else if (Token::Match(parent, "%op%") && Token::simpleMatch(parent->astParent(), "."))
-            deref = true;
+            deref = DEREF;
+        else if (Token::simpleMatch(parent, "."))
+            deref = MEMBER;
         else if (astIsRangeBasedForDecl(tok))
             continue;
-        if (deref) {
+        if (deref != NONE) {
             const Token* const gparent = parent->astParent();
+            if (deref == MEMBER) {
+                if (!gparent)
+                    continue;
+                if (parent->astOperand2()) {
+                    if (parent->astOperand2()->function() && parent->astOperand2()->function()->isConst())
+                        continue;
+                    if (mSettings->library.isFunctionConst(parent->astOperand2()))
+                        continue;
+                }
+            }
             if (Token::Match(gparent, "%cop%") && !gparent->isUnaryOp("&") && !gparent->isUnaryOp("*"))
                 continue;
             int argn = -1;

@@ -1482,7 +1482,7 @@ void SymbolDatabase::createSymbolDatabaseIncompleteVars()
             continue;
         if (tok->type())
             continue;
-        if (Token::Match(tok->next(), "::|.|(|:|%var%"))
+        if (Token::Match(tok->next(), "::|.|(|{|:|%var%"))
             continue;
         if (Token::Match(tok->next(), "&|&&|* )|,|%var%"))
             continue;
@@ -2243,7 +2243,7 @@ void Variable::evaluate(const Settings* settings)
             setFlag(fIsConst, true);
             setFlag(fIsStatic, true);
         } else if (tok->str() == "*") {
-            setFlag(fIsPointer, !isArray() || (isContainer && !Token::Match(tok->next(), "%name% [")) || Token::Match(tok->previous(), "( * %name% )"));
+            setFlag(fIsPointer, !isArray() || (isContainer && !Token::Match(tok->next(), "%name% [")) || Token::Match(tok, "* const| %name% )"));
             setFlag(fIsConst, false); // Points to const, isn't necessarily const itself
         } else if (tok->str() == "&") {
             if (isReference())
@@ -2389,7 +2389,7 @@ static bool isOperator(const Token *tokenDef)
     if (tokenDef->isOperatorKeyword())
         return true;
     const std::string &name = tokenDef->str();
-    return name.size() > 8 && name.compare(0,8,"operator")==0 && std::strchr("+-*/%&|~^<>!=[(", name[8]);
+    return name.size() > 8 && startsWith(name,"operator") && std::strchr("+-*/%&|~^<>!=[(", name[8]);
 }
 
 Function::Function(const Tokenizer *mTokenizer,

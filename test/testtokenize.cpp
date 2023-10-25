@@ -26,6 +26,7 @@
 #include "tokenize.h"
 #include "tokenlist.h"
 
+#include <cstring>
 #include <list>
 #include <map>
 #include <set>
@@ -58,8 +59,11 @@ private:
         settings_windows.checkUnusedTemplates = true;
 
         // library=qt
+        LOAD_LIB_2(settings0.library, "qt.cfg");
         settings0.libraries.emplace_back("qt");
+        LOAD_LIB_2(settings1.library, "qt.cfg");
         settings1.libraries.emplace_back("qt");
+        LOAD_LIB_2(settings2.library, "qt.cfg");
         settings2.libraries.emplace_back("qt");
 
         TEST_CASE(tokenize1);

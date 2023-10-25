@@ -26,6 +26,7 @@
 #include "fixture.h"
 #include "tokenize.h"
 
+#include <list>
 #include <map>
 #include <sstream> // IWYU pragma: keep
 #include <string>
@@ -306,8 +307,10 @@ private:
         settings->certainty.setEnabled(Certainty::experimental, experimental);
         settings->verbose = verbose;
 
+        Preprocessor preprocessor(*settings, nullptr);
+
         // Tokenize..
-        Tokenizer tokenizer(settings, this);
+        Tokenizer tokenizer(settings, this, &preprocessor);
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, filename ? filename : "test.cpp"), file, line);
 
@@ -349,17 +352,16 @@ private:
         preprocessor.setDirectives(tokens1);
 
         // Tokenizer..
-        Tokenizer tokenizer(settings, this);
+        Tokenizer tokenizer(settings, this, &preprocessor);
         tokenizer.createTokens(std::move(tokens2));
         tokenizer.simplifyTokens1("");
-        tokenizer.setPreprocessor(&preprocessor);
 
         // Check..
         runChecks<CheckOther>(&tokenizer, settings, this);
     }
 
     void checkInterlockedDecrement(const char code[]) {
-        static Settings settings;
+        Settings settings;
         settings.platformType = Settings::Win32A;
 
         check(code, nullptr, false, false, true, false, &settings);
@@ -1543,12 +1545,14 @@ private:
         // Clear the error buffer..
         errout.str("");
 
-        static Settings settings;
+        Settings settings;
         settings.severity.enable(Severity::style);
         settings.standards.cpp = Standards::CPP03; // #5560
 
+        Preprocessor preprocessor(settings, nullptr);
+
         // Tokenize..
-        Tokenizer tokenizerCpp(&settings, this);
+        Tokenizer tokenizerCpp(&settings, this, &preprocessor);
         std::istringstream istr(code);
         ASSERT_LOC(tokenizerCpp.tokenize(istr, "test.cpp"), file, line);
 
@@ -1749,10 +1753,12 @@ private:
         if (portability)
             settings.severity.enable(Severity::portability);
         settings.certainty.setEnabled(Certainty::inconclusive, inconclusive);
-
         settings.defaultSign = 's';
+
+        Preprocessor preprocessor(settings, nullptr);
+
         // Tokenize..
-        Tokenizer tokenizer(&settings, this);
+        Tokenizer tokenizer(&settings, this, &preprocessor);
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
 
@@ -5891,9 +5897,7 @@ private:
                                "    <arg nr=\"2\"/>\n"
                                "  </function>\n"
                                "</def>";
-        tinyxml2::XMLDocument doc;
-        doc.Parse(xmldata, sizeof(xmldata));
-        settings.library.load(doc);
+        ASSERT(settings.library.loadxmldata(xmldata, sizeof(xmldata)));
 
         check("void foo() {\n"
               "    if (x() || x()) {}\n"

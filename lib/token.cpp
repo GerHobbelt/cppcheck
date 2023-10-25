@@ -97,6 +97,7 @@ static const std::unordered_set<std::string> controlFlowKeywords = {
     "return"
 };
 
+// TODO: replace with Keywords::getX()?
 // Another list of keywords
 static const std::unordered_set<std::string> baseKeywords = {
     "asm",
@@ -2153,7 +2154,8 @@ bool Token::addValue(const ValueFlow::Value &value)
         ValueFlow::Value v(value);
         if (v.varId == 0)
             v.varId = mImpl->mVarId;
-        mImpl->mValues = new std::list<ValueFlow::Value>(1, v);
+        mImpl->mValues = new std::list<ValueFlow::Value>;
+        mImpl->mValues->push_back(std::move(v));
     }
 
     removeContradictions(*mImpl->mValues);
@@ -2494,13 +2496,13 @@ void TokenImpl::setCppcheckAttribute(TokenImpl::CppcheckAttributes::Type type, M
     }
 }
 
-bool TokenImpl::getCppcheckAttribute(TokenImpl::CppcheckAttributes::Type type, MathLib::bigint *value) const
+bool TokenImpl::getCppcheckAttribute(TokenImpl::CppcheckAttributes::Type type, MathLib::bigint &value) const
 {
     struct CppcheckAttributes *attr = mCppcheckAttributes;
     while (attr && attr->type != type)
         attr = attr->next;
     if (attr)
-        *value = attr->value;
+        value = attr->value;
     return attr != nullptr;
 }
 

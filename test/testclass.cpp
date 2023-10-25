@@ -663,6 +663,46 @@ private:
                                   "struct B { bool a; };\n"
                                   "template<> struct A<1> : B {};\n");
         ASSERT_EQUALS("", errout.str());
+
+        checkDuplInheritedMembers("struct B {\n"
+                                  "    int g() const;\n"
+                                  "    virtual int f() const { return g(); }\n"
+                                  "};\n"
+                                  "struct D : B {\n"
+                                  "    int g() const;\n"
+                                  "    int f() const override { return g(); }\n"
+                                  "};\n");
+        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:6]: (warning) The struct 'D' defines member function with name 'g' also defined in its parent struct 'B'.\n",
+                      errout.str());
+
+        checkDuplInheritedMembers("struct B {\n"
+                                  "    int g() const;\n"
+                                  "};\n"
+                                  "struct D : B {\n"
+                                  "    int g(int) const;\n"
+                                  "};\n");
+        ASSERT_EQUALS("", errout.str());
+
+        checkDuplInheritedMembers("struct S {\n"
+                                  "    struct T {\n"
+                                  "        T() {}\n"
+                                  "    };\n"
+                                  "};\n"
+                                  "struct T : S::T {\n"
+                                  "    T() : S::T() {}\n"
+                                  "};\n");
+        ASSERT_EQUALS("", errout.str());
+
+        checkDuplInheritedMembers("struct S {};\n" // #11827
+                                  "struct SPtr {\n"
+                                  "    virtual S* operator->() const { return p; }\n"
+                                  "    S* p = nullptr;\n"
+                                  "};\n"
+                                  "struct T : public S {};\n"
+                                  "struct TPtr : public SPtr {\n"
+                                  "    T* operator->() const { return (T*)p; }\n"
+                                  "};\n");
+        ASSERT_EQUALS("", errout.str());
     }
 
 #define checkCopyConstructor(code) checkCopyConstructor_(code, __FILE__, __LINE__)
@@ -8320,6 +8360,18 @@ private:
                       "    friend T f();\n"
                       "};\n");
         ASSERT_EQUALS("", errout.str());
+
+        checkOverride("struct S {};\n" // #11827
+                      "struct SPtr {\n"
+                      "    virtual S* operator->() const { return p; }\n"
+                      "    S* p = nullptr;\n"
+                      "};\n"
+                      "struct T : public S {};\n"
+                      "struct TPtr : public SPtr {\n"
+                      "    T* operator->() const { return (T*)p; }\n"
+                      "};\n");
+        ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:8]: (style) The function 'operator->' overrides a function in a base class but is not marked with a 'override' specifier.\n",
+                      errout.str());
     }
 
     void overrideCVRefQualifiers() {
@@ -8511,6 +8563,13 @@ private:
                              "struct D : B {\n"
                              "    int g() const;\n"
                              "    int f() const override { return g(); }\n"
+                             "};\n");
+        ASSERT_EQUALS("", errout.str());
+
+        checkUselessOverride("#define MACRO 1\n"
+                             "struct B { virtual int f() { return 1; } };\n"
+                             "struct D : B {\n"
+                             "    int f() override { return MACRO; }\n"
                              "};\n");
         ASSERT_EQUALS("", errout.str());
     }

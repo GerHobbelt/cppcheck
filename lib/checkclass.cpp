@@ -2468,8 +2468,9 @@ bool CheckClass::checkConstFunc(const Scope *scope, const Function *func, Member
             auto hasOverloadedMemberAccess = [](const Token* end, const Scope* scope) -> bool {
                 if (!end || !scope || !Token::simpleMatch(end->astParent(), "."))
                     return false;
-                auto it = std::find_if(scope->functionList.begin(), scope->functionList.end(), [](const Function& f) {
-                    return f.isConst() && f.name() == "operator.";
+                const std::string op = "operator" + end->astParent()->originalName();
+                auto it = std::find_if(scope->functionList.begin(), scope->functionList.end(), [&op](const Function& f) {
+                    return f.isConst() && f.name() == op;
                 });
                 if (it == scope->functionList.end() || !it->retType || !it->retType->classScope)
                     return false;
@@ -2940,7 +2941,10 @@ static std::vector<DuplMemberFuncInfo> getDuplInheritedMemberFunctionsRecursive(
             if (classFuncIt.isImplicitlyVirtual())
                 continue;
             for (const Function& parentClassFuncIt : parentClassIt.type->classScope->functionList) {
-                if (classFuncIt.name() == parentClassFuncIt.name() && (parentClassFuncIt.access != AccessControl::Private || !skipPrivate))
+                if (classFuncIt.name() == parentClassFuncIt.name() &&
+                    (parentClassFuncIt.access != AccessControl::Private || !skipPrivate) &&
+                    !classFuncIt.isConstructor() && !classFuncIt.isDestructor() &&
+                    classFuncIt.argsMatch(parentClassIt.type->classScope, parentClassFuncIt.argDef, classFuncIt.argDef, emptyString, 0))
                     results.emplace_back(&classFuncIt, &parentClassFuncIt, &parentClassIt);
             }
         }
@@ -2954,27 +2958,36 @@ static std::vector<DuplMemberFuncInfo> getDuplInheritedMemberFunctionsRecursive(
 
 void CheckClass::checkDuplInheritedMembersRecursive(const Type* typeCurrent, const Type* typeBase)
 {
-    const auto results = getDuplInheritedMembersRecursive(typeCurrent, typeBase);
-    for (const auto& r : results) {
+    const auto resultsVar = getDuplInheritedMembersRecursive(typeCurrent, typeBase);
+    for (const auto& r : resultsVar) {
         duplInheritedMembersError(r.classVar->nameToken(), r.parentClassVar->nameToken(),
                                   typeCurrent->name(), r.parentClass->type->name(), r.classVar->name(),
                                   typeCurrent->classScope->type == Scope::eStruct,
                                   r.parentClass->type->classScope->type == Scope::eStruct);
     }
+
+    const auto resultsFunc = getDuplInheritedMemberFunctionsRecursive(typeCurrent, typeBase);
+    for (const auto& r : resultsFunc) {
+        duplInheritedMembersError(r.classFunc->token, r.parentClassFunc->token,
+                                  typeCurrent->name(), r.parentClass->type->name(), r.classFunc->name(),
+                                  typeCurrent->classScope->type == Scope::eStruct,
+                                  r.parentClass->type->classScope->type == Scope::eStruct, /*isFunction*/ true);
+    }
 }
 
 void CheckClass::duplInheritedMembersError(const Token *tok1, const Token* tok2,
                                            const std::string &derivedName, const std::string &baseName,
-                                           const std::string &variableName, bool derivedIsStruct, bool baseIsStruct)
+                                           const std::string &memberName, bool derivedIsStruct, bool baseIsStruct, bool isFunction)
 {
     ErrorPath errorPath;
-    errorPath.emplace_back(tok2, "Parent variable '" + baseName + "::" + variableName + "'");
-    errorPath.emplace_back(tok1, "Derived variable '" + derivedName + "::" + variableName + "'");
+    const std::string member = isFunction ? "function" : "variable";
+    errorPath.emplace_back(tok2, "Parent " + member + " '" + baseName + "::" + memberName + "'");
+    errorPath.emplace_back(tok1, "Derived " + member + " '" + derivedName + "::" + memberName + "'");
 
-    const std::string symbols = "$symbol:" + derivedName + "\n$symbol:" + variableName + "\n$symbol:" + baseName;
+    const std::string symbols = "$symbol:" + derivedName + "\n$symbol:" + memberName + "\n$symbol:" + baseName;
 
     const std::string message = "The " + std::string(derivedIsStruct ? "struct" : "class") + " '" + derivedName +
-                                "' defines member variable with name '" + variableName + "' also defined in its parent " +
+                                "' defines member " + member + " with name '" + memberName + "' also defined in its parent " +
                                 std::string(baseIsStruct ? "struct" : "class") + " '" + baseName + "'.";
     reportError(errorPath, Severity::warning, "duplInheritedMember", symbols + '\n' + message, CWE398, Certainty::normal);
 }
@@ -3137,6 +3150,8 @@ static bool compareTokenRanges(const Token* start1, const Token* end1, const Tok
         if (tok1->str() != tok2->str())
             break;
         if (tok1->str() == "this")
+            break;
+        if (tok1->isExpandedMacro() || tok2->isExpandedMacro())
             break;
         if (tok1 == end1 && tok2 == end2) {
             isEqual = true;

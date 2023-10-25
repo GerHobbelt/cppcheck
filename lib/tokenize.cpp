@@ -5249,7 +5249,7 @@ void Tokenizer::createLinks2()
         } else if (token->str() == "<" &&
                    ((token->previous() && (token->previous()->isTemplate() ||
                                            (token->previous()->isName() && !token->previous()->varId()) ||
-                                           (token->strAt(-1) == "]" && !Token::Match(token->linkAt(-1)->previous(), "%name%|)")))) ||
+                                           (token->strAt(-1) == "]" && (!Token::Match(token->linkAt(-1)->previous(), "%name%|)") || token->linkAt(-1)->previous()->isKeyword())))) ||
                     Token::Match(token->next(), ">|>>"))) {
             type.push(token);
             if (token->previous()->str() == "template")
@@ -5840,6 +5840,8 @@ void Tokenizer::dump(std::ostream &out) const
             out << " externLang=\"C\"";
         if (tok->isExpandedMacro())
             out << " isExpandedMacro=\"true\"";
+        if (tok->isTemplateArg())
+            out << " isTemplateArg=\"true\"";
         if (tok->isRemovedVoidParameter())
             out << " isRemovedVoidParameter=\"true\"";
         if (tok->isSplittedVarDeclComma())
@@ -7121,7 +7123,7 @@ void Tokenizer::simplifyVarDecl(Token * tokBegin, const Token * const tokEnd, co
                 if (Token::Match(tok2, "{|(|["))
                     tok2 = tok2->link();
 
-                else if (!isC() && tok2->str() == "<" && tok2->previous()->isName() && !tok2->previous()->varId())
+                else if (!isC() && tok2->str() == "<" && ((tok2->previous()->isName() && !tok2->previous()->varId()) || tok2->strAt(-1) == "]"))
                     tok2 = tok2->findClosingBracket();
 
                 else if (std::strchr(";,", tok2->str()[0])) {
@@ -8051,6 +8053,17 @@ void Tokenizer::reportUnknownMacros() const
 
             if (Token::Match(tok->previous(), "%op%|("))
                 unknownMacroError(tok);
+        }
+    }
+
+    // Report unknown macros before } "{ .. if (x) MACRO }"
+    for (const Token *tok = tokens(); tok; tok = tok->next()) {
+        if (Token::Match(tok, ")|; %name% } !!)")) {
+            const Token* prev = tok->linkAt(2);
+            while (Token::simpleMatch(prev, "{"))
+                prev = prev->previous();
+            if (Token::Match(prev, ";|)"))
+                unknownMacroError(tok->next());
         }
     }
 

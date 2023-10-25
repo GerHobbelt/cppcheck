@@ -888,6 +888,26 @@ private:
                     "  auto x = v->back();\n"
                     "}\n");
         ASSERT_EQUALS("", errout.str());
+
+        checkNormal("template <typename T, uint8_t count>\n"
+                    "struct Foo {\n"
+                    "    std::array<T, count> items = {0};\n"
+                    "    T maxCount = count;\n"
+                    "    explicit Foo(const T& maxValue = (std::numeric_limits<T>::max)()) : maxCount(maxValue) {}\n"
+                    "    bool Set(const uint8_t idx) {\n"
+                    "        if (CheckBounds(idx) && items[idx] < maxCount) {\n"
+                    "            items[idx] += 1;\n"
+                    "            return true;\n"
+                    "        }\n"
+                    "        return false;\n"
+                    "    }\n"
+                    "    static bool CheckBounds(const uint8_t idx) { return idx < count; }\n"
+                    "};\n"
+                    "void f() {\n"
+                    "    Foo<uint8_t, 42U> x;\n"
+                    "    if (x.Set(42U)) {}\n"
+                    "}\n");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void outOfBoundsSymbolic()
@@ -4236,6 +4256,11 @@ private:
         ASSERT_EQUALS("[test.cpp:2]: (performance) Assigning the result of c_str() to a std::string_view is slow and redundant.\n"
                       "[test.cpp:6]: (performance) Constructing a std::string_view from the result of c_str() is slow and redundant.\n",
                       errout.str());
+
+        check("void f(const std::string& s) {\n" // #11819
+              "    std::string_view sv(s.data(), 13);\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void uselessCalls() {

@@ -2886,8 +2886,24 @@ void CheckClass::checkDuplInheritedMembers()
     }
 }
 
-void CheckClass::checkDuplInheritedMembersRecursive(const Type* typeCurrent, const Type* typeBase)
+namespace {
+    struct DuplMemberInfo {
+        DuplMemberInfo(const Variable* cv, const Variable* pcv, const Type::BaseInfo* pc) : classVar(cv), parentClassVar(pcv), parentClass(pc) {}
+        const Variable* classVar;
+        const Variable* parentClassVar;
+        const Type::BaseInfo* parentClass;
+    };
+    struct DuplMemberFuncInfo {
+        DuplMemberFuncInfo(const Function* cf, const Function* pcf, const Type::BaseInfo* pc) : classFunc(cf), parentClassFunc(pcf), parentClass(pc) {}
+        const Function* classFunc;
+        const Function* parentClassFunc;
+        const Type::BaseInfo* parentClass;
+    };
+}
+
+static std::vector<DuplMemberInfo> getDuplInheritedMembersRecursive(const Type* typeCurrent, const Type* typeBase, bool skipPrivate = true)
 {
+    std::vector<DuplMemberInfo> results;
     for (const Type::BaseInfo &parentClassIt : typeBase->derivedFrom) {
         // Check if there is info about the 'Base' class
         if (!parentClassIt.type || !parentClassIt.type->classScope)
@@ -2898,16 +2914,52 @@ void CheckClass::checkDuplInheritedMembersRecursive(const Type* typeCurrent, con
         // Check if they have a member variable in common
         for (const Variable &classVarIt : typeCurrent->classScope->varlist) {
             for (const Variable &parentClassVarIt : parentClassIt.type->classScope->varlist) {
-                if (classVarIt.name() == parentClassVarIt.name() && !parentClassVarIt.isPrivate()) { // Check if the class and its parent have a common variable
-                    duplInheritedMembersError(classVarIt.nameToken(), parentClassVarIt.nameToken(),
-                                              typeCurrent->name(), parentClassIt.type->name(), classVarIt.name(),
-                                              typeCurrent->classScope->type == Scope::eStruct,
-                                              parentClassIt.type->classScope->type == Scope::eStruct);
-                }
+                if (classVarIt.name() == parentClassVarIt.name() && (!parentClassVarIt.isPrivate() || !skipPrivate)) // Check if the class and its parent have a common variable
+                    results.emplace_back(&classVarIt, &parentClassVarIt, &parentClassIt);
             }
         }
-        if (typeCurrent != parentClassIt.type)
-            checkDuplInheritedMembersRecursive(typeCurrent, parentClassIt.type);
+        if (typeCurrent != parentClassIt.type) {
+            const auto recursive = getDuplInheritedMembersRecursive(typeCurrent, parentClassIt.type, skipPrivate);
+            results.insert(results.end(), recursive.begin(), recursive.end());
+        }
+    }
+    return results;
+}
+
+static std::vector<DuplMemberFuncInfo> getDuplInheritedMemberFunctionsRecursive(const Type* typeCurrent, const Type* typeBase, bool skipPrivate = true)
+{
+    std::vector<DuplMemberFuncInfo> results;
+    for (const Type::BaseInfo &parentClassIt : typeBase->derivedFrom) {
+        // Check if there is info about the 'Base' class
+        if (!parentClassIt.type || !parentClassIt.type->classScope)
+            continue;
+        // Don't crash on recursive templates
+        if (parentClassIt.type == typeBase)
+            continue;
+        for (const Function& classFuncIt : typeCurrent->classScope->functionList) {
+            if (classFuncIt.isImplicitlyVirtual())
+                continue;
+            for (const Function& parentClassFuncIt : parentClassIt.type->classScope->functionList) {
+                if (classFuncIt.name() == parentClassFuncIt.name() && (parentClassFuncIt.access != AccessControl::Private || !skipPrivate))
+                    results.emplace_back(&classFuncIt, &parentClassFuncIt, &parentClassIt);
+            }
+        }
+        if (typeCurrent != parentClassIt.type) {
+            const auto recursive = getDuplInheritedMemberFunctionsRecursive(typeCurrent, parentClassIt.type);
+            results.insert(results.end(), recursive.begin(), recursive.end());
+        }
+    }
+    return results;
+}
+
+void CheckClass::checkDuplInheritedMembersRecursive(const Type* typeCurrent, const Type* typeBase)
+{
+    const auto results = getDuplInheritedMembersRecursive(typeCurrent, typeBase);
+    for (const auto& r : results) {
+        duplInheritedMembersError(r.classVar->nameToken(), r.parentClassVar->nameToken(),
+                                  typeCurrent->name(), r.parentClass->type->name(), r.classVar->name(),
+                                  typeCurrent->classScope->type == Scope::eStruct,
+                                  r.parentClass->type->classScope->type == Scope::eStruct);
     }
 }
 
@@ -3036,7 +3088,7 @@ void CheckClass::overrideError(const Function *funcInBase, const Function *funcI
                 Certainty::normal);
 }
 
-void CheckClass::uselessOverrideError(const Function *funcInBase, const Function *funcInDerived)
+void CheckClass::uselessOverrideError(const Function *funcInBase, const Function *funcInDerived, bool isSameCode)
 {
     const std::string functionName = funcInDerived ? ((funcInDerived->isDestructor() ? "~" : "") + funcInDerived->name()) : "";
     const std::string funcType = (funcInDerived && funcInDerived->isDestructor()) ? "destructor" : "function";
@@ -3047,9 +3099,15 @@ void CheckClass::uselessOverrideError(const Function *funcInBase, const Function
         errorPath.emplace_back(funcInDerived->tokenDef, char(std::toupper(funcType[0])) + funcType.substr(1) + " in derived class");
     }
 
+    std::string errStr = "\nThe " + funcType + " '$symbol' overrides a " + funcType + " in a base class but ";
+    if (isSameCode) {
+        errStr += "is identical to the overridden function";
+    }
+    else
+        errStr += "just delegates back to the base class.";
     reportError(errorPath, Severity::style, "uselessOverride",
-                "$symbol:" + functionName + "\n"
-                "The " + funcType + " '$symbol' overrides a " + funcType + " in a base class but just delegates back to the base class.",
+                "$symbol:" + functionName +
+                errStr,
                 CWE(0U) /* Unknown CWE! */,
                 Certainty::normal);
 }
@@ -3069,6 +3127,25 @@ static const Token* getSingleFunctionCall(const Scope* scope) {
     if (Token::simpleMatch(ftok, "(") && ftok->previous()->function())
         return ftok->previous();
     return nullptr;
+}
+
+static bool compareTokenRanges(const Token* start1, const Token* end1, const Token* start2, const Token* end2) {
+    const Token* tok1 = start1;
+    const Token* tok2 = start2;
+    bool isEqual = false;
+    while (tok1 && tok2) {
+        if (tok1->str() != tok2->str())
+            break;
+        if (tok1->str() == "this")
+            break;
+        if (tok1 == end1 && tok2 == end2) {
+            isEqual = true;
+            break;
+        }
+        tok1 = tok1->next();
+        tok2 = tok2->next();
+    }
+    return isEqual;
 }
 
 void CheckClass::checkUselessOverride()
@@ -3093,6 +3170,25 @@ void CheckClass::checkUselessOverride()
                 return f.name() == func.name();
             }))
                 continue;
+            if (func.token->isExpandedMacro() || baseFunc->token->isExpandedMacro())
+                continue;
+            if (baseFunc->functionScope) {
+                bool isSameCode = compareTokenRanges(baseFunc->argDef, baseFunc->argDef->link(), func.argDef, func.argDef->link()); // function arguments
+                if (isSameCode) {
+                    isSameCode = compareTokenRanges(baseFunc->functionScope->bodyStart, baseFunc->functionScope->bodyEnd, // function body
+                                                    func.functionScope->bodyStart, func.functionScope->bodyEnd);
+
+                    if (isSameCode) {
+                        // bailout for shadowed members
+                        if (!classScope->definedType ||
+                            !getDuplInheritedMembersRecursive(classScope->definedType, classScope->definedType, /*skipPrivate*/ false).empty() ||
+                            !getDuplInheritedMemberFunctionsRecursive(classScope->definedType, classScope->definedType, /*skipPrivate*/ false).empty())
+                            continue;
+                        uselessOverrideError(baseFunc, &func, true);
+                        continue;
+                    }
+                }
+            }
             if (const Token* const call = getSingleFunctionCall(func.functionScope)) {
                 if (call->function() != baseFunc)
                     continue;

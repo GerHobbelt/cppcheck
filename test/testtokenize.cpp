@@ -3501,6 +3501,36 @@ private:
             ASSERT_EQUALS(true, tok1->link() == tok2);
             ASSERT_EQUALS(true, tok2->link() == tok1);
         }
+
+        { // #11810
+            const char code[] = "void f() {\n"
+                                "    auto g = [] <typename A, typename B> (A a, B&& b) { return a < b; };\n"
+                                "}\n";
+            errout.str("");
+            Tokenizer tokenizer(&settings0, this);
+            std::istringstream istr(code);
+            ASSERT(tokenizer.tokenize(istr, "test.cpp"));
+            const Token* tok1 = Token::findsimplematch(tokenizer.tokens(), "< A");
+            const Token* tok2 = Token::findsimplematch(tok1, "> (");
+            ASSERT_EQUALS(true, tok1->link() == tok2);
+            ASSERT_EQUALS(true, tok2->link() == tok1);
+        }
+
+        {
+            const char code[] = "void f() {\n"
+                                "    auto g = [] <typename U> () {\n"
+                                "        return [] <typename T> () {};\n"
+                                "    };\n"
+                                "}\n";
+            errout.str("");
+            Tokenizer tokenizer(&settings0, this);
+            std::istringstream istr(code);
+            ASSERT(tokenizer.tokenize(istr, "test.cpp"));
+            const Token* tok1 = Token::findsimplematch(tokenizer.tokens(), "< T");
+            const Token* tok2 = Token::findsimplematch(tok1, "> (");
+            ASSERT_EQUALS(true, tok1->link() == tok2);
+            ASSERT_EQUALS(true, tok2->link() == tok1);
+        }
     }
 
     void simplifyString() {
@@ -6843,6 +6873,13 @@ private:
         ASSERT_NO_THROW(tokenizeAndStringify(code11));
 
         ASSERT_NO_THROW(tokenizeAndStringify("alignas(8) alignas(16) int x;")); // alignas is not unknown macro
+
+        ASSERT_THROW(tokenizeAndStringify("void foo() { if(x) SYSTEM_ERROR }"), InternalError);
+        ASSERT_THROW(tokenizeAndStringify("void foo() { dostuff(); SYSTEM_ERROR }"), InternalError);
+
+        ASSERT_NO_THROW(tokenizeAndStringify("void f(void* q) {\n"
+                                             "    g(&(S) { .p = (int*)q });\n"
+                                             "}\n", /*expand*/ true, cppcheck::Platform::Type::Native, "test.c"));
     }
 
     void findGarbageCode() { // Test Tokenizer::findGarbageCode()

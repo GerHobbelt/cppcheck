@@ -49,6 +49,7 @@ private:
         TEST_CASE(canreplace1);
         TEST_CASE(canreplace2);
         TEST_CASE(canreplace3);
+        TEST_CASE(canreplace4);
         TEST_CASE(cconst);
         TEST_CASE(cstruct1);
         TEST_CASE(cstruct2);
@@ -67,6 +68,7 @@ private:
         TEST_CASE(carray1);
         TEST_CASE(carray2);
         TEST_CASE(carray3);
+        TEST_CASE(carray4);
         TEST_CASE(cdonotreplace1);
         TEST_CASE(cppfp1);
         TEST_CASE(Generic1);
@@ -211,6 +213,7 @@ private:
         TEST_CASE(simplifyTypedef144); // #9353
         TEST_CASE(simplifyTypedef145); // #9353
         TEST_CASE(simplifyTypedef146);
+        TEST_CASE(simplifyTypedef147);
 
         TEST_CASE(simplifyTypedefFunction1);
         TEST_CASE(simplifyTypedefFunction2); // ticket #1685
@@ -351,6 +354,14 @@ private:
         ASSERT_EQUALS("struct S { const char * g ( ) const { return s . c_str ( ) ; } std :: string s ; } ;", simplifyTypedefC(code1));
     }
 
+    void canreplace4() {
+        const char code1[] = "typedef std::vector<int> X;\n" // #12026
+                             "struct S {\n"
+                             "    enum E { X };\n"
+                             "};\n";
+        ASSERT_EQUALS("struct S { enum E { X } ; } ;", simplifyTypedef(code1));
+    }
+
     void cconst() {
         const char code1[] = "typedef void* HWND;\n"
                              "const HWND x;";
@@ -470,6 +481,13 @@ private:
                "typedef b c[3];\n"
                "c* p;\n";
         ASSERT_EQUALS("int ( * p ) [ 3 ] [ 2 ] [ 1 ] ;", simplifyTypedef(code));
+    }
+
+    void carray4() {
+        const char* code{};
+        code = "typedef int arr[12];\n" // #12019
+               "void foo() { arr temp = {0}; }\n";
+        ASSERT_EQUALS("void foo ( ) { int temp [ 12 ] = { 0 } ; }", tok(code));
     }
 
     void cdonotreplace1() {
@@ -1869,7 +1887,7 @@ private:
                              "}";
 
         // The expected tokens..
-        const char expected2[] = "void f ( ) { char a [ 256 ] ; a = { 0 } ; char b [ 256 ] ; b = { 0 } ; }";
+        const char expected2[] = "void f ( ) { char a [ 256 ] = { 0 } ; char b [ 256 ] = { 0 } ; }";
         ASSERT_EQUALS(expected2, tok(code2, false, cppcheck::Platform::Type::Native, false));
         ASSERT_EQUALS("", errout.str());
 
@@ -3387,6 +3405,25 @@ private:
                "void N::T::f(V*) {}\n"
                "namespace N {}\n";
         ASSERT_EQUALS("namespace N { struct S { } ; struct T { void f ( int * ) ; } ; } void N :: T :: f ( int * ) { }", tok(code));
+    }
+
+    void simplifyTypedef147() {
+        const char* code{};
+        code = "namespace N {\n" // #12014
+               "    template<typename T>\n"
+               "    struct S {};\n"
+               "}\n"
+               "typedef N::S<int> S;\n"
+               "namespace N {\n"
+               "    template<typename T>\n"
+               "    struct U {\n"
+               "        S<T> operator()() {\n"
+               "            return {};\n"
+               "        }\n"
+               "    };\n"
+               "}\n";
+        ASSERT_EQUALS("namespace N { template < typename T > struct S { } ; } namespace N { template < typename T > struct U { S < T > operator() ( ) { return { } ; } } ; }",
+                      tok(code));
     }
 
     void simplifyTypedefFunction1() {

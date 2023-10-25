@@ -545,8 +545,10 @@ bool CheckLeakAutoVar::checkScope(const Token * const startToken,
                 }
                 closingParenthesis = closingParenthesis->linkAt(1);
                 if (Token::simpleMatch(closingParenthesis, "} else {")) {
-                    if (!checkScope(closingParenthesis->tokAt(2), varInfo2, notzero, recursiveCount))
-                        continue;
+                    if (!checkScope(closingParenthesis->tokAt(2), varInfo2, notzero, recursiveCount)) {
+                        varInfo.clear();
+                        return false;
+                    }
                     tok = closingParenthesis->linkAt(2)->previous();
                 } else {
                     tok = closingParenthesis->previous();
@@ -609,7 +611,7 @@ bool CheckLeakAutoVar::checkScope(const Token * const startToken,
         // unknown control.. (TODO: handle loops)
         else if ((Token::Match(tok, "%type% (") && Token::simpleMatch(tok->linkAt(1), ") {")) || Token::simpleMatch(tok, "do {")) {
             varInfo.clear();
-            break;
+            return false;
         }
 
         // return
@@ -934,6 +936,8 @@ void CheckLeakAutoVar::functionCall(const Token *tokName, const Token *tokOpenin
         }
 
         // Skip casts
+        if (arg->isKeyword() && arg->astParent() && arg->astParent()->isCast())
+            arg = arg->astParent();
         while (arg && arg->isCast())
             arg = arg->astOperand2() ? arg->astOperand2() : arg->astOperand1();
         const Token * const argTypeStartTok = arg;

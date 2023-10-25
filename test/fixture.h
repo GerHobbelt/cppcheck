@@ -102,9 +102,10 @@ protected:
         mVerbose = v;
     }
 
+    void setTemplateFormat(const std::string &templateFormat);
+
     void setMultiline() {
-        mTemplateFormat = "{file}:{line}:{severity}:{message}";
-        mTemplateLocation = "{file}:{line}:note:{info}";
+        setTemplateFormat("multiline");
     }
 
     void processOptions(const options& args);
@@ -170,6 +171,6 @@ extern std::ostringstream output;
         } \
 } while (false)
 
-#define PLATFORM( S, P ) do { std::string errstr; assertEquals(__FILE__, __LINE__, true, S.platform(cppcheck::Platform::platformString(P), errstr, {exename}), errstr); } while (false)
+#define PLATFORM( P, T ) do { std::string errstr; assertEquals(__FILE__, __LINE__, true, P.set(cppcheck::Platform::toString(T), errstr, {exename}), errstr); } while (false)
 
 #endif // fixtureH

@@ -162,7 +162,7 @@ Tokenizer::Tokenizer(const Settings *settings, ErrorLogger *errorLogger, const P
     mSettings(settings),
     mErrorLogger(errorLogger),
     mSymbolDatabase(nullptr),
-    mTemplateSimplifier(new TemplateSimplifier(this)),
+    mTemplateSimplifier(new TemplateSimplifier(*this)),
     mVarId(0),
     mUnnamedCount(0),
     mCodeWithTemplates(false), //is there any templates?
@@ -214,9 +214,9 @@ nonneg int Tokenizer::sizeOfType(const Token *type) const
         return podtype->size;
     } else if (type->isLong()) {
         if (type->str() == "double")
-            return mSettings->sizeof_long_double;
+            return mSettings->platform.sizeof_long_double;
         else if (type->str() == "long")
-            return mSettings->sizeof_long_long;
+            return mSettings->platform.sizeof_long_long;
     }
 
     return it->second;
@@ -2873,16 +2873,16 @@ void Tokenizer::fillTypeSizes()
 {
     mTypeSize.clear();
     mTypeSize["char"] = 1;
-    mTypeSize["_Bool"] = mSettings->sizeof_bool;
-    mTypeSize["bool"] = mSettings->sizeof_bool;
-    mTypeSize["short"] = mSettings->sizeof_short;
-    mTypeSize["int"] = mSettings->sizeof_int;
-    mTypeSize["long"] = mSettings->sizeof_long;
-    mTypeSize["float"] = mSettings->sizeof_float;
-    mTypeSize["double"] = mSettings->sizeof_double;
-    mTypeSize["wchar_t"] = mSettings->sizeof_wchar_t;
-    mTypeSize["size_t"] = mSettings->sizeof_size_t;
-    mTypeSize["*"] = mSettings->sizeof_pointer;
+    mTypeSize["_Bool"] = mSettings->platform.sizeof_bool;
+    mTypeSize["bool"] = mSettings->platform.sizeof_bool;
+    mTypeSize["short"] = mSettings->platform.sizeof_short;
+    mTypeSize["int"] = mSettings->platform.sizeof_int;
+    mTypeSize["long"] = mSettings->platform.sizeof_long;
+    mTypeSize["float"] = mSettings->platform.sizeof_float;
+    mTypeSize["double"] = mSettings->platform.sizeof_double;
+    mTypeSize["wchar_t"] = mSettings->platform.sizeof_wchar_t;
+    mTypeSize["size_t"] = mSettings->platform.sizeof_size_t;
+    mTypeSize["*"] = mSettings->platform.sizeof_pointer;
 }
 
 void Tokenizer::combineOperators()
@@ -2972,7 +2972,7 @@ void Tokenizer::combineStringAndCharLiterals()
 
         while (Token::Match(tok->next(), "%str%") || Token::Match(tok->next(), "_T|_TEXT|TEXT ( %str% )")) {
             if (tok->next()->isName()) {
-                if (!mSettings->isWindowsPlatform())
+                if (!mSettings->platform.isWindows())
                     break;
                 tok->deleteNext(2);
                 tok->next()->deleteNext();
@@ -6168,11 +6168,22 @@ void Tokenizer::simplifyFunctionPointers()
             Token::eraseTokens(tok->link()->linkAt(1), endTok->next());
 
             // remove variable names
-            for (Token* tok3 = tok->link()->tokAt(2); Token::Match(tok3, "%name%|*|&|[|(|::|,|<"); tok3 = tok3->next()) {
+            int indent = 0;
+            for (Token* tok3 = tok->link()->tokAt(2); Token::Match(tok3, "%name%|*|&|[|(|)|::|,|<"); tok3 = tok3->next()) {
+                if (tok3->str() == ")" && --indent < 0)
+                    break;
                 if (tok3->str() == "<" && tok3->link())
                     tok3 = tok3->link();
-                else if (Token::Match(tok3, "[|("))
+                else if (Token::Match(tok3, "["))
                     tok3 = tok3->link();
+                else if (tok3->str() == "(") {
+                    tok3 = tok3->link();
+                    if (Token::simpleMatch(tok3, ") (")) {
+                        tok3 = tok3->next();
+                        ++indent;
+                    } else
+                        break;
+                }
                 if (Token::Match(tok3, "%type%|*|&|> %name% [,)[]"))
                     tok3->deleteNext();
             }
@@ -6424,6 +6435,7 @@ void Tokenizer::simplifyVarDecl(Token * tokBegin, const Token * const tokEnd, co
                 endDecl = endDecl->next();
                 endDecl->next()->isSplittedVarDeclEq(true);
                 endDecl->insertToken(varName->str());
+                endDecl->next()->isExpandedMacro(varName->isExpandedMacro());
                 continue;
             }
             //non-VLA case
@@ -8123,7 +8135,7 @@ void Tokenizer::simplifyStructDecl()
 
 void Tokenizer::simplifyCallingConvention()
 {
-    const bool windows = mSettings->isWindowsPlatform();
+    const bool windows = mSettings->platform.isWindows();
 
     for (Token *tok = list.front(); tok; tok = tok->next()) {
         while (Token::Match(tok, "__cdecl|__stdcall|__fastcall|__thiscall|__clrcall|__syscall|__pascal|__fortran|__far|__near") || (windows && Token::Match(tok, "WINAPI|APIENTRY|CALLBACK"))) {
@@ -8947,7 +8959,7 @@ void Tokenizer::simplifyNamespaceStd()
 void Tokenizer::simplifyMicrosoftMemoryFunctions()
 {
     // skip if not Windows
-    if (!mSettings->isWindowsPlatform())
+    if (!mSettings->platform.isWindows())
         return;
 
     for (Token *tok = list.front(); tok; tok = tok->next()) {
@@ -9042,10 +9054,10 @@ namespace {
 void Tokenizer::simplifyMicrosoftStringFunctions()
 {
     // skip if not Windows
-    if (!mSettings->isWindowsPlatform())
+    if (!mSettings->platform.isWindows())
         return;
 
-    const bool ansi = mSettings->platformType == cppcheck::Platform::Win32A;
+    const bool ansi = mSettings->platform.type == cppcheck::Platform::Type::Win32A;
     for (Token *tok = list.front(); tok; tok = tok->next()) {
         if (tok->strAt(1) != "(")
             continue;
@@ -9078,7 +9090,7 @@ void Tokenizer::simplifyMicrosoftStringFunctions()
 void Tokenizer::simplifyBorland()
 {
     // skip if not Windows
-    if (!mSettings->isWindowsPlatform())
+    if (!mSettings->platform.isWindows())
         return;
     if (isC())
         return;
@@ -9129,7 +9141,7 @@ void Tokenizer::simplifyBorland()
 void Tokenizer::createSymbolDatabase()
 {
     if (!mSymbolDatabase)
-        mSymbolDatabase = new SymbolDatabase(this, mSettings, mErrorLogger);
+        mSymbolDatabase = new SymbolDatabase(*this, *mSettings, mErrorLogger);
     mSymbolDatabase->validate();
 }
 

@@ -62,9 +62,6 @@ Directive::Directive(std::string _file, const int _linenr, const std::string &_s
     str(trim(_str))
 {}
 
-std::atomic<bool> Preprocessor::missingIncludeFlag;
-std::atomic<bool> Preprocessor::missingSystemIncludeFlag;
-
 char Preprocessor::macroChar = char(1);
 
 Preprocessor::Preprocessor(Settings& settings, ErrorLogger *errorLogger) : mSettings(settings), mErrorLogger(errorLogger)
@@ -691,22 +688,22 @@ void Preprocessor::removeComments()
 
 void Preprocessor::setPlatformInfo(simplecpp::TokenList *tokens) const
 {
-    tokens->sizeOfType["bool"]          = mSettings.sizeof_bool;
-    tokens->sizeOfType["short"]         = mSettings.sizeof_short;
-    tokens->sizeOfType["int"]           = mSettings.sizeof_int;
-    tokens->sizeOfType["long"]          = mSettings.sizeof_long;
-    tokens->sizeOfType["long long"]     = mSettings.sizeof_long_long;
-    tokens->sizeOfType["float"]         = mSettings.sizeof_float;
-    tokens->sizeOfType["double"]        = mSettings.sizeof_double;
-    tokens->sizeOfType["long double"]   = mSettings.sizeof_long_double;
-    tokens->sizeOfType["bool *"]        = mSettings.sizeof_pointer;
-    tokens->sizeOfType["short *"]       = mSettings.sizeof_pointer;
-    tokens->sizeOfType["int *"]         = mSettings.sizeof_pointer;
-    tokens->sizeOfType["long *"]        = mSettings.sizeof_pointer;
-    tokens->sizeOfType["long long *"]   = mSettings.sizeof_pointer;
-    tokens->sizeOfType["float *"]       = mSettings.sizeof_pointer;
-    tokens->sizeOfType["double *"]      = mSettings.sizeof_pointer;
-    tokens->sizeOfType["long double *"] = mSettings.sizeof_pointer;
+    tokens->sizeOfType["bool"]          = mSettings.platform.sizeof_bool;
+    tokens->sizeOfType["short"]         = mSettings.platform.sizeof_short;
+    tokens->sizeOfType["int"]           = mSettings.platform.sizeof_int;
+    tokens->sizeOfType["long"]          = mSettings.platform.sizeof_long;
+    tokens->sizeOfType["long long"]     = mSettings.platform.sizeof_long_long;
+    tokens->sizeOfType["float"]         = mSettings.platform.sizeof_float;
+    tokens->sizeOfType["double"]        = mSettings.platform.sizeof_double;
+    tokens->sizeOfType["long double"]   = mSettings.platform.sizeof_long_double;
+    tokens->sizeOfType["bool *"]        = mSettings.platform.sizeof_pointer;
+    tokens->sizeOfType["short *"]       = mSettings.platform.sizeof_pointer;
+    tokens->sizeOfType["int *"]         = mSettings.platform.sizeof_pointer;
+    tokens->sizeOfType["long *"]        = mSettings.platform.sizeof_pointer;
+    tokens->sizeOfType["long long *"]   = mSettings.platform.sizeof_pointer;
+    tokens->sizeOfType["float *"]       = mSettings.platform.sizeof_pointer;
+    tokens->sizeOfType["double *"]      = mSettings.platform.sizeof_pointer;
+    tokens->sizeOfType["long double *"] = mSettings.platform.sizeof_pointer;
 }
 
 simplecpp::TokenList Preprocessor::preprocess(const simplecpp::TokenList &tokens1, const std::string &cfg, std::vector<std::string> &files, bool throwError)
@@ -836,27 +833,19 @@ void Preprocessor::error(const std::string &filename, unsigned int linenr, const
 // Report that include is missing
 void Preprocessor::missingInclude(const std::string &filename, unsigned int linenr, const std::string &header, HeaderTypes headerType)
 {
-    if (!mSettings.checks.isEnabled(Checks::missingInclude) && !mSettings.checkConfiguration)
+    if (!mSettings.checks.isEnabled(Checks::missingInclude))
         return;
 
     std::string fname = Path::fromNativeSeparators(filename);
+    std::string errorId = (headerType==SystemHeader) ? "missingIncludeSystem" : "missingInclude";
     Suppressions::ErrorMessage errorMessage;
-    errorMessage.errorId = "missingInclude";
+    errorMessage.errorId = errorId;
     errorMessage.setFileName(std::move(fname));
     errorMessage.lineNumber = linenr;
     if (mSettings.nomsg.isSuppressed(errorMessage))
         return;
-    errorMessage.errorId = "missingIncludeSystem";
-    if (headerType == SystemHeader && mSettings.nomsg.isSuppressed(errorMessage))
-        return;
 
-    if (headerType == SystemHeader)
-        missingSystemIncludeFlag = true;
-    else
-        missingIncludeFlag = true;
-
-    if (mErrorLogger && mSettings.checkConfiguration) {
-
+    if (mErrorLogger) {
         std::list<ErrorMessage::FileLocation> locationList;
         if (!filename.empty()) {
             ErrorMessage::FileLocation loc;
@@ -864,13 +853,13 @@ void Preprocessor::missingInclude(const std::string &filename, unsigned int line
             loc.setfile(Path::toNativeSeparators(filename));
             locationList.push_back(std::move(loc));
         }
-        ErrorMessage errmsg(locationList, mFile0, Severity::information,
+        ErrorMessage errmsg(std::move(locationList), mFile0, Severity::information,
                             (headerType==SystemHeader) ?
                             "Include file: <" + header + "> not found. Please note: Cppcheck does not need standard library headers to get proper results." :
                             "Include file: \"" + header + "\" not found.",
-                            (headerType==SystemHeader) ? "missingIncludeSystem" : "missingInclude",
+                            std::move(errorId),
                             Certainty::normal);
-        mErrorLogger->reportInfo(errmsg);
+        mErrorLogger->reportErr(errmsg);
     }
 }
 
@@ -878,7 +867,6 @@ void Preprocessor::getErrorMessages(ErrorLogger *errorLogger, const Settings *se
 {
     Settings settings2(*settings);
     Preprocessor preprocessor(settings2, errorLogger);
-    settings2.checkConfiguration = true;
     preprocessor.missingInclude(emptyString, 1, emptyString, UserHeader);
     preprocessor.missingInclude(emptyString, 1, emptyString, SystemHeader);
     preprocessor.error(emptyString, 1, "#error message");   // #error ..

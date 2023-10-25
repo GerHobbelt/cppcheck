@@ -36,8 +36,6 @@
 
 #include <simplecpp.h>
 
-#include <tinyxml2.h>
-
 class TestBufferOverrun : public TestFixture {
 public:
     TestBufferOverrun() : TestFixture("TestBufferOverrun") {}
@@ -946,7 +944,7 @@ private:
 
     void array_index_24() {
         // ticket #1492 and #1539
-        const std::string charMaxPlusOne(settings0.defaultSign == 'u' ? "256" : "128");
+        const std::string charMaxPlusOne(settings0.platform.defaultSign == 'u' ? "256" : "128");
         check(("void f(char n) {\n"
                "    int a[n];\n"     // n <= CHAR_MAX
                "    a[-1] = 0;\n"    // negative index
@@ -4078,7 +4076,7 @@ private:
                                "</def>";
         ASSERT(settings.library.loadxmldata(xmldata, sizeof(xmldata)));
         settings.severity.enable(Severity::warning);
-        settings.sizeof_wchar_t = 4;
+        settings.platform.sizeof_wchar_t = 4;
 
         check("void f() {\n"
               "    char c[10];\n"

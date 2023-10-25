@@ -82,7 +82,7 @@ CppCheckExecutor::~CppCheckExecutor()
 bool CppCheckExecutor::parseFromArgs(CppCheck *cppcheck, int argc, const char* const argv[])
 {
     Settings& settings = cppcheck->settings();
-    CmdLineParser parser(&settings);
+    CmdLineParser parser(settings);
     const bool success = parser.parseFromArgs(argc, argv);
 
     if (success) {
@@ -198,9 +198,6 @@ bool CppCheckExecutor::parseFromArgs(CppCheck *cppcheck, int argc, const char* c
 
 int CppCheckExecutor::check(int argc, const char* const argv[])
 {
-    Preprocessor::missingIncludeFlag = false;
-    Preprocessor::missingSystemIncludeFlag = false;
-
     CheckUnusedFunctions::clear();
 
     CppCheck cppCheck(*this, true, executeCommand);
@@ -348,6 +345,7 @@ int CppCheckExecutor::check_internal(CppCheck& cppcheck)
             }
         }
 
+        // TODO: not performed when multiple jobs are being used
         // second loop to parse all markup files which may not work until all
         // c/cpp files have been parsed and checked
         for (std::map<std::string, std::size_t>::const_iterator i = mFiles.cbegin(); i != mFiles.cend(); ++i) {
@@ -380,29 +378,6 @@ int CppCheckExecutor::check_internal(CppCheck& cppcheck)
 
     if (!settings.checkConfiguration) {
         cppcheck.tooManyConfigsError(emptyString,0U);
-
-        if (settings.checks.isEnabled(Checks::missingInclude) && (Preprocessor::missingIncludeFlag || Preprocessor::missingSystemIncludeFlag)) {
-            const std::list<ErrorMessage::FileLocation> callStack;
-            ErrorMessage msg(callStack,
-                             emptyString,
-                             Severity::information,
-                             "Cppcheck cannot find all the include files (use --check-config for details)\n"
-                             "Cppcheck cannot find all the include files. Cppcheck can check the code without the "
-                             "include files found. But the results will probably be more accurate if all the include "
-                             "files are found. Please check your project's include directories and add all of them "
-                             "as include directories for Cppcheck. To see what files Cppcheck cannot find use "
-                             "--check-config.",
-                             "",
-                             Certainty::normal);
-            if (Preprocessor::missingIncludeFlag) {
-                msg.id = "missingInclude";
-                reportInfo(msg);
-            }
-            if (Preprocessor::missingSystemIncludeFlag) {
-                msg.id = "missingIncludeSystem";
-                reportInfo(msg);
-            }
-        }
     }
 
     if (settings.xml) {
@@ -475,11 +450,6 @@ void CppCheckExecutor::reportProgress(const std::string &filename, const char st
     }
 }
 
-void CppCheckExecutor::reportInfo(const ErrorMessage &msg)
-{
-    reportErr(msg);
-}
-
 void CppCheckExecutor::reportStatus(std::size_t fileindex, std::size_t filecount, std::size_t sizedone, std::size_t sizetotal)
 {
     if (filecount > 1) {
@@ -488,6 +458,7 @@ void CppCheckExecutor::reportStatus(std::size_t fileindex, std::size_t filecount
         oss << fileindex << '/' << filecount
             << " files checked " << percentDone
             << "% done";
+        // TODO: do not unconditionally print in color
         std::cout << Color::FgBlue << oss.str() << Color::Reset << std::endl;
     }
 }

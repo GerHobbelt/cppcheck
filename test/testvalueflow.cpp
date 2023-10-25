@@ -156,6 +156,7 @@ private:
         TEST_CASE(valueFlowSymbolicStrlen);
         TEST_CASE(valueFlowSmartPointer);
         TEST_CASE(valueFlowImpossibleMinMax);
+        TEST_CASE(valueFlowImpossibleIncDec);
         TEST_CASE(valueFlowImpossibleUnknownConstant);
         TEST_CASE(valueFlowContainerEqual);
 
@@ -5605,6 +5606,22 @@ private:
                "}\n";
         values = tokenValues(code, "x >", ValueFlow::Value::ValueType::UNINIT);
         ASSERT_EQUALS(0, values.size());
+
+        // #12031
+        code = "bool g(int *p);\n"
+               "bool h();\n"
+               "void f(bool b, int y) {\n"
+               "    int x;\n"
+               "    if (b && y > 0) {\n"
+               "        b = g(&x);\n"
+               "    }\n"
+               "    while (b && y > 0) {\n"
+               "        if (x < 0) {}\n"
+               "        break;\n"
+               "    }\n"
+               "}\n";
+        values = tokenValues(code, "x <", ValueFlow::Value::ValueType::UNINIT);
+        ASSERT_EQUALS(0, values.size());
     }
 
     void valueFlowConditionExpressions() {
@@ -8142,6 +8159,19 @@ private:
                "}\n";
         ASSERT_EQUALS(true, testValueOfXImpossible(code, 3U, "a", -1));
         ASSERT_EQUALS(true, testValueOfXImpossible(code, 3U, -1));
+    }
+
+    void valueFlowImpossibleIncDec()
+    {
+        const char* code;
+
+        code = "int f() {\n"
+               "    for(int i = 0; i < 5; i++) {\n"
+               "        int x = i;\n"
+               "        return x;\n"
+               "    }\n"
+               "}\n";
+        ASSERT_EQUALS(true, testValueOfXImpossible(code, 4U, -1));
     }
 
     void valueFlowImpossibleUnknownConstant()

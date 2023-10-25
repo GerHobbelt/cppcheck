@@ -1103,7 +1103,7 @@ void SymbolDatabase::createSymbolDatabaseSetFunctionPointers(bool firstPass)
 
     // Set function call pointers
     for (const Token* tok = mTokenizer.list.front(); tok != mTokenizer.list.back(); tok = tok->next()) {
-        if (tok->isName() && !tok->function() && tok->varId() == 0 && Token::Match(tok, "%name% [{(,)>;]") && !isReservedName(tok->str())) {
+        if (tok->isName() && !tok->function() && tok->varId() == 0 && ((tok->astParent() && tok->astParent()->isComparisonOp()) || Token::Match(tok, "%name% [{(,)>;]")) && !isReservedName(tok->str())) {
             if (tok->next()->str() == ">" && !tok->next()->link())
                 continue;
 
@@ -1486,13 +1486,13 @@ void SymbolDatabase::createSymbolDatabaseIncompleteVars()
             tok = tok->linkAt(1);
             continue;
         }
-        if (!tok->isNameOnly())
+        if (!(tok->isNameOnly() || tok->isKeyword()))
             continue;
         if (tok->type())
             continue;
         if (Token::Match(tok->next(), "::|.|(|{|:|%var%"))
             continue;
-        if (Token::Match(tok->next(), "&|&&|* )|,|%var%"))
+        if (Token::Match(tok->next(), "&|&&|* )|,|%var%|const"))
             continue;
         // Very likely a typelist
         if (Token::Match(tok->tokAt(-2), "%type% ,") || Token::Match(tok->next(), ", %type%"))
@@ -1502,6 +1502,8 @@ void SymbolDatabase::createSymbolDatabaseIncompleteVars()
             tok = tok->linkAt(1);
             continue;
         }
+        if (tok->isKeyword())
+            continue;
         // Skip goto labels
         if (Token::simpleMatch(tok->previous(), "goto"))
             continue;
@@ -1509,6 +1511,16 @@ void SymbolDatabase::createSymbolDatabaseIncompleteVars()
         if (cppkeywords.count(tok->str()) > 0)
             continue;
         if (mSettings.standards.cpp >= Standards::CPP20 && cpp20keywords.count(tok->str()) > 0)
+            continue;
+        std::string fstr = tok->str();
+        const Token* ftok = tok->previous();
+        while (Token::simpleMatch(ftok, "::")) {
+            if (!Token::Match(ftok->previous(), "%name%"))
+                break;
+            fstr.insert(0, ftok->previous()->str() + "::");
+            ftok = ftok->tokAt(-2);
+        }
+        if (mSettings.library.functions.find(fstr) != mSettings.library.functions.end())
             continue;
         const_cast<Token *>(tok)->isIncompleteVar(true); // TODO: avoid const_cast
     }

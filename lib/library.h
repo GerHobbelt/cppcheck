@@ -75,9 +75,6 @@ public:
     Error load(const char exename[], const char path[]);
     Error load(const tinyxml2::XMLDocument &doc);
 
-    /** this is used for unit tests */
-    bool loadxmldata(const char xmldata[], std::size_t len);
-
     struct AllocFunc {
         int groupId;
         int arg;
@@ -107,48 +104,31 @@ public:
     /** get reallocation id for function */
     int getReallocId(const Token *tok, int arg) const;
 
+    // TODO: get rid of this
     /** get allocation info for function by name (deprecated, use other alloc) */
     const AllocFunc* getAllocFuncInfo(const char name[]) const {
         return getAllocDealloc(mAlloc, name);
     }
 
+    // TODO: get rid of this
     /** get deallocation info for function by name (deprecated, use other alloc) */
     const AllocFunc* getDeallocFuncInfo(const char name[]) const {
         return getAllocDealloc(mDealloc, name);
     }
 
+    // TODO: get rid of this
     /** get allocation id for function by name (deprecated, use other alloc) */
+    // cppcheck-suppress unusedFunction
     int allocId(const char name[]) const {
         const AllocFunc* af = getAllocDealloc(mAlloc, name);
         return af ? af->groupId : 0;
     }
 
+    // TODO: get rid of this
     /** get deallocation id for function by name (deprecated, use other alloc) */
     int deallocId(const char name[]) const {
         const AllocFunc* af = getAllocDealloc(mDealloc, name);
         return af ? af->groupId : 0;
-    }
-
-    /** set allocation id for function */
-    void setalloc(const std::string &functionname, int id, int arg) {
-        mAlloc[functionname].groupId = id;
-        mAlloc[functionname].arg = arg;
-    }
-
-    void setdealloc(const std::string &functionname, int id, int arg) {
-        mDealloc[functionname].groupId = id;
-        mDealloc[functionname].arg = arg;
-    }
-
-    void setrealloc(const std::string &functionname, int id, int arg, int reallocArg = 1) {
-        mRealloc[functionname].groupId = id;
-        mRealloc[functionname].arg = arg;
-        mRealloc[functionname].reallocArg = reallocArg;
-    }
-
-    /** add noreturn function setting */
-    void setnoreturn(const std::string& funcname, bool noreturn) {
-        mNoReturn[funcname] = noreturn ? FalseTrueMaybe::True : FalseTrueMaybe::False;
     }
 
     static bool isCompliantValidationExpression(const char* p);

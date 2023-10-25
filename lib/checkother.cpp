@@ -24,6 +24,7 @@
 #include "fwdanalysis.h"
 #include "library.h"
 #include "mathlib.h"
+#include "platform.h"
 #include "settings.h"
 #include "standards.h"
 #include "symboldatabase.h"
@@ -34,14 +35,10 @@
 #include "valueflow.h"
 #include "vfvalue.h"
 
-#include "checkclass.h" // CheckClass::stl_containers_not_const
-
 #include <algorithm> // find_if()
 #include <cctype>
 #include <list>
 #include <map>
-#include <memory>
-#include <set>
 #include <sstream>
 #include <utility>
 #include <numeric>
@@ -1474,6 +1471,8 @@ void CheckOther::checkConstVariable()
                 if (tok->isUnaryOp("&") && Token::Match(tok, "& %varid%", var->declarationId())) {
                     const Token* opTok = tok->astParent();
                     int argn = -1;
+                    if (opTok && opTok->isUnaryOp("!"))
+                        continue;
                     if (opTok && (opTok->isComparisonOp() || opTok->isAssignmentOp() || opTok->isCalculation())) {
                         if (opTok->isComparisonOp() || opTok->isCalculation()) {
                             if (opTok->astOperand1() != tok)
@@ -1481,7 +1480,7 @@ void CheckOther::checkConstVariable()
                             else
                                 opTok = opTok->astOperand2();
                         }
-                        if (opTok->valueType() && var->valueType() && opTok->valueType()->isConst(var->valueType()->pointer))
+                        if (opTok && opTok->valueType() && var->valueType() && opTok->valueType()->isConst(var->valueType()->pointer))
                             continue;
                     } else if (const Token* ftok = getTokenArgumentFunction(tok, argn)) {
                         bool inconclusive{};
@@ -1628,6 +1627,10 @@ void CheckOther::constVariableError(const Variable *var, const Function *functio
     if (!var) {
         reportError(nullptr, Severity::style, "constParameter", "Parameter 'x' can be declared with const");
         reportError(nullptr, Severity::style, "constVariable",  "Variable 'x' can be declared with const");
+        reportError(nullptr, Severity::style, "constParameterReference", "Parameter 'x' can be declared with const");
+        reportError(nullptr, Severity::style, "constVariableReference", "Variable 'x' can be declared with const");
+        reportError(nullptr, Severity::style, "constParameterPointer", "Parameter 'x' can be declared with const");
+        reportError(nullptr, Severity::style, "constVariablePointer", "Variable 'x' can be declared with const");
         reportError(nullptr, Severity::style, "constParameterCallback", "Parameter 'x' can be declared with const, however it seems that 'f' is a callback function.");
         return;
     }
@@ -1644,6 +1647,10 @@ void CheckOther::constVariableError(const Variable *var, const Function *functio
         errorPath.emplace_front(function->functionPointerUsage, "You might need to cast the function pointer here");
         id += "Callback";
         message += ". However it seems that '" + function->name() + "' is a callback function, if '$symbol' is declared with const you might also need to cast function pointer(s).";
+    } else if (var->isReference()) {
+        id += "Reference";
+    } else if (var->isPointer() && !var->isArray()) {
+        id += "Pointer";
     }
 
     reportError(errorPath, Severity::style, id.c_str(), message, CWE398, Certainty::normal);

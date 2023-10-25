@@ -37,7 +37,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <iterator>
-#include <memory>
 #include <utility>
 #include <unordered_map>
 
@@ -3225,9 +3224,9 @@ Check::FileInfo * CheckClass::loadFileInfoFromXml(const tinyxml2::XMLElement *xm
             MyFileInfo::NameLoc nameLoc;
             nameLoc.className = name;
             nameLoc.fileName = file;
-            nameLoc.lineNumber = std::atoi(line);
-            nameLoc.column = std::atoi(col);
-            nameLoc.hash = MathLib::toULongNumber(hash);
+            nameLoc.lineNumber = strToInt<int>(line);
+            nameLoc.column = strToInt<int>(col);
+            nameLoc.hash = strToInt<std::size_t>(hash);
             fileInfo->classDefinitions.push_back(std::move(nameLoc));
         }
     }

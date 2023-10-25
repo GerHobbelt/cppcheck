@@ -93,6 +93,8 @@ bool CheckUninitVar::diag(const Token* tok)
 
 void CheckUninitVar::check()
 {
+    logChecker("CheckUninitVar::check");
+
     const SymbolDatabase *symbolDatabase = mTokenizer->getSymbolDatabase();
 
     std::set<std::string> arrayTypeDefs;
@@ -607,7 +609,7 @@ bool CheckUninitVar::checkScopeForVariable(const Token *tok, const Variable& var
         }
 
         // skip sizeof / offsetof
-        if (isSizeOfEtc(tok))
+        if (isUnevaluated(tok))
             tok = tok->linkAt(1);
 
         // for/while..
@@ -724,7 +726,7 @@ bool CheckUninitVar::checkScopeForVariable(const Token *tok, const Variable& var
                     return true;
                 }
 
-                if (isSizeOfEtc(tok))
+                if (isUnevaluated(tok))
                     tok = tok->linkAt(1);
 
                 else if (tok->str() == "?") {
@@ -838,7 +840,7 @@ const Token* CheckUninitVar::checkExpr(const Token* tok, const Variable& var, co
 {
     if (!tok)
         return nullptr;
-    if (isSizeOfEtc(tok->previous()))
+    if (isUnevaluated(tok->previous()))
         return nullptr;
 
     if (tok->astOperand1()) {
@@ -891,7 +893,7 @@ bool CheckUninitVar::checkIfForWhileHead(const Token *startparentheses, const Va
             return true;
         }
         // skip sizeof / offsetof
-        if (isSizeOfEtc(tok))
+        if (isUnevaluated(tok))
             tok = tok->linkAt(1);
         if ((!isuninit || !membervar.empty()) && tok->str() == "&&")
             suppressErrors = true;
@@ -909,7 +911,7 @@ const Token* CheckUninitVar::checkLoopBodyRecursive(const Token *start, const Va
     const Token *const end = start->link();
     for (const Token *tok = start->next(); tok != end; tok = tok->next()) {
         // skip sizeof / offsetof
-        if (isSizeOfEtc(tok)) {
+        if (isUnevaluated(tok)) {
             tok = tok->linkAt(1);
             continue;
         }
@@ -1031,7 +1033,7 @@ const Token* CheckUninitVar::checkLoopBodyRecursive(const Token *start, const Va
                         varIsUsedInRhs = true;
                         return ChildrenToVisit::done;
                     }
-                    if (isSizeOfEtc(t->previous()))
+                    if (isUnevaluated(t->previous()))
                         return ChildrenToVisit::none;
                     return ChildrenToVisit::op1_and_op2;
                 });
@@ -1096,7 +1098,7 @@ void CheckUninitVar::checkRhs(const Token *tok, const Variable &var, Alloc alloc
             if (err)
                 uninitvarError(tok, var.nameToken()->str(), alloc);
             break;
-        } else if (isSizeOfEtc(tok))
+        } else if (isUnevaluated(tok))
             tok = tok->linkAt(1);
 
     }
@@ -1592,6 +1594,8 @@ static bool isLeafDot(const Token* tok)
 
 void CheckUninitVar::valueFlowUninit()
 {
+    logChecker("CheckUninitVar::valueFlowUninit");
+
     const SymbolDatabase *symbolDatabase = mTokenizer->getSymbolDatabase();
 
     std::unordered_set<nonneg int> ids;
@@ -1599,7 +1603,7 @@ void CheckUninitVar::valueFlowUninit()
         // check every executable scope
         for (const Scope* scope : symbolDatabase->functionScopes) {
             for (const Token* tok = scope->bodyStart; tok != scope->bodyEnd; tok = tok->next()) {
-                if (isSizeOfEtc(tok)) {
+                if (isUnevaluated(tok)) {
                     tok = tok->linkAt(1);
                     continue;
                 }

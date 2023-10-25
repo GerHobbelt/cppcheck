@@ -130,6 +130,9 @@ public:
     /** @brief The maximum time in seconds for the checks of a single file */
     int checksMaxTime{};
 
+    /** @brief --checkers-report=<filename> : Generate report of executed checkers */
+    std::string checkersReportFilename;
+
     /** @brief check unknown function return values */
     std::set<std::string> checkUnknownFunctionReturn;
 
@@ -267,7 +270,7 @@ public:
     bool relativePaths{};
 
     /** @brief --report-progress */
-    bool reportProgress{};
+    int reportProgress{-1};
 
     /** Rule */
     struct CPPCHECKLIB Rule {

@@ -743,7 +743,8 @@ std::vector<ValueType> getParentValueTypes(const Token* tok, const Settings* set
         return {std::move(vtParent)};
     }
     // The return type of a function is not the parent valuetype
-    if (Token::simpleMatch(tok->astParent(), "(") && ftok && !tok->isCast() && ftok->tokType() != Token::eType)
+    if (Token::simpleMatch(tok->astParent(), "(") && ftok && !tok->astParent()->isCast() &&
+        ftok->tokType() != Token::eType)
         return {};
     if (Token::Match(tok->astParent(), "return|(|{|%assign%") && parent) {
         *parent = tok->astParent();
@@ -1454,7 +1455,7 @@ bool isUsedAsBool(const Token* const tok, const Settings* settings)
         return isUsedAsBool(parent);
     if (parent->isUnaryOp("*"))
         return isUsedAsBool(parent);
-    if (Token::Match(parent, "==|!=") && tok->astSibling()->hasKnownIntValue() &&
+    if (Token::Match(parent, "==|!=") && (tok->astSibling()->isNumber() || tok->astSibling()->isKeyword()) && tok->astSibling()->hasKnownIntValue() &&
         tok->astSibling()->values().front().intvalue == 0)
         return true;
     if (parent->str() == "(" && astIsRHS(tok) && Token::Match(parent->astOperand1(), "if|while"))
@@ -1901,7 +1902,7 @@ static bool functionModifiesArguments(const Function* f)
 
 bool isConstFunctionCall(const Token* ftok, const Library& library)
 {
-    if (isSizeOfEtc(ftok))
+    if (isUnevaluated(ftok))
         return true;
     if (!Token::Match(ftok, "%name% ("))
         return false;
@@ -3148,7 +3149,7 @@ static ExprUsage getFunctionUsage(const Token* tok, int indirect, const Settings
     } else if (ftok->isControlFlowKeyword()) {
         return ExprUsage::Used;
     } else if (ftok->str() == "{") {
-        return ExprUsage::Used;
+        return indirect == 0 ? ExprUsage::Used : ExprUsage::Inconclusive;
     } else {
         const bool isnullbad = settings->library.isnullargbad(ftok, argnr + 1);
         if (indirect == 0 && astIsPointer(tok) && !addressOf && isnullbad)
@@ -3381,7 +3382,7 @@ bool isGlobalData(const Token *expr, bool cpp)
     return globalData || !var;
 }
 
-bool isSizeOfEtc(const Token *tok)
+bool isUnevaluated(const Token *tok)
 {
-    return Token::Match(tok, "sizeof|typeof|offsetof|decltype|__typeof__ (");
+    return Token::Match(tok, "alignof|_Alignof|_alignof|__alignof|__alignof__|decltype|offsetof|sizeof|typeid|typeof|__typeof__ (");
 }

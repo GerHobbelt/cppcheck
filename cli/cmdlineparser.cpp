@@ -253,6 +253,9 @@ bool CmdLineParser::parseFromArgs(int argc, const char* const argv[])
                 mSettings.checkLibrary = true;
             }
 
+            else if (std::strncmp(argv[i], "--checkers-report=", 18) == 0)
+                mSettings.checkersReportFilename = argv[i] + 18;
+
             else if (std::strncmp(argv[i], "--checks-max-time=", 18) == 0) {
                 if (!parseNumberArg(argv[i], 18, mSettings.checksMaxTime, true))
                     return false;
@@ -285,7 +288,7 @@ bool CmdLineParser::parseFromArgs(int argc, const char* const argv[])
                 if (endsWith(mSettings.buildDir, '/'))
                     mSettings.buildDir.pop_back();
 
-                if (!Path::directoryExists(mSettings.buildDir)) {
+                if (!Path::isDirectory(mSettings.buildDir)) {
                     printError("Directory '" + mSettings.buildDir + "' specified by --cppcheck-build-dir argument has to be existent.");
                     return false;
                 }
@@ -452,7 +455,7 @@ bool CmdLineParser::parseFromArgs(int argc, const char* const argv[])
                     path = Path::fromNativeSeparators(path);
                     path = Path::simplifyPath(path);
 
-                    if (FileLister::isDirectory(path)) {
+                    if (Path::isDirectory(path)) {
                         // If directory name doesn't end with / or \, add it
                         if (!endsWith(path, '/'))
                             path += '/';
@@ -651,7 +654,7 @@ bool CmdLineParser::parseFromArgs(int argc, const char* const argv[])
                     mSettings.plistOutput += '/';
 
                 const std::string plistOutput = Path::toNativeSeparators(mSettings.plistOutput);
-                if (!FileLister::isDirectory(plistOutput)) {
+                if (!Path::isDirectory(plistOutput)) {
                     std::string message("plist folder does not exist: \"");
                     message += plistOutput;
                     message += "\".";
@@ -666,7 +669,7 @@ bool CmdLineParser::parseFromArgs(int argc, const char* const argv[])
                     mSettings.premiumArgs += " ";
                 const std::string p(argv[i] + 10);
                 mSettings.premiumArgs += "--" + p;
-                if (p == "misra-c-2012")
+                if (p == "misra-c-2012" || p == "misra-c-2023")
                     mSettings.addons.emplace("misra");
             }
 
@@ -764,7 +767,14 @@ bool CmdLineParser::parseFromArgs(int argc, const char* const argv[])
 
             // Report progress
             else if (std::strcmp(argv[i], "--report-progress") == 0) {
-                mSettings.reportProgress = true;
+                mSettings.reportProgress = 10;
+            }
+
+            else if (std::strncmp(argv[i], "--report-progress=", 18) == 0) {
+                int tmp;
+                if (!parseNumberArg(argv[i], 18, tmp, true))
+                    return false;
+                mSettings.reportProgress = tmp;
             }
 
 #ifdef HAVE_RULES
@@ -1108,6 +1118,8 @@ void CmdLineParser::printHelp()
         "                         The default choice is 'normal'.\n"
         "    --check-library      Show information messages when library files have\n"
         "                         incomplete info.\n"
+        "    --checkers-report=<file>\n"
+        "                         Write a report of all the active checkers to the given file.\n"
         "    --clang=<path>       Experimental: Use Clang parser instead of the builtin Cppcheck\n"
         "                         parser. Takes the executable as optional parameter and\n"
         "                         defaults to `clang`. Cppcheck will run the given Clang\n"
@@ -1270,6 +1282,7 @@ void CmdLineParser::printHelp()
                   << "                          * cert-c-2016       Cert C 2016 checking\n"
                   << "                          * cert-c++-2016     Cert C++ 2016 checking (partial)\n"
                   << "                          * misra-c-2012      Misra C 2012\n"
+                  << "                          * misra-c-2023      Misra C 2023\n"
                   << "                          * misra-c++-2008    Misra C++ 2008 (partial)\n"
                   << "                         Other:\n"
                   << "                          * bughunting        Soundy analysis\n"
@@ -1298,7 +1311,7 @@ void CmdLineParser::printHelp()
         "                         using e.g. ~ for home folder does not work. It is\n"
         "                         currently only possible to apply the base paths to\n"
         "                         files that are on a lower level in the directory tree.\n"
-        "    --report-progress    Report progress messages while checking a file.\n"
+        "    --report-progress    Report progress messages while checking a file (single job only).\n"
 #ifdef HAVE_RULES
     "    --rule=<rule>        Match regular expression.\n"
     "    --rule-file=<file>   Use given rule file. For more information, see:\n"

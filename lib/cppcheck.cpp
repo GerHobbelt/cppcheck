@@ -88,6 +88,23 @@ static TimerResults s_timerResults;
 // CWE ids used
 static const CWE CWE398(398U);  // Indicator of Poor Code Quality
 
+// File deleter
+namespace {
+    class FilesDeleter {
+    public:
+        FilesDeleter() = default;
+        ~FilesDeleter() {
+            for (const std::string& fileName: mFilenames)
+                std::remove(fileName.c_str());
+        }
+        void addFile(const std::string& fileName) {
+            mFilenames.push_back(fileName);
+        }
+    private:
+        std::vector<std::string> mFilenames;
+    };
+}
+
 namespace {
     struct AddonInfo {
         std::string name;
@@ -99,19 +116,19 @@ namespace {
         std::string runScript;
 
         static std::string getFullPath(const std::string &fileName, const std::string &exename) {
-            if (Path::fileExists(fileName))
+            if (Path::isFile(fileName))
                 return fileName;
 
             const std::string exepath = Path::getPathFromFilename(exename);
-            if (Path::fileExists(exepath + fileName))
+            if (Path::isFile(exepath + fileName))
                 return exepath + fileName;
-            if (Path::fileExists(exepath + "addons/" + fileName))
+            if (Path::isFile(exepath + "addons/" + fileName))
                 return exepath + "addons/" + fileName;
 
 #ifdef FILESDIR
-            if (Path::fileExists(FILESDIR + ("/" + fileName)))
+            if (Path::isFile(FILESDIR + ("/" + fileName)))
                 return FILESDIR + ("/" + fileName);
-            if (Path::fileExists(FILESDIR + ("/addons/" + fileName)))
+            if (Path::isFile(FILESDIR + ("/addons/" + fileName)))
                 return FILESDIR + ("/addons/" + fileName);
 #endif
             return "";
@@ -631,6 +648,8 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
 {
     mExitCode = 0;
 
+    FilesDeleter filesDeleter;
+
     if (Settings::terminated())
         return mExitCode;
 
@@ -774,6 +793,8 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
         if (fdump.is_open()) {
             fdump << dumpProlog.str();
             dumpProlog.str("");
+            if (!mSettings.dump)
+                filesDeleter.addFile(dumpFile);
         }
 
         // Get directives
@@ -1404,8 +1425,6 @@ void CppCheck::executeAddons(const std::string& dumpFile)
     if (!dumpFile.empty()) {
         std::vector<std::string> f{dumpFile};
         executeAddons(f);
-        if (!mSettings.dump)
-            std::remove(dumpFile.c_str());
     }
 }
 
@@ -1414,10 +1433,13 @@ void CppCheck::executeAddons(const std::vector<std::string>& files)
     if (mSettings.addons.empty() || files.empty())
         return;
 
+    FilesDeleter filesDeleter;
+
     std::string fileList;
 
     if (files.size() >= 2 || endsWith(files[0], ".ctu-info")) {
         fileList = Path::getPathFromFilename(files[0]) + FILELIST;
+        filesDeleter.addFile(fileList);
         std::ofstream fout(fileList);
         for (const std::string& f: files)
             fout << f << std::endl;
@@ -1438,6 +1460,8 @@ void CppCheck::executeAddons(const std::vector<std::string>& files)
             executeAddon(addonInfo, mSettings.addonPython, fileList.empty() ? files[0] : fileList, mSettings.premiumArgs, mExecuteCommand);
         std::istringstream istr(results);
         std::string line;
+
+        const bool misraC2023 = mSettings.premiumArgs.find("--misra-c-2023") != std::string::npos;
 
         while (std::getline(istr, line)) {
             if (line.compare(0,1,"{") != 0)
@@ -1470,6 +1494,8 @@ void CppCheck::executeAddons(const std::vector<std::string>& files)
             }
 
             errmsg.id = obj["addon"].get<std::string>() + "-" + obj["errorId"].get<std::string>();
+            if (misraC2023 && errmsg.id.compare(0, 12, "misra-c2012-") == 0)
+                errmsg.id = "misra-c2023-" + errmsg.id.substr(12);
             const std::string text = obj["message"].get<std::string>();
             errmsg.setmsg(text);
             const std::string severity = obj["severity"].get<std::string>();
@@ -1483,9 +1509,6 @@ void CppCheck::executeAddons(const std::vector<std::string>& files)
             reportErr(errmsg);
         }
     }
-
-    if (!fileList.empty())
-        std::remove(fileList.c_str());
 }
 
 void CppCheck::executeAddonsWholeProgram(const std::map<std::string, std::size_t> &files)
@@ -1582,6 +1605,11 @@ void CppCheck::purgedConfigurationMessage(const std::string &file, const std::st
 
 void CppCheck::reportErr(const ErrorMessage &msg)
 {
+    if (msg.severity == Severity::none && msg.id == "logChecker") {
+        mErrorLogger.reportErr(msg);
+        return;
+    }
+
     if (!mSettings.library.reportErrors(msg.file0))
         return;
 

@@ -3808,6 +3808,11 @@ private:
               "}\n");
         ASSERT_EQUALS("[test.cpp:1]: (style) Parameter 'p' can be declared as pointer to const\n",
                       errout.str());
+
+        check("void f(void *p, size_t nmemb, size_t size, int (*cmp)(const void *, const void *)) {\n"
+              "    qsort(p, nmemb, size, cmp);\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void switchRedundantAssignmentTest() {
@@ -11359,6 +11364,12 @@ private:
         check("void f() {\n"
               "    const int* x = nullptr;\n"
               "    std::empty(x);\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f() {\n"
+              "    const int* x = nullptr;\n"
+              "    std::empty(const_cast<int*>(x));\n"
               "}\n");
         ASSERT_EQUALS("", errout.str());
 

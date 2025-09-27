@@ -1657,8 +1657,7 @@ void SymbolDatabase::createSymbolDatabaseExprIds()
     // Find highest varId
     nonneg int maximumVarId = 0;
     for (const Token* tok = mTokenizer.list.front(); tok; tok = tok->next()) {
-        if (tok->varId() > maximumVarId)
-            maximumVarId = tok->varId();
+        maximumVarId = std::max(tok->varId(), maximumVarId);
     }
     nonneg int id = maximumVarId + 1;
     // Find incomplete vars that are used in constant context
@@ -1691,8 +1690,6 @@ void SymbolDatabase::createSymbolDatabaseExprIds()
     });
 
     for (const Scope * scope : exprScopes) {
-        std::unordered_map<std::string, std::vector<Token*>> exprs;
-
         std::unordered_map<std::string, nonneg int> unknownIds;
         // Assign IDs to incomplete vars which are part of an expression
         // Such variables should be assumed global
@@ -2253,7 +2250,7 @@ Variable::~Variable()
     delete mValueType;
 }
 
-Variable& Variable::operator=(const Variable &var)
+Variable& Variable::operator=(const Variable &var) &
 {
     if (this == &var)
         return *this;
@@ -2532,8 +2529,10 @@ Function::Function(const Token *tok,
                tokenDef->str().size() > scope->className.size() + 1 &&
                tokenDef->str()[scope->className.size() + 1] == '<'))) {
         // destructor
-        if (tokenDef->strAt(-1) == "~")
+        if (tokenDef->strAt(-1) == "~") {
             type = Function::eDestructor;
+            isNoExcept(true);
+        }
         // constructor of any kind
         else
             type = Function::eConstructor;
@@ -5515,16 +5514,22 @@ static bool hasEmptyCaptureList(const Token* tok) {
     return Token::simpleMatch(listTok, "[ ]");
 }
 
-bool Scope::hasInlineOrLambdaFunction() const
+bool Scope::hasInlineOrLambdaFunction(const Token** tokStart) const
 {
     return std::any_of(nestedList.begin(), nestedList.end(), [&](const Scope* s) {
         // Inline function
-        if (s->type == Scope::eUnconditional && Token::simpleMatch(s->bodyStart->previous(), ") {"))
+        if (s->type == Scope::eUnconditional && Token::simpleMatch(s->bodyStart->previous(), ") {")) {
+            if (tokStart)
+                *tokStart = nullptr; // bailout for e.g. loop-like macros
             return true;
+        }
         // Lambda function
-        if (s->type == Scope::eLambda && !hasEmptyCaptureList(s->bodyStart))
+        if (s->type == Scope::eLambda && !hasEmptyCaptureList(s->bodyStart)) {
+            if (tokStart)
+                *tokStart = s->bodyStart;
             return true;
-        if (s->hasInlineOrLambdaFunction())
+        }
+        if (s->hasInlineOrLambdaFunction(tokStart))
             return true;
         return false;
     });
@@ -6123,7 +6128,7 @@ const Scope *SymbolDatabase::findScopeByName(const std::string& name) const
 //---------------------------------------------------------------------------
 
 template<class S, class T, REQUIRES("S must be a Scope class", std::is_convertible<S*, const Scope*> ), REQUIRES("T must be a Type class", std::is_convertible<T*, const Type*> )>
-S* findRecordInNestedListImpl(S& thisScope, const std::string& name, bool isC, std::set<const Scope*>& visited)
+static S* findRecordInNestedListImpl(S& thisScope, const std::string& name, bool isC, std::set<const Scope*>& visited)
 {
     for (S* scope: thisScope.nestedList) {
         if (scope->className == name && scope->type != Scope::eFunction)
@@ -6172,7 +6177,7 @@ Scope* Scope::findRecordInNestedList(const std::string & name, bool isC)
 //---------------------------------------------------------------------------
 
 template<class S, class T, REQUIRES("S must be a Scope class", std::is_convertible<S*, const Scope*> ), REQUIRES("T must be a Type class", std::is_convertible<T*, const Type*> )>
-T* findTypeImpl(S& thisScope, const std::string & name)
+static T* findTypeImpl(S& thisScope, const std::string & name)
 {
     auto it = thisScope.definedTypesMap.find(name);
 
@@ -7304,9 +7309,9 @@ static const Token* parsedecl(const Token* type,
                 type = type->next();
             }
             break;
-        } else if (!valuetype->typeScope && (type->str() == "struct" || type->str() == "enum"))
+        } else if (!valuetype->typeScope && (type->str() == "struct" || type->str() == "enum") && valuetype->type != ValueType::Type::SMART_POINTER)
             valuetype->type = type->str() == "struct" ? ValueType::Type::RECORD : ValueType::Type::NONSTD;
-        else if (!valuetype->typeScope && type->type() && type->type()->classScope) {
+        else if (!valuetype->typeScope && type->type() && type->type()->classScope && valuetype->type != ValueType::Type::SMART_POINTER) {
             if (type->type()->classScope->type == Scope::ScopeType::eEnum) {
                 valuetype->sign = ValueType::Sign::SIGNED;
                 valuetype->type = getEnumType(type->type()->classScope, settings.platform);

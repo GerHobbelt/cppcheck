@@ -1,4 +1,4 @@
-/*
+/* -*- C++ -*-
  * Cppcheck - A tool for static C/C++ code analysis
  * Copyright (C) 2007-2024 Cppcheck team.
  *
@@ -252,6 +252,10 @@ bool succeeds(const Token* tok1, const Token* tok2);
 bool exprDependsOnThis(const Token* expr, bool onVar = true, nonneg int depth = 0);
 
 struct ReferenceToken {
+    ReferenceToken(const Token* t, ErrorPath e)
+        : token(t)
+        , errors(std::move(e))
+    {}
     const Token* token;
     ErrorPath errors;
 };

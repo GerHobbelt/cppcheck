@@ -464,7 +464,7 @@ bool isTemporary(const Token* tok, const Library* library, bool unknown)
         if (ftok->type())
             return true;
         if (library) {
-            std::string returnType = library->returnValueType(ftok);
+            const std::string& returnType = library->returnValueType(ftok);
             return !returnType.empty() && returnType.back() != '&';
         }
         return unknown;
@@ -1250,27 +1250,27 @@ SmallVector<ReferenceToken> followAllReferences(const Token* tok,
         return {};
     if (depth < 0) {
         SmallVector<ReferenceToken> refs_result;
-        refs_result.push_back({tok, std::move(errors)});
+        refs_result.emplace_back(tok, std::move(errors));
         return refs_result;
     }
     const Variable *var = tok->variable();
     if (var && var->declarationId() == tok->varId()) {
         if (var->nameToken() == tok || isStructuredBindingVariable(var)) {
             SmallVector<ReferenceToken> refs_result;
-            refs_result.push_back({tok, std::move(errors)});
+            refs_result.emplace_back(tok, std::move(errors));
             return refs_result;
         }
         if (var->isReference() || var->isRValueReference()) {
             const Token * const varDeclEndToken = var->declEndToken();
             if (!varDeclEndToken) {
                 SmallVector<ReferenceToken> refs_result;
-                refs_result.push_back({tok, std::move(errors)});
+                refs_result.emplace_back(tok, std::move(errors));
                 return refs_result;
             }
             if (var->isArgument()) {
                 errors.emplace_back(varDeclEndToken, "Passed to reference.");
                 SmallVector<ReferenceToken> refs_result;
-                refs_result.push_back({tok, std::move(errors)});
+                refs_result.emplace_back(tok, std::move(errors));
                 return refs_result;
             }
             if (Token::simpleMatch(varDeclEndToken, "=")) {
@@ -1281,7 +1281,7 @@ SmallVector<ReferenceToken> followAllReferences(const Token* tok,
                 if (vartok == tok || (!temporary && isTemporary(vartok, nullptr, true) &&
                                       (var->isConst() || var->isRValueReference()))) {
                     SmallVector<ReferenceToken> refs_result;
-                    refs_result.push_back({tok, std::move(errors)});
+                    refs_result.emplace_back(tok, std::move(errors));
                     return refs_result;
                 }
                 if (vartok)
@@ -1299,7 +1299,7 @@ SmallVector<ReferenceToken> followAllReferences(const Token* tok,
 
         if (!inconclusive && result.size() != 1) {
             SmallVector<ReferenceToken> refs_result;
-            refs_result.push_back({tok, std::move(errors)});
+            refs_result.emplace_back(tok, std::move(errors));
             return refs_result;
         }
 
@@ -1313,7 +1313,7 @@ SmallVector<ReferenceToken> followAllReferences(const Token* tok,
         const Function *f = tok->previous()->function();
         if (!Function::returnsReference(f)) {
             SmallVector<ReferenceToken> refs_result;
-            refs_result.push_back({tok, std::move(errors)});
+            refs_result.emplace_back(tok, std::move(errors));
             return refs_result;
         }
         std::set<ReferenceToken, ReferenceTokenLess> result;
@@ -1326,20 +1326,20 @@ SmallVector<ReferenceToken> followAllReferences(const Token* tok,
                 const Variable* argvar = rt.token->variable();
                 if (!argvar) {
                     SmallVector<ReferenceToken> refs_result;
-                    refs_result.push_back({tok, std::move(errors)});
+                    refs_result.emplace_back(tok, std::move(errors));
                     return refs_result;
                 }
                 if (argvar->isArgument() && (argvar->isReference() || argvar->isRValueReference())) {
                     const int n = getArgumentPos(argvar, f);
                     if (n < 0) {
                         SmallVector<ReferenceToken> refs_result;
-                        refs_result.push_back({tok, std::move(errors)});
+                        refs_result.emplace_back(tok, std::move(errors));
                         return refs_result;
                     }
                     std::vector<const Token*> args = getArguments(tok->previous());
                     if (n >= args.size()) {
                         SmallVector<ReferenceToken> refs_result;
-                        refs_result.push_back({tok, std::move(errors)});
+                        refs_result.emplace_back(tok, std::move(errors));
                         return refs_result;
                     }
                     const Token* argTok = args[n];
@@ -1351,7 +1351,7 @@ SmallVector<ReferenceToken> followAllReferences(const Token* tok,
                     result.insert(refs.cbegin(), refs.cend());
                     if (!inconclusive && result.size() > 1) {
                         SmallVector<ReferenceToken> refs_result;
-                        refs_result.push_back({tok, std::move(errors)});
+                        refs_result.emplace_back(tok, std::move(errors));
                         return refs_result;
                     }
                 }
@@ -1364,7 +1364,7 @@ SmallVector<ReferenceToken> followAllReferences(const Token* tok,
         }
     }
     SmallVector<ReferenceToken> refs_result;
-    refs_result.push_back({tok, std::move(errors)});
+    refs_result.emplace_back(tok, std::move(errors));
     return refs_result;
 }
 
@@ -2437,7 +2437,14 @@ static bool isArray(const Token* tok)
     return false;
 }
 
-static bool isMutableExpression(const Token* tok)
+static inline
+// limit it to CLang as compiling with GCC might fail with
+// error: inlining failed in call to always_inline 'bool isMutableExpression(const Token*)': function not considered for inlining
+// error: inlining failed in call to ‘always_inline’ ‘bool isMutableExpression(const Token*)’: recursive inlining
+#if defined(__clang__)
+__attribute__((always_inline))
+#endif
+bool isMutableExpression(const Token* tok)
 {
     if (!tok)
         return false;
@@ -2663,6 +2670,7 @@ bool isVariableChanged(const Token *tok, int indirect, const Settings &settings,
             const Library::Container::Action action = c->getAction(ftok->str());
             if (contains({Library::Container::Action::INSERT,
                           Library::Container::Action::ERASE,
+                          Library::Container::Action::APPEND,
                           Library::Container::Action::CHANGE,
                           Library::Container::Action::CHANGE_CONTENT,
                           Library::Container::Action::CHANGE_INTERNAL,

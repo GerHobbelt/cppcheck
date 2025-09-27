@@ -1,4 +1,4 @@
-/*
+/* -*- C++ -*-
  * Cppcheck - A tool for static C/C++ code analysis
  * Copyright (C) 2007-2023 Cppcheck team.
  *
@@ -18,6 +18,8 @@
 
 #ifndef CPPCHECKLIBRARYDATA_H
 #define CPPCHECKLIBRARYDATA_H
+
+#include "config.h"
 
 #include <cstdint>
 
@@ -227,7 +229,7 @@ public:
         entrypoints.clear();
     }
 
-    void swap(CppcheckLibraryData &other) {
+    void swap(CppcheckLibraryData &other) NOEXCEPT {
         containers.swap(other.containers);
         defines.swap(other.defines);
         undefines.swap(other.undefines);

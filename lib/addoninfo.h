@@ -1,4 +1,4 @@
-/*
+/* -*- C++ -*-
  * Cppcheck - A tool for static C/C++ code analysis
  * Copyright (C) 2007-2023 Cppcheck team.
  *
@@ -32,7 +32,7 @@ struct CPPCHECKLIB AddonInfo {
     bool ctu = false;
     std::string runScript;
 
-    std::string getAddonInfo(const std::string &fileName, const std::string &exename);
+    std::string getAddonInfo(const std::string &fileName, const std::string &exename, bool debug = false);
 };
 
 #endif // addonInfoH

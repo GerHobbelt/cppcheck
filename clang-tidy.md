@@ -122,10 +122,11 @@ We run this separately via `clang-include-cleaner` in the `iwyu.yml` workflow as
 `concurrency-mt-unsafe`<br/>
 `misc-use-anonymous-namespace`<br/>
 `performance-avoid-endl`<br/>
-`performance-noexcept-swap`<br/>
 `bugprone-switch-missing-default-case`<br/>
 `bugprone-empty-catch`<br/>
-`readability-avoid-nested-conditional-operator`</br>
+`readability-avoid-nested-conditional-operator`<br/>
+`modernize-use-designated-initializers`<br/>
+`readability-enum-initial-value`<br/>
 
 To be evaluated (need to remove exclusion).
 
@@ -133,7 +134,6 @@ To be evaluated (need to remove exclusion).
 `cppcoreguidelines-avoid-const-or-ref-data-members`<br/>
 `cppcoreguidelines-macro-usage`<br/>
 `cppcoreguidelines-pro-type-member-init`<br/>
-`cppcoreguidelines-pro-type-static-cast-downcast`<br/>
 `cppcoreguidelines-prefer-member-initializer`<br/>
 `cppcoreguidelines-misleading-capture-default-by-value`<br/>
 `bugprone-argument-comment.CommentBoolLiterals`<br/>
@@ -143,8 +143,8 @@ To be evaluated (need to remove exclusion).
 
 To be evaluated (need to enable explicitly).
 
-`modernize-type-traits`</br>
-`modernize-use-nodiscard`</br>
+`modernize-type-traits`<br/>
+`modernize-use-nodiscard`<br/>
 
 These apply to codebases which use later standards then C++11 (C++17 is used when building with Qt6) so we cannot simply apply them.
 

@@ -1,4 +1,4 @@
-/*
+/* -*- C++ -*-
  * Cppcheck - A tool for static C/C++ code analysis
  * Copyright (C) 2007-2024 Cppcheck team.
  *
@@ -122,16 +122,16 @@ public:
     bool set(Type t);
 
     /** set the platform type */
-    bool set(const std::string& platformstr, std::string& errstr, const std::vector<std::string>& paths = {}, bool verbose = false);
+    bool set(const std::string& platformstr, std::string& errstr, const std::vector<std::string>& paths = {}, bool debug = false);
 
     /**
      * load platform file
      * @param exename application path
      * @param filename platform filename
-     * @param verbose log verbose information about the lookup
+     * @param debug log verbose information about the lookup
      * @return returns true if file was loaded successfully
      */
-    bool loadFromFile(const char exename[], const std::string &filename, bool verbose = false);
+    bool loadFromFile(const char exename[], const std::string &filename, bool debug = false);
 
     /** load platform from xml document, primarily for testing */
     bool loadFromXmlDocument(const tinyxml2::XMLDocument *doc);

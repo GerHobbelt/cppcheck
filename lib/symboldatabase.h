@@ -1,4 +1,4 @@
-/*
+/* -*- C++ -*-
  * Cppcheck - A tool for static C/C++ code analysis
  * Copyright (C) 2007-2024 Cppcheck team.
  *
@@ -236,7 +236,7 @@ public:
 
     ~Variable();
 
-    Variable &operator=(const Variable &var);
+    Variable &operator=(const Variable &var) &;
 
     /**
      * Get name token.
@@ -1120,7 +1120,7 @@ public:
     }
 
     // Is there lambda/inline function(s) in this scope?
-    bool hasInlineOrLambdaFunction() const;
+    bool hasInlineOrLambdaFunction(const Token** tokStart = nullptr) const;
 
     /**
      * @brief find a function

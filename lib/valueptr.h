@@ -1,4 +1,4 @@
-/*
+/* -*- C++ -*-
  * Cppcheck - A tool for static C/C++ code analysis
  * Copyright (C) 2007-2023 Cppcheck team.
  *
@@ -75,13 +75,13 @@ public:
         return get();
     }
 
-    void swap(ValuePtr& rhs) {
+    void swap(ValuePtr& rhs) NOEXCEPT {
         using std::swap;
         swap(mPtr, rhs.mPtr);
         swap(mClone, rhs.mClone);
     }
 
-    ValuePtr<T>& operator=(ValuePtr rhs) {
+    ValuePtr<T>& operator=(ValuePtr rhs) & {
         swap(rhs);
         return *this;
     }

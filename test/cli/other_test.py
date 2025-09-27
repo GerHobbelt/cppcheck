@@ -1621,7 +1621,7 @@ def test_lib_lookup(tmpdir):
     with open(test_file, 'wt'):
         pass
 
-    exitcode, stdout, _, exe = cppcheck_ex(['--library=gnu', '--debug-lookup', test_file])
+    exitcode, stdout, _, exe = cppcheck_ex(['--debug-lookup=library', '--library=gnu', test_file])
     exepath = os.path.dirname(exe)
     if sys.platform == 'win32':
         exepath = exepath.replace('\\', '/')
@@ -1642,16 +1642,19 @@ def test_lib_lookup_notfound(tmpdir):
     with open(test_file, 'wt'):
         pass
 
-    exitcode, stdout, _, exe = cppcheck_ex(['--library=none', '--debug-lookup', test_file])
+    exitcode, stdout, _, exe = cppcheck_ex(['--debug-lookup=library', '--library=none', test_file])
     exepath = os.path.dirname(exe)
     if sys.platform == 'win32':
         exepath = exepath.replace('\\', '/')
     assert exitcode == 1, stdout
     lines = __remove_std_lookup_log(stdout.splitlines(), exepath)
     assert lines == [
-        "looking for library 'none'",
+        # TODO: specify which folder is actually used for lookup here
+        "looking for library 'none'",  # TODO: this could conflict with the platform lookup
         "looking for library 'none.cfg'",
+        # TODO: lookup of '{exepath}/none' missing - could conflict with the platform lookup though
         "looking for library '{}/none.cfg'".format(exepath),
+        # TODO: lookup of '{exepath}/cfg/none' missing
         "looking for library '{}/cfg/none.cfg'".format(exepath),
         "library not found: 'none'",
         "cppcheck: Failed to load library configuration file 'none'. File not found"
@@ -1671,7 +1674,7 @@ def test_lib_lookup_absolute(tmpdir):
 </def>
         ''')
 
-    exitcode, stdout, _, exe = cppcheck_ex(['--library={}'.format(cfg_file), '--debug-lookup', test_file])
+    exitcode, stdout, _, exe = cppcheck_ex(['--debug-lookup=library', '--library={}'.format(cfg_file), test_file])
     exepath = os.path.dirname(exe)
     if sys.platform == 'win32':
         exepath = exepath.replace('\\', '/')
@@ -1690,7 +1693,7 @@ def test_lib_lookup_absolute_notfound(tmpdir):
 
     cfg_file = os.path.join(tmpdir, 'test.cfg')
 
-    exitcode, stdout, _, exe = cppcheck_ex(['--library={}'.format(cfg_file), '--debug-lookup', test_file])
+    exitcode, stdout, _, exe = cppcheck_ex(['--debug-lookup=library', '--library={}'.format(cfg_file), test_file])
     exepath = os.path.dirname(exe)
     if sys.platform == 'win32':
         exepath = exepath.replace('\\', '/')
@@ -1714,7 +1717,7 @@ def test_lib_lookup_nofile(tmpdir):
     gtk_cfg_dir = os.path.join(tmpdir, 'gtk.cfg')
     os.mkdir(gtk_cfg_dir)
 
-    exitcode, stdout, _, exe = cppcheck_ex(['--library=gtk', '--debug-lookup', test_file], cwd=tmpdir)
+    exitcode, stdout, _, exe = cppcheck_ex(['--debug-lookup=library', '--library=gtk', test_file], cwd=tmpdir)
     exepath = os.path.dirname(exe)
     if sys.platform == 'win32':
         exepath = exepath.replace('\\', '/')
@@ -1734,7 +1737,7 @@ def test_lib_lookup_multi(tmpdir):
     with open(test_file, 'wt'):
         pass
 
-    exitcode, stdout, _, exe = cppcheck_ex(['--library=posix,gnu', '--debug-lookup', test_file])
+    exitcode, stdout, _, exe = cppcheck_ex(['--debug-lookup=library', '--library=posix,gnu', test_file])
     exepath = os.path.dirname(exe)
     if sys.platform == 'win32':
         exepath = exepath.replace('\\', '/')
@@ -1753,6 +1756,190 @@ def test_lib_lookup_multi(tmpdir):
     ]
 
 
+def test_platform_lookup_builtin(tmpdir):
+    test_file = os.path.join(tmpdir, 'test.c')
+    with open(test_file, 'wt'):
+        pass
+
+    exitcode, stdout, _ = cppcheck(['--debug-lookup=platform', '--platform=unix64', test_file])
+    assert exitcode == 0, stdout
+    lines = stdout.splitlines()
+    # built-in platform are not being looked up
+    assert lines == [
+        'Checking {} ...'.format(test_file)
+    ]
+
+
+# TODO: behaves differently when using a CMake build
+# TODO: test with FILESDIR
+@pytest.mark.skip
+def test_platform_lookup_external(tmpdir):
+    test_file = os.path.join(tmpdir, 'test.c')
+    with open(test_file, 'wt'):
+        pass
+
+    exitcode, stdout, _, exe = cppcheck_ex(['--debug-lookup=platform', '--platform=avr8', test_file])
+    exepath = os.path.dirname(exe)
+    if sys.platform == 'win32':
+        exepath = exepath.replace('\\', '/')
+    assert exitcode == 0, stdout
+    lines = stdout.splitlines()
+    assert lines == [
+        "looking for platform 'avr8' in '{}'".format(os.path.join(exepath, 'cppcheck')),  # TODO: this not not the path *of* the executable but the the path *to* the executable
+        "try to load platform file 'avr8' ... Error=XML_ERROR_FILE_NOT_FOUND ErrorID=3 (0x3) Line number=0: filename=avr8",
+        "try to load platform file 'avr8.xml' ... Error=XML_ERROR_FILE_NOT_FOUND ErrorID=3 (0x3) Line number=0: filename=avr8.xml",
+        "try to load platform file 'platforms/avr8' ... Error=XML_ERROR_FILE_NOT_FOUND ErrorID=3 (0x3) Line number=0: filename=platforms/avr8",
+        "try to load platform file 'platforms/avr8.xml' ... Success",
+        'Checking {} ...'.format(test_file)
+    ]
+
+
+# TODO: test with FILESDIR
+def test_platform_lookup_external_notfound(tmpdir):
+    test_file = os.path.join(tmpdir, 'test.c')
+    with open(test_file, 'wt'):
+        pass
+
+    exitcode, stdout, _, exe = cppcheck_ex(['--debug-lookup=platform', '--platform=none', test_file])
+    exepath = os.path.dirname(exe)
+    exepath_bin = os.path.join(exepath, 'cppcheck')
+    if sys.platform == 'win32':
+        exepath = exepath.replace('\\', '/')
+        exepath_bin += '.exe'
+    assert exitcode == 1, stdout
+    lines = stdout.splitlines()
+    assert lines == [
+        "looking for platform 'none' in '{}'".format(exepath_bin),  # TODO: this is not the path *of* the executable but the the path *to* the executable
+        "try to load platform file 'none' ... Error=XML_ERROR_FILE_NOT_FOUND ErrorID=3 (0x3) Line number=0: filename=none",
+        "try to load platform file 'none.xml' ... Error=XML_ERROR_FILE_NOT_FOUND ErrorID=3 (0x3) Line number=0: filename=none.xml",
+        "try to load platform file 'platforms/none' ... Error=XML_ERROR_FILE_NOT_FOUND ErrorID=3 (0x3) Line number=0: filename=platforms/none",
+        "try to load platform file 'platforms/none.xml' ... Error=XML_ERROR_FILE_NOT_FOUND ErrorID=3 (0x3) Line number=0: filename=platforms/none.xml",
+        "try to load platform file '{}/none' ... Error=XML_ERROR_FILE_NOT_FOUND ErrorID=3 (0x3) Line number=0: filename={}/none".format(exepath, exepath),
+        # TODO: lookup of '{exepath}/none.xml' missing
+        "try to load platform file '{}/platforms/none' ... Error=XML_ERROR_FILE_NOT_FOUND ErrorID=3 (0x3) Line number=0: filename={}/platforms/none".format(exepath, exepath),
+        "try to load platform file '{}/platforms/none.xml' ... Error=XML_ERROR_FILE_NOT_FOUND ErrorID=3 (0x3) Line number=0: filename={}/platforms/none.xml".format(exepath, exepath),
+        "cppcheck: error: unrecognized platform: 'none'."
+    ]
+
+
+# TODO: test with FILESDIR
+def test_addon_lookup(tmpdir):
+    test_file = os.path.join(tmpdir, 'test.c')
+    with open(test_file, 'wt'):
+        pass
+
+    exitcode, stdout, _, exe = cppcheck_ex(['--debug-lookup=addon', '--addon=misra', test_file])
+    exepath = os.path.dirname(exe)
+    exepath_sep = exepath + os.path.sep
+    assert exitcode == 0, stdout
+    lines = stdout.splitlines()
+    assert lines == [
+        "looking for addon 'misra.py'",
+        "looking for addon '{}misra.py'".format(exepath_sep),
+        "looking for addon '{}addons/misra.py'".format(exepath_sep),  # TODO: mixed separators
+        'Checking {} ...'.format(test_file)
+    ]
+
+
+# TODO: test with FILESDIR
+def test_addon_lookup_ext(tmpdir):
+    test_file = os.path.join(tmpdir, 'test.c')
+    with open(test_file, 'wt'):
+        pass
+
+    exitcode, stdout, _, exe = cppcheck_ex(['--debug-lookup=addon', '--addon=misra.py', test_file])
+    exepath = os.path.dirname(exe)
+    exepath_sep = exepath + os.path.sep
+    assert exitcode == 0, stdout
+    lines = stdout.splitlines()
+    assert lines == [
+        "looking for addon 'misra.py'",
+        "looking for addon '{}misra.py'".format(exepath_sep),
+        "looking for addon '{}addons/misra.py'".format(exepath_sep),  # TODO: mixed separators
+        'Checking {} ...'.format(test_file)
+    ]
+
+
+# TODO: test with FILESDIR
+def test_addon_lookup_notfound(tmpdir):
+    test_file = os.path.join(tmpdir, 'test.c')
+    with open(test_file, 'wt'):
+        pass
+
+    exitcode, stdout, _, exe = cppcheck_ex(['--debug-lookup=addon', '--addon=none', test_file])
+    exepath = os.path.dirname(exe)
+    exepath_sep = exepath + os.path.sep
+    assert exitcode == 1, stdout
+    lines = stdout.splitlines()
+    assert lines == [
+        "looking for addon 'none.py'",
+        "looking for addon '{}none.py'".format(exepath_sep),
+        "looking for addon '{}addons/none.py'".format(exepath_sep),  # TODO: mixed separators
+        'Did not find addon none.py'
+    ]
+
+
+# TODO: test with FILESDIR
+def test_addon_lookup_ext_notfound(tmpdir):
+    test_file = os.path.join(tmpdir, 'test.c')
+    with open(test_file, 'wt'):
+        pass
+
+    exitcode, stdout, _, exe = cppcheck_ex(['--debug-lookup=addon', '--addon=none.py', test_file])
+    exepath = os.path.dirname(exe)
+    exepath_sep = exepath + os.path.sep
+    assert exitcode == 1, stdout
+    lines = stdout.splitlines()
+    assert lines == [
+        "looking for addon 'none.py'",
+        "looking for addon '{}none.py'".format(exepath_sep),
+        "looking for addon '{}addons/none.py'".format(exepath_sep),  # TODO: mixed separators
+        'Did not find addon none.py'
+    ]
+
+
+# TODO: test with FILESDIR
+@pytest.mark.skip
+def test_config_lookup(tmpdir):
+    test_file = os.path.join(tmpdir, 'test.c')
+    with open(test_file, 'wt'):
+        pass
+
+    # TODO: needs to be in exepath so this is found
+    config_file = os.path.join(tmpdir, 'cppcheck.cfg')
+    with open(config_file, 'wt'):
+        pass
+
+    exitcode, stdout, _, exe = cppcheck_ex(['--debug-lookup=config', '--addon=misra', test_file], cwd=tmpdir)
+    exepath = os.path.dirname(exe)
+    exepath_sep = exepath + os.path.sep
+    assert exitcode == 0, stdout
+    lines = stdout.splitlines()
+    assert lines == [
+        "looking for '{}cppcheck.cfg'".format(exepath_sep),
+        'no configuration found',
+        'Checking {} ...'.format(test_file)
+    ]
+
+
+# TODO: test with FILESDIR
+def test_config_lookup_notfound(tmpdir):
+    test_file = os.path.join(tmpdir, 'test.c')
+    with open(test_file, 'wt'):
+        pass
+
+    exitcode, stdout, _, exe = cppcheck_ex(['--debug-lookup=config', test_file])
+    exepath = os.path.dirname(exe)
+    exepath_sep = exepath + os.path.sep
+    assert exitcode == 0, stdout
+    lines = stdout.splitlines()
+    assert lines == [
+        "looking for '{}cppcheck.cfg'".format(exepath_sep),
+        'no configuration found',
+        'Checking {} ...'.format(test_file)
+    ]
+
+
 def test_checkers_report(tmpdir):
     test_file = os.path.join(tmpdir, 'test.c')
     with open(test_file, 'wt') as f:
@@ -1762,3 +1949,283 @@ def test_checkers_report(tmpdir):
     assert exitcode == 0, stdout
     assert 'Active checkers:' in stderr
     assert '--checkers-report' not in stderr
+
+
+def test_ignore(tmpdir):
+    os.mkdir(os.path.join(tmpdir, 'src'))
+    test_file = os.path.join(tmpdir, 'src', 'test.cpp')
+    with open(test_file, 'wt'):
+        pass
+
+    lines_exp = [
+        'cppcheck: error: could not find or open any of the paths given.',
+        'cppcheck: Maybe all paths were ignored?'
+    ]
+
+    args = [
+        '-itest.cpp',
+        test_file
+    ]
+
+    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == lines_exp
+
+    # make sure it also matches when specified after the file
+    args = [
+        test_file,
+        '-itest.cpp'
+    ]
+
+    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == lines_exp
+
+    args = [
+        '-isrc/test.cpp',
+        test_file
+    ]
+
+    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == lines_exp
+
+    args = [
+        '-isrc\\test.cpp',
+        test_file
+    ]
+
+    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == lines_exp
+
+    args = [
+        '-isrc/',
+        test_file
+    ]
+
+    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == lines_exp
+
+    args = [
+        '-isrc\\',
+        test_file
+    ]
+
+    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == lines_exp
+
+    args = [
+        '-i{}'.format(test_file),
+        test_file
+    ]
+
+    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == lines_exp
+
+
+def __write_gui_project(tmpdir, test_file, ignore):
+    project_file = os.path.join(tmpdir, 'test.cppcheck')
+    with open(project_file, 'wt') as f:
+        f.write(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<project>
+<paths>
+<dir name="{}"/>
+</paths>
+<ignore>
+<path name="{}"/>
+</ignore>
+</project>""".format(test_file, ignore))
+
+    return project_file
+
+
+def test_ignore_project(tmpdir):
+    os.mkdir(os.path.join(tmpdir, 'src'))
+    test_file = os.path.join(tmpdir, 'src', 'test.cpp')
+    with open(test_file, 'wt'):
+        pass
+
+    lines_exp = [
+        'cppcheck: error: could not find or open any of the paths given.',
+        'cppcheck: Maybe all paths were ignored?'
+    ]
+
+    project_file = __write_gui_project(tmpdir, test_file, 'test.cpp')
+    args = [
+        '--project={}'.format(project_file)
+    ]
+
+    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == lines_exp
+
+    # make sure -i works when specified before project
+    project_file = __write_gui_project(tmpdir, test_file, 'test2.cpp')
+    args = [
+        '-itest.cpp',
+        '--project={}'.format(project_file)
+    ]
+
+    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == lines_exp
+
+    # make sure -i works when specified after project
+    project_file = __write_gui_project(tmpdir, test_file, 'test2.cpp')
+    args = [
+        '--project={}'.format(project_file),
+        '-itest.cpp'
+    ]
+
+    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == lines_exp
+
+    project_file = __write_gui_project(tmpdir, test_file, 'src/test.cpp')
+    args = [
+        '--project={}'.format(project_file)
+    ]
+
+    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == lines_exp
+
+    project_file = __write_gui_project(tmpdir, test_file, 'src\\test.cpp')
+    args = [
+        '--project={}'.format(project_file)
+    ]
+
+    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == lines_exp
+
+    project_file = __write_gui_project(tmpdir, test_file, 'src/')
+    args = [
+        '--project={}'.format(project_file)
+    ]
+
+    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == lines_exp
+
+    project_file = __write_gui_project(tmpdir, test_file, 'src\\')
+    args = [
+        '--project={}'.format(project_file)
+    ]
+
+    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == lines_exp
+
+    project_file = __write_gui_project(tmpdir, test_file, test_file)
+    args = [
+        '--project={}'.format(project_file)
+    ]
+
+    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == lines_exp
+
+
+def __write_compdb(tmpdir, test_file):
+    compile_commands = os.path.join(tmpdir, 'compile_commands.json')
+    j = [
+        {
+            'directory': os.path.dirname(test_file),
+            'file': test_file,
+            'command': 'gcc -c {}'.format(test_file)
+        }
+    ]
+    with open(compile_commands, 'wt') as f:
+        f.write(json.dumps(j))
+    return compile_commands
+
+
+# TODO: -i appears to be ignored
+@pytest.mark.xfail(strict=True)
+def test_ignore_project_2(tmpdir):
+    os.mkdir(os.path.join(tmpdir, 'src'))
+    test_file = os.path.join(tmpdir, 'src', 'test.cpp')
+    with open(test_file, 'wt'):
+        pass
+
+    lines_exp = [
+        'cppcheck: error: could not find or open any of the paths given.',
+        'cppcheck: Maybe all paths were ignored?'
+    ]
+
+    project_file = __write_compdb(tmpdir, test_file)
+    args = [
+        '-itest.cpp',
+        '--project={}'.format(project_file)
+    ]
+
+    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == lines_exp
+
+    # make sure it also matches when specified after project
+    project_file = __write_compdb(tmpdir, test_file)
+    args = [
+        '--project={}'.format(project_file),
+        '-itest.cpp'
+    ]
+
+    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == lines_exp
+
+    project_file = __write_compdb(tmpdir, test_file)
+    args = [
+        '-isrc/test.cpp',
+        '--project={}'.format(project_file)
+    ]
+
+    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == lines_exp
+
+    project_file = __write_compdb(tmpdir, test_file)
+    args = [
+        '-isrc\\test.cpp',
+        '--project={}'.format(project_file)
+    ]
+
+    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == lines_exp
+
+    project_file = __write_compdb(tmpdir, test_file)
+    args = [
+        '-isrc/',
+        '--project={}'.format(project_file)
+    ]
+
+    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == lines_exp
+
+    project_file = __write_compdb(tmpdir, test_file)
+    args = [
+        '-isrc\\',
+        '--project={}'.format(project_file)
+    ]
+
+    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == lines_exp
+
+    project_file = __write_compdb(tmpdir, test_file)
+    args = [
+        '-i{}'.format(test_file),
+        '--project={}'.format(project_file)
+    ]
+
+    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == lines_exp

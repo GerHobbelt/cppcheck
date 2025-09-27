@@ -1,4 +1,4 @@
-/*
+/* -*- C++ -*-
  * Cppcheck - A tool for static C/C++ code analysis
  * Copyright (C) 2007-2024 Cppcheck team.
  *
@@ -76,7 +76,7 @@ public:
         referenced.erase(varid);
     }
 
-    void swap(VarInfo &other) {
+    void swap(VarInfo &other) NOEXCEPT {
         alloctype.swap(other.alloctype);
         possibleUsage.swap(other.possibleUsage);
         conditionalAlloc.swap(other.conditionalAlloc);

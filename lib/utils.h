@@ -1,4 +1,4 @@
-/*
+/* -*- C++ -*-
  * Cppcheck - A tool for static C/C++ code analysis
  * Copyright (C) 2007-2024 Cppcheck team.
  *
@@ -322,7 +322,7 @@ static inline std::string id_string_i(std::uintptr_t l)
     while (l != 0)
     {
         char c;
-        const uintptr_t temp = l % 16; // get the remainder
+        const std::uintptr_t temp = l % 16; // get the remainder
         if (temp < 10) {
             // 0-9
             c = '0' + temp;
@@ -340,7 +340,7 @@ static inline std::string id_string_i(std::uintptr_t l)
 
 static inline std::string id_string(const void* p)
 {
-    return id_string_i(reinterpret_cast<uintptr_t>(p));
+    return id_string_i(reinterpret_cast<std::uintptr_t>(p));
 }
 
 static inline const char* bool_to_string(bool b)
@@ -398,5 +398,13 @@ static inline T* empty_if_null(T* p)
  * @return The list of seperate strings (including empty ones). The whole input string if no seperator found.
  */
 CPPCHECKLIB std::list<std::string> splitString(const std::string& str, char sep);
+
+namespace utils {
+    template<class T>
+    constexpr typename std::add_const<T>::type & as_const(T& t) noexcept
+    {
+        return t;
+    }
+}
 
 #endif

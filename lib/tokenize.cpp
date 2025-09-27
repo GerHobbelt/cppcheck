@@ -781,7 +781,8 @@ namespace {
             const bool isFunctionPointer = Token::Match(mNameToken, "%name% )");
             if (isFunctionPointer && isCast(tok->previous())) {
                 tok->insertToken("*");
-                insertTokens(tok, std::pair<Token*, Token*>(mRangeType.first, mNameToken->linkAt(1)));
+                Token* const tok_1 = insertTokens(tok, std::pair<Token*, Token*>(mRangeType.first, mNameToken->linkAt(1)));
+                tok_1->originalName(tok->str());
                 tok->deleteThis();
                 return;
             }
@@ -1041,8 +1042,8 @@ namespace {
 
     private:
         static bool isCast(const Token* tok) {
-            if (Token::Match(tok, "( %name% ) (|%name%"))
-                return !tok->tokAt(2)->isKeyword();
+            if (Token::Match(tok, "( %name% ) (|%name%|%num%"))
+                return !tok->tokAt(3)->isKeyword();
             if (Token::Match(tok, "< %name% > (") && tok->previous() && endsWith(tok->strAt(-1), "_cast", 5))
                 return true;
             return false;
@@ -3407,30 +3408,21 @@ bool Tokenizer::simplifyTokens1(const std::string &configuration)
             return false;
     }
 
-    if (mTimerResults) {
-        Timer t("Tokenizer::simplifyTokens1::createAst", mSettings.showtime, mTimerResults);
+    const SHOWTIME_MODES showTime = mTimerResults ? mSettings.showtime : SHOWTIME_MODES::SHOWTIME_NONE;
+
+    Timer::run("Tokenizer::simplifyTokens1::createAst", showTime, mTimerResults, [&]() {
         list.createAst();
         list.validateAst(mSettings.debugnormal);
-    } else {
-        list.createAst();
-        list.validateAst(mSettings.debugnormal);
-    }
+    });
 
-    if (mTimerResults) {
-        Timer t("Tokenizer::simplifyTokens1::createSymbolDatabase", mSettings.showtime, mTimerResults);
+    Timer::run("Tokenizer::simplifyTokens1::createSymbolDatabase", showTime, mTimerResults, [&]() {
         createSymbolDatabase();
-    } else {
-        createSymbolDatabase();
-    }
+    });
 
-    if (mTimerResults) {
-        Timer t("Tokenizer::simplifyTokens1::setValueType", mSettings.showtime, mTimerResults);
+    Timer::run("Tokenizer::simplifyTokens1::setValueType", showTime, mTimerResults, [&]() {
         mSymbolDatabase->setValueTypeInTokenList(false);
         mSymbolDatabase->setValueTypeInTokenList(true);
-    } else {
-        mSymbolDatabase->setValueTypeInTokenList(false);
-        mSymbolDatabase->setValueTypeInTokenList(true);
-    }
+    });
 
     if (!mSettings.buildDir.empty())
         Summaries::create(*this, configuration);
@@ -3441,12 +3433,9 @@ bool Tokenizer::simplifyTokens1(const std::string &configuration)
     const bool doValueFlow = !disableValueflowEnv || (std::strcmp(disableValueflowEnv, "1") != 0);
 
     if (doValueFlow) {
-        if (mTimerResults) {
-            Timer t("Tokenizer::simplifyTokens1::ValueFlow", mSettings.showtime, mTimerResults);
+        Timer::run("Tokenizer::simplifyTokens1::ValueFlow", showTime, mTimerResults, [&]() {
             ValueFlow::setValues(list, *mSymbolDatabase, mErrorLogger, mSettings, mTimerResults);
-        } else {
-            ValueFlow::setValues(list, *mSymbolDatabase, mErrorLogger, mSettings, mTimerResults);
-        }
+        });
 
         arraySizeAfterValueFlow();
     }
@@ -5557,13 +5546,12 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
 
     validate();
 
+    const SHOWTIME_MODES showTime = mTimerResults ? mSettings.showtime : SHOWTIME_MODES::SHOWTIME_NONE;
+
     // Bail out if code is garbage
-    if (mTimerResults) {
-        Timer t("Tokenizer::simplifyTokens1::simplifyTokenList1::findGarbageCode", mSettings.showtime, mTimerResults);
+    Timer::run("Tokenizer::simplifyTokens1::simplifyTokenList1::findGarbageCode", showTime, mTimerResults, [&]() {
         findGarbageCode();
-    } else {
-        findGarbageCode();
-    }
+    });
 
     checkConfiguration();
 
@@ -5718,12 +5706,9 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
     simplifyTypedefLHS();
 
     // typedef..
-    if (mTimerResults) {
-        Timer t("Tokenizer::simplifyTokens1::simplifyTokenList1::simplifyTypedef", mSettings.showtime, mTimerResults);
+    Timer::run("Tokenizer::simplifyTokens1::simplifyTokenList1::simplifyTypedef", showTime, mTimerResults, [&]() {
         simplifyTypedef();
-    } else {
-        simplifyTypedef();
-    }
+    });
 
     // using A = B;
     while (simplifyUsing())
@@ -5815,12 +5800,9 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
         simplifyTypeIntrinsics();
 
         // Handle templates..
-        if (mTimerResults) {
-            Timer t("Tokenizer::simplifyTokens1::simplifyTokenList1::simplifyTemplates", mSettings.showtime, mTimerResults);
+        Timer::run("Tokenizer::simplifyTokens1::simplifyTokenList1::simplifyTemplates", showTime, mTimerResults, [&]() {
             simplifyTemplates();
-        } else {
-            simplifyTemplates();
-        }
+        });
 
         // The simplifyTemplates have inner loops
         if (Settings::terminated())
@@ -5845,12 +5827,9 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
 
     validate(); // #6772 "segmentation fault (invalid code) in Tokenizer::setVarId"
 
-    if (mTimerResults) {
-        Timer t("Tokenizer::simplifyTokens1::simplifyTokenList1::setVarId", mSettings.showtime, mTimerResults);
+    Timer::run("Tokenizer::simplifyTokens1::simplifyTokenList1::setVarId", showTime, mTimerResults, [&](){
         setVarId();
-    } else {
-        setVarId();
-    }
+    });
 
     // Link < with >
     createLinks2();
@@ -6179,41 +6158,49 @@ void Tokenizer::dump(std::ostream &out) const
     if (list.front())
         list.front()->printValueFlow(true, out);
 
-    if (!mTypedefInfo.empty()) {
-        outs += "  <typedef-info>";
-        outs += '\n';
-        for (const TypedefInfo &typedefInfo: mTypedefInfo) {
-            outs += "    <info";
+    outs += dumpTypedefInfo();
 
-            outs += " name=\"";
-            outs += typedefInfo.name;
-            outs += "\"";
-
-            outs += " file=\"";
-            outs += ErrorLogger::toxml(typedefInfo.filename);
-            outs += "\"";
-
-            outs += " line=\"";
-            outs += std::to_string(typedefInfo.lineNumber);
-            outs += "\"";
-
-            outs += " column=\"";
-            outs += std::to_string(typedefInfo.column);
-            outs += "\"";
-
-            outs += " used=\"";
-            outs += std::to_string(typedefInfo.used?1:0);
-            outs += "\"";
-
-            outs += "/>";
-            outs += '\n';
-        }
-        outs += "  </typedef-info>";
-        outs += '\n';
-    }
     outs += mTemplateSimplifier->dump();
 
     out << outs;
+}
+
+std::string Tokenizer::dumpTypedefInfo() const
+{
+    if (mTypedefInfo.empty())
+        return "";
+    std::string outs = "  <typedef-info>";
+    outs += '\n';
+    for (const TypedefInfo &typedefInfo: mTypedefInfo) {
+        outs += "    <info";
+
+        outs += " name=\"";
+        outs += typedefInfo.name;
+        outs += "\"";
+
+        outs += " file=\"";
+        outs += ErrorLogger::toxml(typedefInfo.filename);
+        outs += "\"";
+
+        outs += " line=\"";
+        outs += std::to_string(typedefInfo.lineNumber);
+        outs += "\"";
+
+        outs += " column=\"";
+        outs += std::to_string(typedefInfo.column);
+        outs += "\"";
+
+        outs += " used=\"";
+        outs += std::to_string(typedefInfo.used?1:0);
+        outs += "\"";
+
+        outs += "/>";
+        outs += '\n';
+    }
+    outs += "  </typedef-info>";
+    outs += '\n';
+
+    return outs;
 }
 
 void Tokenizer::simplifyHeadersAndUnusedTemplates()
@@ -9146,6 +9133,26 @@ static Token* getTokenAfterAttributes(Token* tok, bool gccattr) {
     return after;
 }
 
+static Token* getVariableTokenAfterAttributes(Token* tok) {
+    Token *vartok = nullptr;
+    Token *after = getTokenAfterAttributes(tok, true);
+
+    // check if after variable name
+    if (Token::Match(after, ";|=")) {
+        Token *prev = tok->previous();
+        while (Token::simpleMatch(prev, "]"))
+            prev = prev->link()->previous();
+        if (Token::Match(prev, "%type%"))
+            vartok = prev;
+    }
+
+    // check if before variable name
+    else if (Token::Match(after, "%type%"))
+        vartok = after;
+
+    return vartok;
+}
+
 Token* Tokenizer::getAttributeFuncTok(Token* tok, bool gccattr) const {
     if (!Token::Match(tok, "%name% ("))
         return nullptr;
@@ -9237,22 +9244,7 @@ void Tokenizer::simplifyAttribute()
                 }
 
                 else if (Token::Match(attr, "[(,] unused|__unused__|used|__used__ [,)]")) {
-                    Token *vartok = nullptr;
-                    Token *after = getTokenAfterAttributes(tok, true);
-
-                    // check if after variable name
-                    if (Token::Match(after, ";|=")) {
-                        Token *prev = tok->previous();
-                        while (Token::simpleMatch(prev, "]"))
-                            prev = prev->link()->previous();
-                        if (Token::Match(prev, "%type%"))
-                            vartok = prev;
-                    }
-
-                    // check if before variable name
-                    else if (Token::Match(after, "%type%"))
-                        vartok = after;
-
+                    Token *vartok = getVariableTokenAfterAttributes(tok);
                     if (vartok) {
                         const std::string &attribute(attr->strAt(1));
                         if (attribute.find("unused") != std::string::npos)
@@ -9284,6 +9276,14 @@ void Tokenizer::simplifyAttribute()
 
                 else if (functok && Token::simpleMatch(attr, "( __visibility__ ( \"default\" ) )"))
                     functok->isAttributeExport(true);
+
+                else if (Token::Match(attr, "[(,] cleanup ( %name% )")) {
+                    Token *vartok = getVariableTokenAfterAttributes(tok);
+                    if (vartok) {
+                        const std::string& funcname = attr->strAt(3);
+                        vartok->addAttributeCleanup(funcname);
+                    }
+                }
             }
 
             Token::eraseTokens(tok, tok->linkAt(1)->next());

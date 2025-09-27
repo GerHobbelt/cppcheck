@@ -27,7 +27,7 @@ CFG="$DIR"../../cfg/
 # TODO: remove missingInclude disabling when it no longer is implied by --enable=information
 # Cppcheck options
 # need to suppress unmatchedSuppression in case valueFlowBailout is not reported
-CPPCHECK_OPT='--check-library --platform=unix64 --enable=style,information --inconclusive --force --check-level=exhaustive --error-exitcode=-1 --disable=missingInclude --inline-suppr --template="{file}:{line}:{severity}:{id}:{message}" --debug-warnings --suppress=valueFlowBailout --suppress=purgedConfiguration --suppress=unmatchedSuppression'
+CPPCHECK_OPT='--check-library --platform=unix64 --enable=style,information --inconclusive --force --check-level=exhaustive --error-exitcode=-1 --disable=missingInclude --inline-suppr --template="{file}:{line}:{severity}:{id}:{message}" --debug-warnings --suppress=checkersReport'
 
 # Compiler settings
 CXX=g++
@@ -65,9 +65,9 @@ function gnu_fn {
 # qt.cpp
 function qt_fn {
     if [ $HAS_PKG_CONFIG -eq 1 ]; then
-        QTCONFIG=$(get_pkg_config_cflags Qt5Core Qt5Test)
+        QTCONFIG=$(get_pkg_config_cflags Qt5Core Qt5Test Qt5Gui)
         if [ -n "$QTCONFIG" ]; then
-            QTBUILDCONFIG=$(pkg-config --variable=qt_config Qt5Core Qt5Test)
+            QTBUILDCONFIG=$(pkg-config --variable=qt_config Qt5Core Qt5Test Qt5Gui)
             [[ $QTBUILDCONFIG =~ (^|[[:space:]])reduce_relocations($|[[:space:]]) ]] && QTCONFIG="${QTCONFIG} -fPIC"
             # TODO: get rid of the error enabling/disabling?
             set +e

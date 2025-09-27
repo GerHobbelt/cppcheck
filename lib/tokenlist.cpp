@@ -492,6 +492,9 @@ static bool iscast(const Token *tok, bool cpp)
     if (Token::simpleMatch(tok->link(), ") ( )"))
         return false;
 
+    if (Token::Match(tok->link(), ") %assign%|,|..."))
+        return false;
+
     if (tok->previous() && tok->previous()->isName() && tok->previous()->str() != "return" &&
         (!cpp || !Token::Match(tok->previous(), "delete|throw")))
         return false;
@@ -746,7 +749,7 @@ static void compileTerm(Token *&tok, AST_state& state)
             tok = tok->next();
         } while (Token::Match(tok, "%name%|%str%"));
     } else if (tok->isName()) {
-        if (Token::Match(tok, "return|case") || (state.cpp && tok->str() == "throw")) {
+        if (Token::Match(tok, "return|case") || (state.cpp && (tok->str() == "throw" || Token::simpleMatch(tok->tokAt(-1), ":: new")))) {
             if (tok->str() == "case")
                 state.inCase = true;
             const bool tokIsReturn = tok->str() == "return";
@@ -1755,7 +1758,10 @@ static Token * createAstAtToken(Token *tok)
 void TokenList::createAst() const
 {
     for (Token *tok = mTokensFrontBack.front; tok; tok = tok ? tok->next() : nullptr) {
-        tok = createAstAtToken(tok);
+        Token* const nextTok = createAstAtToken(tok);
+        if (precedes(nextTok, tok))
+            throw InternalError(tok, "Syntax Error: Infinite loop when creating AST.", InternalError::AST);
+        tok = nextTok;
     }
 }
 
@@ -1817,9 +1823,13 @@ void TokenList::validateAst(bool print) const
             tok = tok->link();
             continue;
         }
-        if (tok->isCast() && tok->astOperand1() && tok->link()) { // skip casts (not part of the AST)
-            tok = tok->link();
-            continue;
+        if (tok->isCast()) {
+            if (!tok->astOperand2() && precedes(tok->astOperand1(), tok))
+                throw InternalError(tok, "AST broken: '" + tok->str() + "' has improper operand.", InternalError::AST);
+            if (tok->astOperand1() && tok->link()) { // skip casts (not part of the AST)
+                tok = tok->link();
+                continue;
+            }
         }
 
         if (findLambdaEndToken(tok)) { // skip lambda captures

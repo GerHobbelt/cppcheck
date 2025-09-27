@@ -944,6 +944,9 @@ void CheckOther::checkVariableScope()
         if (!var || !var->isLocal() || var->isConst())
             continue;
 
+        if (var->nameToken()->isExpandedMacro())
+            continue;
+
         const bool isPtrOrRef = var->isPointer() || var->isReference();
         const bool isSimpleType = var->typeStartToken()->isStandardType() || var->typeStartToken()->isEnumType() || (var->typeStartToken()->isC() && var->type() && var->type()->isStructType());
         if (!isPtrOrRef && !isSimpleType && !astIsContainer(var->nameToken()))
@@ -1591,6 +1594,10 @@ void CheckOther::checkConstPointer()
                     continue;
             } else if (Token::simpleMatch(gparent, "[") && gparent->astOperand2() == parent)
                 continue;
+            else if (gparent && gparent->isCast() && gparent->valueType() &&
+                     ((gparent->valueType()->pointer == 0 && gparent->valueType()->reference == Reference::None) ||
+                      (var->valueType() && gparent->valueType()->isConst(var->valueType()->pointer))))
+                continue;
             else if (const Token* ftok = getTokenArgumentFunction(parent, argn)) {
                 bool inconclusive{};
                 if (!isVariableChangedByFunctionCall(ftok->next(), vt->pointer, var->declarationId(), mSettings, &inconclusive) && !inconclusive)
@@ -1780,6 +1787,8 @@ static bool isType(const Token * tok, bool unknown)
 {
     if (tok && (tok->isStandardType() || (!tok->isKeyword() && Token::Match(tok, "%type%")) || tok->str() == "auto"))
         return true;
+    if (tok && tok->varId())
+        return false;
     if (Token::simpleMatch(tok, "::"))
         return isType(tok->astOperand2(), unknown);
     if (Token::simpleMatch(tok, "<") && tok->link())
@@ -1818,7 +1827,7 @@ static bool isConstant(const Token* tok) {
     return tok && (tok->isEnumerator() || Token::Match(tok, "%bool%|%num%|%str%|%char%|nullptr|NULL"));
 }
 
-static bool isConstStatement(const Token *tok)
+static bool isConstStatement(const Token *tok, bool isNestedBracket = false)
 {
     if (!tok)
         return false;
@@ -1869,9 +1878,13 @@ static bool isConstStatement(const Token *tok)
     if (Token::simpleMatch(tok, "?") && Token::simpleMatch(tok->astOperand2(), ":")) // ternary operator
         return isConstStatement(tok->astOperand1()) && isConstStatement(tok->astOperand2()->astOperand1()) && isConstStatement(tok->astOperand2()->astOperand2());
     if (isBracketAccess(tok) && isWithoutSideEffects(tok->astOperand1(), /*checkArrayAccess*/ true, /*checkReference*/ false)) {
-        if (Token::simpleMatch(tok->astParent(), "["))
-            return isConstStatement(tok->astOperand2()) && isConstStatement(tok->astParent());
-        return isConstStatement(tok->astOperand2());
+        const bool isChained = succeeds(tok->astParent(), tok);
+        if (Token::simpleMatch(tok->astParent(), "[")) {
+            if (isChained)
+                return isConstStatement(tok->astOperand2()) && isConstStatement(tok->astParent());
+            return isNestedBracket && isConstStatement(tok->astOperand2());
+        }
+        return isConstStatement(tok->astOperand2(), /*isNestedBracket*/ !isChained);
     }
     return false;
 }

@@ -7,6 +7,8 @@
 // No warnings about bad library configuration, unmatched suppressions, etc. exitcode=0
 //
 
+// cppcheck-suppress-file [valueFlowBailout,purgedConfiguration]
+
 #define _BSD_SOURCE
 
 #include <aio.h>
@@ -913,8 +915,8 @@ typedef struct {
 } S_memalign;
 
 S_memalign* posix_memalign_memleak(size_t n) { // #12248
-    S_memalign* s = malloc(sizeof(*s));   
-    s->N = n;   
+    S_memalign* s = malloc(sizeof(*s));
+    s->N = n;
     if (0 != posix_memalign((void**)&s->data, 16, n * sizeof(int))) {
         free(s);
         return NULL;
@@ -1062,6 +1064,7 @@ void * memleak_mmap2() // #8327
 void memleak_getline() { // #11043
     char *line = NULL;
     size_t size = 0;
+    // cppcheck-suppress valueFlowBailoutIncompleteVar
     getline(&line, &size, stdin);
     // cppcheck-suppress memleak
     line = NULL;
@@ -1079,8 +1082,30 @@ void memleak_getline_array(FILE* stream) { // #12498
     free(a[1]);
 }
 
+void memleak_getdelim(int delim) {
+    char *line = NULL;
+    size_t size = 0;
+    // cppcheck-suppress valueFlowBailoutIncompleteVar
+    getdelim(&line, &size, delim, stdin);
+    // cppcheck-suppress memleak
+    line = NULL;
+    getdelim(&line, &size, delim, stdin);
+    // cppcheck-suppress memleak
+    line = NULL;
+}
+
+void memleak_getdelim_array(FILE* stream, int delim) {
+    char* a[2] = { 0 };
+    size_t n;
+    getdelim(&a[0], &n, delim, stream);
+    getdelim(&a[1], &n, delim, stream);
+    free(a[0]);
+    free(a[1]);
+}
+
 void * identicalCondition_mmap(int fd, size_t size) // #9940
 {
+    // cppcheck-suppress valueFlowBailoutIncompleteVar
     void* buffer = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (buffer == MAP_FAILED) {
         return NULL;
@@ -1093,6 +1118,7 @@ int munmap_no_double_free(int tofd, // #11396
                           size_t len)
 {
     int rc;
+    // cppcheck-suppress valueFlowBailoutIncompleteVar
     const void* fptr = mmap(NULL,len,PROT_READ|PROT_WRITE,MAP_SHARED,fromfd,(off_t)0);
     if (fptr == MAP_FAILED) {
         return -1;
@@ -1127,6 +1153,7 @@ void resourceLeak_fdopen(int fd)
 
 void resourceLeak_fdopen2(const char* fn) // #2767
 {
+    // cppcheck-suppress valueFlowBailoutIncompleteVar
     int fi = open(fn, O_RDONLY);
     FILE* fd = fdopen(fi, "r");
     fclose(fd);
@@ -1173,14 +1200,14 @@ void resourceLeak_socket(void)
 
 void resourceLeak_open1(void)
 {
-    // cppcheck-suppress unreadVariable
+    // cppcheck-suppress [unreadVariable,valueFlowBailoutIncompleteVar]
     int fd = open("file", O_RDWR | O_CREAT);
     // cppcheck-suppress resourceLeak
 }
 
 void resourceLeak_open2(void)
 {
-    // cppcheck-suppress unreadVariable
+    // cppcheck-suppress [unreadVariable,valueFlowBailoutIncompleteVar]
     int fd = open("file", O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
     // cppcheck-suppress resourceLeak
 }
@@ -1193,6 +1220,7 @@ void noleak(int x, int y, int z)
     closedir(p2);
     int s = socket(AF_INET,SOCK_STREAM,0);
     close(s);
+    // cppcheck-suppress valueFlowBailoutIncompleteVar
     int fd1 = open("a", O_RDWR | O_CREAT);
     close(fd1);
     int fd2 = open("a", O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
@@ -1337,7 +1365,7 @@ void timet_h(const struct timespec* ptp1)
     clockid_t clk_id1, clk_id2, clk_id3;
     // cppcheck-suppress constVariablePointer
     struct timespec* ptp;
-    // cppcheck-suppress uninitvar
+    // cppcheck-suppress [uninitvar,valueFlowBailoutIncompleteVar]
     clock_settime(CLOCK_REALTIME, ptp);
     // cppcheck-suppress uninitvar
     clock_settime(clk_id1, ptp);

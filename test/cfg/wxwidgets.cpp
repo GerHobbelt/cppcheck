@@ -7,11 +7,16 @@
 // No warnings about bad library configuration, unmatched suppressions, etc. exitcode=0
 //
 
+// cppcheck-suppress-file valueFlowBailout
+
 #include <wx/wx.h>
+#include <wx/accel.h>
 #include <wx/app.h>
+#include <wx/colour.h>
 #include <wx/dc.h>
 #include <wx/log.h>
 #include <wx/filefn.h>
+#include <wx/geometry.h>
 #include <wx/spinctrl.h>
 #include <wx/artprov.h>
 #include <wx/calctrl.h>
@@ -19,15 +24,231 @@
 #include <wx/icon.h>
 #include <wx/bitmap.h>
 #include <wx/dataview.h>
+#include <wx/datetime.h>
 #include <wx/memory.h>
 #include <wx/frame.h>
 #include <wx/menu.h>
+#include <wx/mimetype.h>
 #include <wx/regex.h>
+#include <wx/region.h>
 #include <wx/stattext.h>
 #include <wx/sizer.h>
 #include <wx/string.h>
 #include <wx/textctrl.h>
+#include <wx/gdicmn.h>
 #include <wx/propgrid/property.h>
+#include <wx/position.h>
+#include <wx/versioninfo.h>
+
+void unreadVariable_wxColour(const unsigned char uc, const wxString &name, const unsigned long colRGB, const wxColour &colour)
+{
+    // cppcheck-suppress unusedVariable
+    wxColour a;
+    // cppcheck-suppress unreadVariable
+    wxColour b(uc, uc, uc);
+    // cppcheck-suppress unreadVariable
+    wxColour c(uc, uc, uc, uc);
+    // cppcheck-suppress unreadVariable
+    wxColour d(name);
+    // cppcheck-suppress unreadVariable
+    wxColour e(colRGB);
+    // cppcheck-suppress unreadVariable
+    wxColour f(colour);
+}
+
+void unreadVariable_wxPoint2DInt(const wxInt32 x, const wxPoint2DInt& pti, const wxPoint &pt)
+{
+    // cppcheck-suppress unusedVariable
+    wxPoint2DInt a;
+    // cppcheck-suppress unreadVariable
+    wxPoint2DInt b(x, x);
+    // cppcheck-suppress unreadVariable
+    wxPoint2DInt c(pti);
+    // cppcheck-suppress unreadVariable
+    wxPoint2DInt d(pt);
+}
+
+void unreadVariable_wxPoint2DDouble(const wxDouble x, const wxPoint2DDouble& ptd, const wxPoint2DInt& pti, const wxPoint &pt)
+{
+    // cppcheck-suppress unusedVariable
+    wxPoint2DDouble a;
+    // cppcheck-suppress unreadVariable
+    wxPoint2DDouble b(x, x);
+    // cppcheck-suppress unreadVariable
+    wxPoint2DDouble c(ptd);
+    // cppcheck-suppress unreadVariable
+    wxPoint2DDouble d(pti);
+    // cppcheck-suppress unreadVariable
+    wxPoint2DDouble e(pt);
+}
+
+void unusedVariable_wxAcceleratorEntry()
+{
+    // cppcheck-suppress unusedVariable
+    wxAcceleratorEntry a;
+}
+
+void unreadVariable_wxDateSpan(const int x)
+{
+    // cppcheck-suppress unusedVariable
+    wxDateSpan a;
+    // cppcheck-suppress unreadVariable
+    wxDateSpan b{x};
+    // cppcheck-suppress unreadVariable
+    wxDateSpan c{x, x};
+    // cppcheck-suppress unreadVariable
+    wxDateSpan d{x, x, x};
+    // cppcheck-suppress unreadVariable
+    wxDateSpan e{x, x, x, x};
+}
+
+void unreadVariable_wxTimeSpan(const long x, const wxLongLong y)
+{
+    // cppcheck-suppress unusedVariable
+    wxTimeSpan a;
+    // cppcheck-suppress unreadVariable
+    wxTimeSpan b{};
+    // cppcheck-suppress unreadVariable
+    wxTimeSpan c{x};
+    // cppcheck-suppress unreadVariable
+    wxTimeSpan d{x, x};
+    // cppcheck-suppress unreadVariable
+    wxTimeSpan e{x, x, y};
+    // cppcheck-suppress unreadVariable
+    wxTimeSpan f{x, x, y, y};
+}
+
+void unreadVariable_wxFileType(const wxFileTypeInfo &info)
+{
+    // cppcheck-suppress unreadVariable
+    wxFileType a(info);
+}
+
+void unreadVariable_wxPosition(const int x)
+{
+    // cppcheck-suppress unusedVariable
+    wxPosition a;
+    // cppcheck-suppress unreadVariable
+    wxPosition b{};
+    // cppcheck-suppress unreadVariable
+    wxPosition c{x,x};
+}
+
+void unreadVariable_wxRegEx(const wxString &expr, const int flags)
+{
+    // cppcheck-suppress unusedVariable
+    wxRegEx a;
+    // cppcheck-suppress unreadVariable
+    wxRegEx b{expr};
+    // cppcheck-suppress unreadVariable
+    wxRegEx c{expr, flags};
+}
+
+void unreadVariable_wxRegion(const wxCoord x, const wxPoint &pt, const wxRect &rect, const wxRegion &region, const wxBitmap &bmp)
+{
+    // cppcheck-suppress unusedVariable
+    wxRegion a;
+    // cppcheck-suppress unreadVariable
+    wxRegion b{};
+    // cppcheck-suppress unreadVariable
+    wxRegion c{x,x,x,x};
+    // cppcheck-suppress unreadVariable
+    wxRegion d{pt,pt};
+    // cppcheck-suppress unreadVariable
+    wxRegion e{rect};
+    // cppcheck-suppress unreadVariable
+    wxRegion f{region};
+    // cppcheck-suppress unreadVariable
+    wxRegion g{bmp};
+}
+
+void unreadVariable_wxVersionInfo(const wxString &name, const int major, const int minor, const int micro, const wxString &description, const wxString &copyright)
+{
+    // cppcheck-suppress unusedVariable
+    wxVersionInfo a;
+    // cppcheck-suppress unreadVariable
+    wxVersionInfo b(name);
+    // cppcheck-suppress unreadVariable
+    wxVersionInfo c(name, major);
+    // cppcheck-suppress unreadVariable
+    wxVersionInfo d(name, major, minor);
+    // cppcheck-suppress unreadVariable
+    wxVersionInfo e(name, major, minor, micro);
+    // cppcheck-suppress unreadVariable
+    wxVersionInfo f(name, major, minor, micro, description);
+    // cppcheck-suppress unreadVariable
+    wxVersionInfo g(name, major, minor, micro, description, copyright);
+}
+
+void unreadVariable_wxSize(const wxSize &s)
+{
+    // cppcheck-suppress unusedVariable
+    wxSize a;
+    // cppcheck-suppress unreadVariable
+    wxSize b{};
+    // cppcheck-suppress unreadVariable
+    wxSize c{4, 2};
+    // cppcheck-suppress unreadVariable
+    wxSize d(4, 2);
+    // cppcheck-suppress unreadVariable
+    wxSize e(s);
+}
+
+void unreadVariable_wxPoint(const wxRealPoint &rp, const int x, const int y)
+{
+    // cppcheck-suppress unusedVariable
+    wxPoint a;
+    // cppcheck-suppress unreadVariable
+    wxPoint b{};
+    // cppcheck-suppress unreadVariable
+    wxPoint c{4, 2};
+    // cppcheck-suppress unreadVariable
+    wxPoint d(4, 2);
+    // cppcheck-suppress unreadVariable
+    wxPoint e{x, 2};
+    // cppcheck-suppress unreadVariable
+    wxPoint f(4, y);
+    // cppcheck-suppress unreadVariable
+    wxPoint g(rp);
+}
+
+void unreadVariable_wxRealPoint(const wxPoint &pt, const double x, const double y)
+{
+    // cppcheck-suppress unusedVariable
+    wxRealPoint a;
+    // cppcheck-suppress unreadVariable
+    wxRealPoint b{};
+    // cppcheck-suppress unreadVariable
+    wxRealPoint c{4.0, 2.0};
+    // cppcheck-suppress unreadVariable
+    wxRealPoint d(4.0, 2.0);
+    // cppcheck-suppress unreadVariable
+    wxRealPoint e{x, 2.0};
+    // cppcheck-suppress unreadVariable
+    wxRealPoint f(4.0, y);
+    // cppcheck-suppress unreadVariable
+    wxRealPoint g(pt);
+}
+
+void unreadVariable_wxRect(const int x, const wxPoint &pt, const wxSize &sz)
+{
+    // cppcheck-suppress unusedVariable
+    wxRect a;
+    // cppcheck-suppress unreadVariable
+    wxRect b{};
+    // cppcheck-suppress unreadVariable
+    wxRect c{x,x,x,x};
+    // cppcheck-suppress unreadVariable
+    wxRect d{pt,sz};
+    // cppcheck-suppress unreadVariable
+    wxRect e{sz};
+    // cppcheck-suppress unreadVariable
+    wxRect f(x,x,x,x);
+    // cppcheck-suppress unreadVariable
+    wxRect g(pt,sz);
+    // cppcheck-suppress unreadVariable
+    wxRect h(sz);
+}
 
 void uninitvar_wxRegEx_GetMatch(const wxRegEx &obj, size_t *start, size_t *len, size_t index)
 {

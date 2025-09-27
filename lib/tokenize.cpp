@@ -2849,8 +2849,8 @@ bool Tokenizer::simplifyUsing()
             continue;
         Token* end = tok->tokAt(3);
         while (end && !Token::Match(end, "[;,]")) {
-            if (end->str() == "<" && end->link()) // skip template args
-                end = end->link()->next();
+            if (end->str() == "<") // skip template args
+                end = end->findClosingBracket();
             else
                 end = end->next();
         }
@@ -4251,7 +4251,7 @@ static bool setVarIdParseDeclaration(Token** tok, const VariableMap& variableMap
             bracket = true;
         } else if (tok2->str() == "::") {
             singleNameCount = 0;
-        } else if (tok2->str() != "*" && tok2->str() != "::" && tok2->str() != "...") {
+        } else if (tok2->str() != "*" && tok2->str() != "...") {
             break;
         }
         tok2 = tok2->next();
@@ -4826,7 +4826,8 @@ void Tokenizer::setVarIdPass1()
             // function declaration inside executable scope? Function declaration is of form: type name "(" args ")"
             if (scopeStack.top().isExecutable && Token::Match(tok, "%name% [,)[]")) {
                 bool par = false;
-                const Token *start, *end;
+                const Token* start;
+                Token* end;
 
                 // search begin of function declaration
                 for (start = tok; Token::Match(start, "%name%|*|&|,|("); start = start->previous()) {
@@ -4850,9 +4851,11 @@ void Tokenizer::setVarIdPass1()
                 const bool isNotstartKeyword = start->next() && notstart.find(start->next()->str()) != notstart.end();
 
                 // now check if it is a function declaration
-                if (Token::Match(start, "[;{}] %type% %name%|*") && par && Token::simpleMatch(end, ") ;") && !isNotstartKeyword)
+                if (Token::Match(start, "[;{}] %type% %name%|*") && par && Token::simpleMatch(end, ") ;") && !isNotstartKeyword) {
                     // function declaration => don't set varid
+                    tok = end;
                     continue;
+                }
             }
 
             if ((!scopeStack.top().isEnum || !(Token::Match(tok->previous(), "{|,") && Token::Match(tok->next(), ",|=|}"))) &&
@@ -5355,7 +5358,7 @@ void Tokenizer::createLinks2()
 
             while (!type.empty() && type.top()->str() == "<") {
                 const Token* end = type.top()->findClosingBracket();
-                if (Token::Match(end, "> %comp%|;|.|=|{|::"))
+                if (Token::Match(end, "> %comp%|;|.|=|{|(|::"))
                     break;
                 // Variable declaration
                 if (Token::Match(end, "> %var% ;") && (type.top()->tokAt(-2) == nullptr || Token::Match(type.top()->tokAt(-2), ";|}|{")))
@@ -5381,7 +5384,7 @@ void Tokenizer::createLinks2()
             if (!top2 || top2->str() != "<") {
                 if (token->str() == ">>")
                     continue;
-                if (!Token::Match(token->next(), "%name%|%cop%|%assign%|::|,|(|)|{|}|;|[|]|:|.|=|...") &&
+                if (!Token::Match(token->next(), "%name%|%cop%|%assign%|::|,|(|)|{|}|;|[|]|:|.|=|?|...") &&
                     !Token::Match(token->next(), "&& %name% ="))
                     continue;
             }
@@ -8406,6 +8409,9 @@ void Tokenizer::findGarbageCode() const
         else if (Token::Match(tok, "%assign% [") && Token::simpleMatch(tok->linkAt(1), "] ;"))
             syntaxError(tok, tok->str() + "[...];");
 
+        else if (Token::Match(tok, "[({<] %assign%"))
+            syntaxError(tok);
+
         // UNKNOWN_MACRO(return)
         if (tok->isKeyword() && Token::Match(tok, "throw|return )") && Token::Match(tok->linkAt(1)->previous(), "%name% ("))
             unknownMacroError(tok->linkAt(1)->previous());
@@ -8537,13 +8543,15 @@ void Tokenizer::findGarbageCode() const
         if (!Token::simpleMatch(tok, "for (")) // find for loops
             continue;
         // count number of semicolons
-        int semicolons = 0;
+        int semicolons = 0, colons = 0;
         const Token* const startTok = tok;
         tok = tok->next()->link()->previous(); // find ")" of the for-loop
         // walk backwards until we find the beginning (startTok) of the for() again
         for (; tok != startTok; tok = tok->previous()) {
             if (tok->str() == ";") { // do the counting
                 semicolons++;
+            } else if (tok->str() == ":") {
+                colons++;
             } else if (tok->str() == ")") { // skip pairs of ( )
                 tok = tok->link();
             }
@@ -8552,6 +8560,8 @@ void Tokenizer::findGarbageCode() const
         if (semicolons > 2)
             syntaxError(tok);
         if (semicolons == 1 && !(isCPP() && mSettings.standards.cpp >= Standards::CPP20))
+            syntaxError(tok);
+        if (semicolons == 0 && colons == 0)
             syntaxError(tok);
     }
 
@@ -8576,8 +8586,11 @@ void Tokenizer::findGarbageCode() const
             bool match1 = Token::Match(tok, "%or%|%oror%|==|!=|+|-|/|!|>=|<=|~|^|++|--|::|sizeof");
             bool match2 = Token::Match(tok->next(), "{|if|else|while|do|for|return|switch|break");
             if (isCPP()) {
-                match1 = match1 || Token::Match(tok, "::|throw|decltype|typeof");
+                match1 = match1 || Token::Match(tok, "throw|decltype|typeof");
                 match2 = match2 || Token::Match(tok->next(), "try|catch|namespace");
+            }
+            if (match1 && !tok->isIncDecOp()) {
+                match2 = match2 || Token::Match(tok->next(), "%assign%");
             }
             if (match1 && match2)
                 syntaxError(tok);
@@ -8628,6 +8641,8 @@ void Tokenizer::findGarbageCode() const
             syntaxError(tok);
         if (Token::Match(tok, "==|!=|<=|>= %comp%") && tok->strAt(-1) != "operator")
             syntaxError(tok, tok->str() + " " + tok->strAt(1));
+        if (Token::simpleMatch(tok, ":: ::"))
+            syntaxError(tok);
     }
 
     // ternary operator without :

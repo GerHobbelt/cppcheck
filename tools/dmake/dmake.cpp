@@ -725,7 +725,7 @@ int main(int argc, char **argv)
                                 "-Wno-sign-compare "
                                 "-Wno-multichar "
                                 "-Woverloaded-virtual "
-                                "$(CPPCHK_GLIBCXX_DEBUG) "
+                                //"$(CPPCHK_GLIBCXX_DEBUG) " // TODO: when using CXXOPTS this would always be set - need to handle this differently
                                 "-g");
     }
 
@@ -749,6 +749,9 @@ int main(int argc, char **argv)
          << "else ifneq ($(HAVE_RULES),)\n"
          << "    $(error invalid HAVE_RULES value '$(HAVE_RULES)')\n"
          << "endif\n\n";
+
+    fout << "override CXXFLAGS += $(CXXOPTS)\n";
+    fout << "override LDFLAGS += $(LDOPTS)\n\n";
 
     makeConditionalVariable(fout, "PREFIX", "/usr");
     makeConditionalVariable(fout, "INCLUDE_FOR_LIB", "-Ilib -isystem externals -isystem externals/picojson -isystem externals/simplecpp -isystem externals/tinyxml2");
@@ -867,6 +870,10 @@ int main(int argc, char **argv)
     fout << ".PHONY: validateRules\n";
     fout << "validateRules:\n";
     fout << "\txmllint --noout rules/*.xml\n";
+    fout << ".PHONY: check-nonneg\n";
+    fout << "check-nonneg:\n";
+    // TODO: how to use provided number of jobs?
+    fout << "\tls lib/*.cpp | xargs -n 1 -P $$(nproc) g++ -fsyntax-only -DNONNEG $(CXXFLAGS) $(INCLUDE_FOR_LIB)\n";
 
     fout << "\n###### Build\n\n";
 

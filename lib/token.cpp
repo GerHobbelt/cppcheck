@@ -1607,8 +1607,8 @@ static std::string stringFromTokenRange(const Token* start, const Token* end)
                 else if (c >= ' ' && c <= 126)
                     ret += c;
                 else {
-                    char str[10];
-                    sprintf(str, "\\x%02x", c);
+                    char str[5];
+                    snprintf(str, sizeof(str), "\\x%02x", c);
                     ret += str;
                 }
             }
@@ -2719,4 +2719,11 @@ Token* findLambdaEndScope(Token* tok)
 }
 const Token* findLambdaEndScope(const Token* tok) {
     return findLambdaEndScope(const_cast<Token*>(tok));
+}
+
+void Token::templateArgFrom(const Token* fromToken) {
+    setFlag(fIsTemplateArg, fromToken != nullptr);
+    mImpl->mTemplateArgFileIndex = fromToken ? fromToken->mImpl->mFileIndex : -1;
+    mImpl->mTemplateArgLineNumber = fromToken ? fromToken->mImpl->mLineNumber : -1;
+    mImpl->mTemplateArgColumn = fromToken ? fromToken->mImpl->mColumn : -1;
 }

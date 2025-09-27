@@ -51,6 +51,7 @@
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 //---------------------------------------------------------------------------
 
 SymbolDatabase::SymbolDatabase(Tokenizer& tokenizer)
@@ -2212,7 +2213,7 @@ void SymbolDatabase::debugSymbolDatabase() const
             }
             errorPath.emplace_back(tok, "");
             mErrorLogger.reportErr(
-                {errorPath, &mTokenizer.list, Severity::debug, "valueType", msg, CWE{0}, Certainty::normal});
+                {std::move(errorPath), &mTokenizer.list, Severity::debug, "valueType", msg, CWE{0}, Certainty::normal});
         }
     }
 }
@@ -2577,8 +2578,6 @@ Function::Function(const Token *tok,
         // constructor of any kind
         else
             type = FunctionType::eConstructor;
-
-        isExplicit(tokenDef->strAt(-1) == "explicit" || tokenDef->strAt(-2) == "explicit");
     }
 
     const Token *tok1 = setFlags(tok, scope);
@@ -2651,6 +2650,14 @@ Function::Function(const Token *tok,
         arg = argDef;
         isInline(true);
         hasBody(true);
+    }
+
+    for (tok = tokenDef->previous(); Token::Match(tok, "&|&&|*|::|)|]|%name%"); tok = tok->previous()) {
+        // We should set other keywords here as well
+        if (tok->str() == "explicit")
+            isExplicit(true);
+        if (tok->str() == "]" || tok->str() == ")")
+            tok = tok->link();
     }
 }
 
@@ -8420,4 +8427,11 @@ ValueType::MatchResult ValueType::matchParameter(const ValueType *call, const Va
             return ValueType::MatchResult::NOMATCH;
     }
     return res;
+}
+
+void SymbolDatabase::getErrorMessages(ErrorLogger& /*errorLogger*/)
+{
+    // TODO
+    //SymbolDatabase symdb;
+    //symdb.returnImplicitIntError(nullptr);
 }

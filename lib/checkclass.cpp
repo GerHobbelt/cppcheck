@@ -983,7 +983,7 @@ void CheckClass::initializeVarList(const Function &func, std::list<const Functio
                             tok2 = tok2->next();
                             if (tok2->str() == "&")
                                 tok2 = tok2->next();
-                            if (isVariableChangedByFunctionCall(tok2, tok2->previous()->str() == "&", tok2->varId(), mSettings, nullptr))
+                            if (isVariableChangedByFunctionCall(tok2, tok2->previous()->str() == "&", tok2->varId(), *mSettings, nullptr))
                                 assignVar(usage, tok2->varId());
                         }
                     }
@@ -1714,7 +1714,7 @@ void CheckClass::operatorEqMissingReturnStatementError(const Token *tok, bool er
 
 void CheckClass::operatorEqToSelf()
 {
-    if (!mSettings->severity.isEnabled(Severity::warning))
+    if (!mSettings->severity.isEnabled(Severity::warning) && !mSettings->isPremiumEnabled("operatorEqToSelf"))
         return;
 
     logChecker("CheckClass::operatorEqToSelf"); // warning
@@ -2953,7 +2953,7 @@ void CheckClass::pureVirtualFunctionCallInConstructorError(
 
 void CheckClass::checkDuplInheritedMembers()
 {
-    if (!mSettings->severity.isEnabled(Severity::warning))
+    if (!mSettings->severity.isEnabled(Severity::warning) && !mSettings->isPremiumEnabled("duplInheritedMember"))
         return;
 
     logChecker("CheckClass::checkDuplInheritedMembers"); // warning
@@ -3230,6 +3230,8 @@ static bool compareTokenRanges(const Token* start1, const Token* end1, const Tok
     const Token* tok2 = start2;
     bool isEqual = false;
     while (tok1 && tok2) {
+        if (tok1->function() != tok2->function())
+            break;
         if (tok1->str() != tok2->str())
             break;
         if (tok1->str() == "this")

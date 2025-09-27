@@ -401,7 +401,7 @@ bool CheckLeakAutoVar::checkScope(const Token * const startToken,
             if (Token::simpleMatch(tokAssignOp->astOperand1(), "."))
                 continue;
             // taking address of another variable..
-            if (Token::Match(tokAssignOp, "= %var% [+;]")) {
+            if (Token::Match(tokAssignOp, "= %var% +|;|?|%comp%")) {
                 if (varTok->tokAt(2)->varId() != varTok->varId()) {
                     // If variable points at allocated memory => error
                     leakIfAllocated(varTok, varInfo);
@@ -1097,7 +1097,7 @@ void CheckLeakAutoVar::leakIfAllocated(const Token *vartok,
     }
 }
 
-static const Token* getOutparamAllocation(const Token* tok, const Settings* settings)
+static const Token* getOutparamAllocation(const Token* tok, const Settings& settings)
 {
     if (!tok)
         return nullptr;
@@ -1105,7 +1105,7 @@ static const Token* getOutparamAllocation(const Token* tok, const Settings* sett
     const Token* ftok = getTokenArgumentFunction(tok, argn);
     if (!ftok)
         return nullptr;
-    if (const Library::AllocFunc* allocFunc = settings->library.getAllocFuncInfo(ftok)) {
+    if (const Library::AllocFunc* allocFunc = settings.library.getAllocFuncInfo(ftok)) {
         if (allocFunc->arg == argn + 1)
             return ftok;
     }
@@ -1168,7 +1168,7 @@ void CheckLeakAutoVar::ret(const Token *tok, VarInfo &varInfo, const bool isEndO
             // don't warn when returning after checking return value of outparam allocation
             const Token* outparamFunc{};
             if ((tok->scope()->type == Scope::ScopeType::eIf || tok->scope()->type== Scope::ScopeType::eElse) &&
-                (outparamFunc = getOutparamAllocation(it->second.allocTok, mSettings))) {
+                (outparamFunc = getOutparamAllocation(it->second.allocTok, *mSettings))) {
                 const Scope* scope = tok->scope();
                 if (scope->type == Scope::ScopeType::eElse) {
                     scope = scope->bodyStart->tokAt(-2)->scope();

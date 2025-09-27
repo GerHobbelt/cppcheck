@@ -26,7 +26,7 @@ from urllib.parse import urlparse
 # Version scheme (MAJOR.MINOR.PATCH) should orientate on "Semantic Versioning" https://semver.org/
 # Every change in this script should result in increasing the version number accordingly (exceptions may be cosmetic
 # changes)
-SERVER_VERSION = "1.3.48"
+SERVER_VERSION = "1.3.53"
 
 OLD_VERSION = '2.14.0'
 
@@ -74,6 +74,10 @@ def strDateTime() -> str:
 
 def dateTimeFromStr(datestr: str) -> datetime.datetime:
     return datetime.datetime.strptime(datestr, '%Y-%m-%d %H:%M')
+
+
+def pkg_from_file(filename: str) -> str:
+    return filename[filename.rfind('/')+1:]
 
 
 def overviewReport() -> str:
@@ -164,7 +168,7 @@ def latestReport(latestResults: list) -> str:
     for filename in latestResults:
         if not os.path.isfile(filename):
             continue
-        package = filename[filename.rfind('/')+1:]
+        package = pkg_from_file(filename)
         current_year = datetime.date.today().year
 
         datestr = None
@@ -226,7 +230,7 @@ def crashReport(results_path: str, query_params: dict):
                 elif line.startswith('count:'):
                     if line.find('Crash') < 0:
                         break
-                    package = filename[filename.rfind('/')+1:]
+                    package = pkg_from_file(filename)
                     counts = line.split(' ')
                     c_version = ''
                     if counts[2] == 'Crash!':
@@ -325,7 +329,7 @@ def timeoutReport(results_path: str) -> str:
                 elif line.startswith('count:'):
                     if line.find('TO!') < 0:
                         break
-                    package = filename[filename.rfind('/')+1:]
+                    package = pkg_from_file(filename)
                     counts = line.split(' ')
                     c2 = ''
                     if counts[2] == 'TO!':
@@ -341,29 +345,33 @@ def timeoutReport(results_path: str) -> str:
     return html
 
 
-def staleReport(results_path: str) -> str:
+def staleReport(results_path: str, query_params: dict) -> str:
+    thresh_d = query_params.get('days')
+    if thresh_d is None:
+        thresh_d = 30
+    else:
+        thresh_d = int(thresh_d)
+
     html = '<!DOCTYPE html>\n'
     html += '<html><head><title>Stale report</title></head><body>\n'
     html += '<h1>Stale report</h1>\n'
     html += '<pre>\n'
     html += '<b>' + fmt('Package', 'Date       Time', link=False) + '</b>\n'
-    current_year = datetime.date.today().year
     for filename in sorted(glob.glob(os.path.expanduser(results_path + '/*'))):
-        if not os.path.isfile(filename) or filename.endswith('.diff'):
+        if filename.endswith('.diff') or not os.path.isfile(filename):
             continue
-        for line in open(filename, 'rt'):
-            line = line.strip()
-            if line.startswith(str(current_year) + '-') or line.startswith(str(current_year - 1) + '-'):
-                datestr = line
-            else:
-                continue
-            dt = dateTimeFromStr(datestr)
-            diff = datetime.datetime.now() - dt
-            if diff.days < 30:
-                continue
-            package = filename[filename.rfind('/')+1:]
-            html += fmt(package, datestr) + '\n'
-            break
+        with open(filename, 'rt') as f:
+            # first line is datetime string
+            datestr = f.readline().strip()
+            try:
+                dt = dateTimeFromStr(datestr)
+                diff = datetime.datetime.now() - dt
+            except:
+                # there might be very outdated files which still might have an invalid timestamp
+                diff = datetime.timedelta(days=thresh_d)
+            if diff.days >= thresh_d:
+                package = pkg_from_file(filename)
+                html += fmt(package, datestr) + '\n'
     html += '</pre>\n'
 
     html += '</body></html>\n'
@@ -422,7 +430,7 @@ def diffReport(resultsPath: str) -> str:
         for messageId in data['sums']:
             sums = data['sums'][messageId]
             if OLD_VERSION not in sums:
-                continue
+                break
             if messageId not in out:
                 out[messageId] = [0, 0]
             out[messageId][0] += sums[OLD_VERSION]
@@ -490,9 +498,12 @@ def diffMessageIdReport(resultPath: str, messageId: str) -> str:
         if not os.path.isfile(filename):
             continue
         with open(filename, 'rt') as f:
-            diff_stats = f.read()
-        if messageId not in diff_stats:
+            diff_stats = json.loads(f.read())
+        if messageId not in diff_stats['sums']:
             continue
+        if OLD_VERSION not in diff_stats['sums'][messageId]:
+            continue
+
         url = None
         diff = False
         for line in open(filename[:-5], 'rt'):
@@ -518,11 +529,14 @@ def diffMessageIdTodayReport(resultPath: str, messageId: str) -> str:
         if not os.path.isfile(filename):
             continue
         with open(filename, 'rt') as f:
-            diff_stats = f.read()
-        if messageId not in diff_stats:
+            diff_stats = json.loads(f.read())
+        if messageId not in diff_stats['sums']:
             continue
-        if today not in diff_stats:
+        if OLD_VERSION not in diff_stats['sums'][messageId]:
             continue
+        if today not in diff_stats["date"]:
+            continue
+
         url = None
         diff = False
         firstLine = True
@@ -1079,7 +1093,7 @@ class HttpClientThread(Thread):
     def __init__(self, connection: socket.socket, cmd: str, resultPath: str, latestResults: list) -> None:
         Thread.__init__(self)
         self.connection = connection
-        self.cmd = cmd[:cmd.find('\r\n')]
+        self.cmd = cmd
         self.resultPath = resultPath
         self.infoPath = os.path.join(self.resultPath, 'info_output')
         self.latestResults = latestResults
@@ -1096,12 +1110,12 @@ class HttpClientThread(Thread):
     def run(self):
         try:
             cmd = self.cmd
-            print_ts(cmd)
             url, queryParams = self.parse_req(cmd)
             if url is None:
                 print_ts('invalid request: {}'.format(cmd))
                 self.connection.close()
                 return
+            t_start = time.perf_counter()
             if url == '/':
                 html = overviewReport()
                 httpGetResponse(self.connection, html, 'text/html')
@@ -1115,7 +1129,7 @@ class HttpClientThread(Thread):
                 html = timeoutReport(self.resultPath)
                 httpGetResponse(self.connection, html, 'text/html')
             elif url == '/stale.html':
-                html = staleReport(self.resultPath)
+                html = staleReport(self.resultPath, queryParams)
                 httpGetResponse(self.connection, html, 'text/html')
             elif url == '/diff.html':
                 html = diffReport(self.resultPath)
@@ -1198,6 +1212,7 @@ class HttpClientThread(Thread):
                     with open(filename, 'rt') as f:
                         data = f.read()
                     httpGetResponse(self.connection, data, 'text/plain')
+            print_ts('{} finished in {}s'.format(url, (time.perf_counter() - t_start)))
         except:
             tb = "".join(traceback.format_exception(sys.exc_info()[0], sys.exc_info()[1], sys.exc_info()[2]))
             print_ts(tb)
@@ -1215,7 +1230,7 @@ def read_data(connection, cmd, pos_nl, max_data_size, check_done, cmd_name, time
             bytes_received = connection.recv(1024)
             if bytes_received:
                 try:
-                    text_received = bytes_received.decode('utf-8', 'ignore')
+                    text_received = bytes_received.decode('ascii', 'ignore')
                 except UnicodeDecodeError as e:
                     print_ts('Error: Decoding failed ({}): {}'.format(cmd_name, e))
                     data = None
@@ -1227,13 +1242,22 @@ def read_data(connection, cmd, pos_nl, max_data_size, check_done, cmd_name, time
             else:
                 time.sleep(0.2)
                 t += 0.2
-        connection.close()
     except socket.error as e:
         print_ts('Socket error occurred ({}): {}'.format(cmd_name, e))
         data = None
 
-    if timeout > 0 and t >= timeout:
+    connection.close()
+
+    if (timeout > 0) and (t >= timeout):
         print_ts('Timeout occurred ({}).'.format(cmd_name))
+        data = None
+
+    if data and (len(data) >= max_data_size):
+        print_ts('Maximum allowed data ({} bytes) exceeded ({}).'.format(max_data_size, cmd_name))
+        data = None
+
+    if data and check_done and not data.endswith('\nDONE'):
+        print_ts('Incomplete data received ({}).'.format(cmd_name))
         data = None
 
     return data
@@ -1262,16 +1286,18 @@ def server(server_address_port: int, packages: list, packageIndex: int, resultPa
         try:
             bytes_received = connection.recv(128)
             cmd = bytes_received.decode('utf-8', 'ignore')
-        except socket.error:
+        except socket.error as e:
+            print_ts('Error: Recv error: ' + str(e))
             connection.close()
             continue
         except UnicodeDecodeError as e:
-            connection.close()
             print_ts('Error: Decoding failed: ' + str(e))
+            connection.close()
             continue
         pos_nl = cmd.find('\n')
         if pos_nl < 1:
-            print_ts('No newline found in data.')
+            print_ts("No newline found in data: '{}'".format(cmd))
+            connection.close()
             continue
         firstLine = cmd[:pos_nl]
         if re.match('[a-zA-Z0-9./ ]+', firstLine) is None:
@@ -1279,13 +1305,17 @@ def server(server_address_port: int, packages: list, packageIndex: int, resultPa
             connection.close()
             continue
         if cmd.startswith('GET /'):
+            cmd = cmd[:cmd.find('\r\n')]
+            print_ts(cmd)
             newThread = HttpClientThread(connection, cmd, resultPath, latestResults)
             newThread.start()
+            continue
         elif cmd == 'GetCppcheckVersions\n':
             reply = 'head ' + OLD_VERSION
             print_ts('GetCppcheckVersions: ' + reply)
             connection.send(reply.encode('utf-8', 'ignore'))
             connection.close()
+            continue
         elif cmd == 'get\n':
             while True:
                 pkg = packages[packageIndex]
@@ -1301,8 +1331,10 @@ def server(server_address_port: int, packages: list, packageIndex: int, resultPa
             print_ts('get:' + pkg)
             connection.send(pkg.encode('utf-8', 'ignore'))
             connection.close()
+            continue
         elif cmd.startswith('write\nftp://') or cmd.startswith('write\nhttp://'):
-            data = read_data(connection, cmd, pos_nl, max_data_size=2 * 1024 * 1024, check_done=True, cmd_name='write')
+            t_start = time.perf_counter()
+            data = read_data(connection, cmd, pos_nl, max_data_size=2.5 * 1024 * 1024, check_done=True, cmd_name='write')
             if data is None:
                 continue
 
@@ -1343,7 +1375,6 @@ def server(server_address_port: int, packages: list, packageIndex: int, resultPa
             if old_version_wrong:
                 print_ts('Unexpected old version. Ignoring result data.')
                 continue
-            print_ts('results added for package ' + res.group(1))
             filename = os.path.join(resultPath, res.group(1))
             with open(filename, 'wt') as f:
                 f.write(strDateTime() + '\n' + data)
@@ -1355,8 +1386,11 @@ def server(server_address_port: int, packages: list, packageIndex: int, resultPa
                 f.write(' '.join(latestResults))
             # generate package.diff..
             generate_package_diff_statistics(filename)
+            print_ts('write finished for {} ({} bytes / {}s)'.format(res.group(1), len(data), (time.perf_counter() - t_start)))
+            continue
         elif cmd.startswith('write_info\nftp://') or cmd.startswith('write_info\nhttp://'):
-            data = read_data(connection, cmd, pos_nl, max_data_size=1024 * 1024, check_done=True, cmd_name='write_info')
+            t_start = time.perf_counter()
+            data = read_data(connection, cmd, pos_nl, max_data_size=7 * 1024 * 1024, check_done=True, cmd_name='write_info')
             if data is None:
                 continue
 
@@ -1380,29 +1414,29 @@ def server(server_address_port: int, packages: list, packageIndex: int, resultPa
             if url not in packages:
                 print_ts('Url is not in packages. Ignoring information data.')
                 continue
-            print_ts('adding info output for package ' + res.group(1))
             info_path = resultPath + '/' + 'info_output'
             if not os.path.exists(info_path):
                 os.mkdir(info_path)
             filename = info_path + '/' + res.group(1)
             with open(filename, 'wt') as f:
                 f.write(strDateTime() + '\n' + data)
+            print_ts('write_info finished for {} ({} bytes / {}s)'.format(res.group(1), len(data), (time.perf_counter() - t_start)))
+            continue
         elif cmd == 'getPackagesCount\n':
             packages_count = str(len(packages))
             connection.send(packages_count.encode('utf-8', 'ignore'))
-            connection.close()
             print_ts('getPackagesCount: ' + packages_count)
+            connection.close()
             continue
         elif cmd.startswith('getPackageIdx'):
             request_idx = abs(int(cmd[len('getPackageIdx:'):]))
             if request_idx < len(packages):
                 pkg = packages[request_idx]
                 connection.send(pkg.encode('utf-8', 'ignore'))
-                connection.close()
                 print_ts('getPackageIdx: ' + pkg)
             else:
-                connection.close()
-                print_ts('getPackageIdx: index is out of range')
+                print_ts('getPackageIdx: index {} is out of range'.format(request_idx))
+            connection.close()
             continue
         elif cmd.startswith('write_nodata\nftp://'):
             data = read_data(connection, cmd, pos_nl, max_data_size=8 * 1024, check_done=False, cmd_name='write_nodata')
@@ -1435,8 +1469,7 @@ def server(server_address_port: int, packages: list, packageIndex: int, resultPa
                 if currentIdx == startIdx:
                     print_ts('write_nodata:' + url + ' - package not found')
                     break
-
-            connection.close()
+            continue
         else:
             if pos_nl < 0:
                 print_ts('invalid command: "' + firstLine + '"')
@@ -1447,6 +1480,7 @@ def server(server_address_port: int, packages: list, packageIndex: int, resultPa
                     s += '...'
                 print_ts('invalid command: "' + s + '"')
             connection.close()
+            continue
 
 
 if __name__ == "__main__":

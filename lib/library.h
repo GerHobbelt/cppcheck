@@ -162,6 +162,7 @@ public:
         int ptr2Arg;
         int sizeArg;
         int strlenArg;
+        int countArg;
     };
     const NonOverlappingData* getNonOverlappingData(const Token *ftok) const;
 
@@ -412,6 +413,9 @@ public:
     const Token* getContainerFromYield(const Token* tok, Container::Yield yield) const;
     const Token* getContainerFromAction(const Token* tok, Container::Action action) const;
 
+    static bool isContainerYield(const Token* const cond, Library::Container::Yield y, const std::string& fallback = emptyString);
+    static Library::Container::Yield getContainerYield(const Token* const cond);
+
     bool isreflection(const std::string &token) const {
         return mReflection.find(token) != mReflection.end();
     }
@@ -494,8 +498,6 @@ public:
      * Get function name for function call
      */
     std::string getFunctionName(const Token *ftok) const;
-
-    static bool isContainerYield(const Token * const cond, Library::Container::Yield y, const std::string& fallback=emptyString);
 
     /** Suppress/check a type */
     enum class TypeCheck { def,
@@ -606,7 +608,7 @@ private:
 CPPCHECKLIB const Library::Container * getLibraryContainer(const Token * tok);
 
 std::shared_ptr<Token> createTokenFromExpression(const std::string& returnValue,
-                                                 const Settings* settings,
+                                                 const Settings& settings,
                                                  bool cpp,
                                                  std::unordered_map<nonneg int, const Token*>* lookupVarId = nullptr);
 

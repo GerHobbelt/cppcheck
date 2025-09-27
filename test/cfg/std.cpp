@@ -58,6 +58,16 @@
 #include <span>
 #endif
 
+#if __cplusplus <= 201402L
+void unreachableCode_std_unexpected(int &x)
+{
+    // cppcheck-suppress unexpectedCalled
+    std::unexpected();
+    // cppcheck-suppress unreachableCode
+    x=42;
+}
+#endif
+
 void unreachableCode_std_terminate(int &x)
 {
     std::terminate();
@@ -5005,4 +5015,35 @@ void eraseIteratorOutOfBounds_std_deque(std::deque<int>& x) // #8690
 {
     // cppcheck-suppress eraseIteratorOutOfBounds
     x.erase(x.end());
+}
+
+void assertWithSideEffect_system()
+{
+    // cppcheck-suppress [assertWithSideEffect,checkLibraryNoReturn] // TODO: #8329
+    assert(std::system("abc"));
+}
+
+void assertWithSideEffect_std_map_at(const std::map<int, int>& m) // #12695
+{
+    // cppcheck-suppress checkLibraryNoReturn
+    assert(m.at(0));
+}
+
+void assertWithSideEffect_std_unique_ptr_get(std::unique_ptr<int>& p)
+{
+    // cppcheck-suppress checkLibraryNoReturn
+    assert(p.get());
+}
+
+void assertWithSideEffect_std_begin(const std::vector<std::string>& v) {
+    // cppcheck-suppress checkLibraryFunction // TODO
+    assert(std::is_sorted(std::begin(v), std::end(v), [](const std::string& a, const std::string& b) {
+        return a.size() < b.size();
+    })); // cppcheck-suppress checkLibraryNoReturn
+}
+
+void assertWithSideEffect_std_prev_next(const std::vector<int>& v, std::vector<int>::const_iterator it) {
+    assert(std::prev(it, 1) == v.begin());
+    // cppcheck-suppress checkLibraryNoReturn
+    assert(std::next(it, 1) == v.end());
 }

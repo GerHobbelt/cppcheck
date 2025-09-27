@@ -704,6 +704,7 @@ Library::Error Library::loadFunction(const tinyxml2::XMLElement * const node, co
             nonOverlappingData.ptr2Arg = functionnode->IntAttribute("ptr2-arg", -1);
             nonOverlappingData.sizeArg = functionnode->IntAttribute("size-arg", -1);
             nonOverlappingData.strlenArg = functionnode->IntAttribute("strlen-arg", -1);
+            nonOverlappingData.countArg = functionnode->IntAttribute("count-arg", -1);
             mNonOverlappingData[name] = nonOverlappingData;
         } else if (functionnodename == "use-retval") {
             func.useretval = Library::UseRetValType::DEFAULT;
@@ -1265,6 +1266,22 @@ bool Library::isContainerYield(const Token * const cond, Library::Container::Yie
     return false;
 }
 
+Library::Container::Yield Library::getContainerYield(const Token* const cond)
+{
+    if (Token::simpleMatch(cond, "(")) {
+        const Token* tok = cond->astOperand1();
+        if (tok && tok->str() == ".") {
+            if (tok->astOperand1() && tok->astOperand1()->valueType()) {
+                if (const Library::Container *container = tok->astOperand1()->valueType()->container) {
+                    if (tok->astOperand2())
+                        return container->getYield(tok->astOperand2()->str());
+                }
+            }
+        }
+    }
+    return Library::Container::Yield::NO_YIELD;
+}
+
 // returns true if ftok is not a library function
 bool Library::isNotLibraryFunction(const Token *ftok) const
 {
@@ -1745,11 +1762,11 @@ bool Library::hasAnyTypeCheck(const std::string& typeName) const
 }
 
 std::shared_ptr<Token> createTokenFromExpression(const std::string& returnValue,
-                                                 const Settings* settings,
+                                                 const Settings& settings,
                                                  bool cpp,
                                                  std::unordered_map<nonneg int, const Token*>* lookupVarId)
 {
-    std::shared_ptr<TokenList> tokenList = std::make_shared<TokenList>(settings);
+    std::shared_ptr<TokenList> tokenList = std::make_shared<TokenList>(&settings);
     {
         const std::string code = "return " + returnValue + ";";
         std::istringstream istr(code);
@@ -1788,6 +1805,6 @@ std::shared_ptr<Token> createTokenFromExpression(const std::string& returnValue,
     // Evaluate expression
     tokenList->createAst();
     Token* expr = tokenList->front()->astOperand1();
-    ValueFlow::valueFlowConstantFoldAST(expr, *settings);
+    ValueFlow::valueFlowConstantFoldAST(expr, settings);
     return {tokenList, expr};
 }

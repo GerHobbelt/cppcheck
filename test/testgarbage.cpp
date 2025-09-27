@@ -725,7 +725,7 @@ private:
     }
 
     void garbageCode63() { // #6739
-        ASSERT_THROW_INTERNAL(checkCode("{ } { } typedef int u_array[]; typedef u_array &u_array_ref; (u_array_ref arg) { } u_array_ref u_array_ref_gbl_obj0"), INTERNAL);
+        ASSERT_THROW_INTERNAL(checkCode("{ } { } typedef int u_array[]; typedef u_array &u_array_ref; (u_array_ref arg) { } u_array_ref u_array_ref_gbl_obj0"), SYNTAX);
     }
 
     void garbageCode64() { // #6740
@@ -767,7 +767,6 @@ private:
 
     void garbageCode74() { // #6751
         ASSERT_THROW_INTERNAL(checkCode("_lenraw(const char* digits) { } typedef decltype(sizeof(0)) { } operator"), SYNTAX);
-        ignore_errout(); // we do not care about the output
     }
 
     void garbageCode76() { // #6754
@@ -1214,7 +1213,7 @@ private:
                                         "    typedef S0 b[][1][1] != 0\n"
                                         "};\n"
                                         "b[K][0] S0 b[][1][1] != 4{ 0 };\n"
-                                        "b[0][0]"), SYNTAX);
+                                        "b[0][0]"), UNKNOWN_MACRO);
     }
 
     void garbageCode149() { // #7085
@@ -1609,8 +1608,7 @@ private:
 
     // #8752
     void garbageCode199() {
-        checkCode("d f(){e n00e0[]n00e0&" "0+f=0}");
-        ignore_errout(); // we do not care about the output
+        ASSERT_THROW_INTERNAL(checkCode("d f(){e n00e0[]n00e0&" "0+f=0}"), SYNTAX);
     }
 
     // #8757
@@ -1715,8 +1713,7 @@ private:
     }
 
     void garbageCode218() { // #8763
-        checkCode("d f(){t n0000 const[]n0000+0!=n0000,(0)}"); // don't crash
-        ignore_errout(); // we are not interested in the output
+        ASSERT_THROW_INTERNAL(checkCode("d f(){t n0000 const[]n0000+0!=n0000,(0)}"), SYNTAX);
     }
     void garbageCode219() { // #10101
         checkCode("typedef void (*func) (addr) ;\n"

@@ -19,6 +19,7 @@
 //---------------------------------------------------------------------------
 #include "tokenize.h"
 
+#include "astutils.h"
 #include "errorlogger.h"
 #include "errortypes.h"
 #include "library.h"
@@ -99,6 +100,10 @@ const Token * Tokenizer::isFunctionHead(const Token *tok, const std::string &end
         return nullptr;
     if (tok->str() == "(")
         tok = tok->link();
+    if (tok->str() != ")")
+        return nullptr;
+    if (!tok->isCpp() && !Token::Match(tok->link()->previous(), "%name%|(|)"))
+        return nullptr;
     if (Token::Match(tok, ") ;|{|[")) {
         tok = tok->next();
         while (tok && tok->str() == "[" && tok->link()) {
@@ -131,7 +136,8 @@ const Token * Tokenizer::isFunctionHead(const Token *tok, const std::string &end
             tok = tok->next();
         if (Token::Match(tok, "= 0|default|delete ;"))
             tok = tok->tokAt(2);
-
+        if (tok && tok->str() == ":" && !Token::Match(tok->next(), "%name%|::"))
+            return nullptr;
         return (tok && endsWith.find(tok->str()) != std::string::npos) ? tok : nullptr;
     }
     return nullptr;
@@ -1072,7 +1078,8 @@ void Tokenizer::simplifyTypedef()
 
         if (indentlevel == 0 && tok->str() == "typedef") {
             TypedefSimplifier ts(tok);
-            if (!ts.fail() && numberOfTypedefs[ts.name()] == 1) {
+            if (!ts.fail() && numberOfTypedefs[ts.name()] == 1 &&
+                (numberOfTypedefs.find(ts.getTypedefToken()->strAt(1)) == numberOfTypedefs.end() || ts.getTypedefToken()->strAt(2) == "(")) {
                 if (mSettings.severity.isEnabled(Severity::portability) && ts.isInvalidConstFunctionType(typedefs))
                     reportError(tok->next(), Severity::portability, "invalidConstFunctionType",
                                 "It is unspecified behavior to const qualify a function type.");
@@ -4352,7 +4359,7 @@ static void setVarIdStructMembers(Token *&tok1,
 
     while (Token::Match(tok->next(), ")| . %name% !!(")) {
         // Don't set varid for trailing return type
-        if (tok->strAt(1) == ")" && (tok->linkAt(1)->previous()->isName() || tok->linkAt(1)->strAt(-1) == "]") &&
+        if (tok->strAt(1) == ")" && Token::Match(tok->linkAt(1)->tokAt(-1), "%name%|]") &&
             Tokenizer::isFunctionHead(tok->linkAt(1), "{|;")) {
             tok = tok->tokAt(3);
             continue;
@@ -5160,12 +5167,15 @@ void Tokenizer::setVarIdPass2()
                     if (tok2->strAt(-1) == ")")
                         setVarIdClassFunction(scopeName2 + classname, tok2, tok2->link(), thisClassVars, structMembers, mVarId);
                     tok2 = tok2->link();
-                } else if (Token::Match(tok2, "( %name%|)") && !Token::Match(tok2->link(), "(|[")) {
+                } else if (Token::Match(tok2, "( %name%|)")) {
                     tok2 = tok2->link();
 
                     // Skip initialization list
-                    if (Token::simpleMatch(tok2, ") :"))
+                    if (Token::simpleMatch(tok2, ") :")) {
                         tok2 = skipInitializerList(tok2->next());
+                        if (Token::simpleMatch(tok2, "{"))
+                            tok2 = tok2->link();
+                    }
                 }
             }
 
@@ -5514,6 +5524,20 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
     // @..
     simplifyAt();
 
+    // Remove __declspec()
+    simplifyDeclspec();
+
+    // Remove "inline", "register", and "restrict"
+    simplifyKeyword();
+
+    // Remove [[attribute]]
+    simplifyCPPAttribute();
+
+    // remove __attribute__((?))
+    simplifyAttribute();
+
+    validate();
+
     // Bail out if code is garbage
     if (mTimerResults) {
         Timer t("Tokenizer::simplifyTokens1::simplifyTokenList1::findGarbageCode", mSettings.showtime, mTimerResults);
@@ -5547,12 +5571,6 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
 
     // simplify namespace aliases
     simplifyNamespaceAliases();
-
-    // Remove [[attribute]]
-    simplifyCPPAttribute();
-
-    // remove __attribute__((?))
-    simplifyAttribute();
 
     // simplify cppcheck attributes __cppcheck_?__(?)
     simplifyCppcheckAttribute();
@@ -5595,12 +5613,7 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
     if (Settings::terminated())
         return false;
 
-    // Remove __declspec()
-    simplifyDeclspec();
     validate();
-
-    // Remove "inline", "register", and "restrict"
-    simplifyKeyword();
 
     // simplify simple calculations inside <..>
     if (isCPP()) {
@@ -8652,11 +8665,11 @@ void Tokenizer::findGarbageCode() const
             syntaxError(tok);
         if (Token::Match(tok, "%cop%|=|,|[ %or%|%oror%|/|%"))
             syntaxError(tok);
-        if (Token::Match(tok, "[;([{] %comp%|&&|%oror%|%or%|%|/"))
+        if (Token::Match(tok, "[;([{] %comp%|%oror%|%or%|%|/"))
             syntaxError(tok);
         if (Token::Match(tok, "%cop%|= ]") && !(isCPP() && Token::Match(tok->previous(), "%type%|[|,|%num% &|=|> ]")))
             syntaxError(tok);
-        if (Token::Match(tok, "[+-] [;,)]}]") && !(isCPP() && Token::Match(tok->previous(), "operator [+-] ;")))
+        if (Token::Match(tok, "[+-] [;,)]}]") && !(isCPP() && Token::simpleMatch(tok->previous(), "operator")))
             syntaxError(tok);
         if (Token::simpleMatch(tok, ",") &&
             !Token::Match(tok->tokAt(-2), "[ = , &|%name%")) {
@@ -8667,8 +8680,6 @@ void Tokenizer::findGarbageCode() const
             if (Token::Match(tok->next(), ")|]|>|%assign%|%or%|%oror%|==|!=|/|>=|<=|&&"))
                 syntaxError(tok);
         }
-        if ((!isCPP() || !Token::simpleMatch(tok->previous(), "operator")) && Token::Match(tok, "[,;] ,"))
-            syntaxError(tok);
         if (Token::simpleMatch(tok, ".") &&
             !Token::simpleMatch(tok->previous(), ".") &&
             !Token::simpleMatch(tok->next(), ".") &&
@@ -8696,18 +8707,41 @@ void Tokenizer::findGarbageCode() const
             syntaxError(tok);
         if (Token::Match(tok, "! %comp%"))
             syntaxError(tok);
+        if (Token::Match(tok, "] %name%") && (!isCPP() || !(tok->tokAt(-1) && Token::simpleMatch(tok->tokAt(-2), "delete [")))) {
+            if (tok->next()->isUpperCaseName())
+                unknownMacroError(tok->next());
+            else
+                syntaxError(tok);
+        }
 
         if (tok->link() && Token::Match(tok, "[([]") && (!tok->tokAt(-1) || !tok->tokAt(-1)->isControlFlowKeyword())) {
             const Token* const end = tok->link();
             for (const Token* inner = tok->next(); inner != end; inner = inner->next()) {
                 if (inner->str() == "{")
                     inner = inner->link();
-                else if (inner->str() == ";") {
+                else if (inner->str() == ";" || (Token::simpleMatch(inner, ", ,") && (!isCPP() || !Token::simpleMatch(inner->previous(), "operator")))) {
                     if (tok->tokAt(-1) && tok->tokAt(-1)->isUpperCaseName())
                         unknownMacroError(tok->tokAt(-1));
                     else
                         syntaxError(inner);
                 }
+            }
+        }
+
+        if ((!isCPP() || !Token::simpleMatch(tok->previous(), "operator")) && Token::Match(tok, "[,;] ,"))
+            syntaxError(tok);
+        if (tok->str() == "typedef") {
+            for (const Token* tok2 = tok->next(); tok2 && tok2->str() != ";"; tok2 = tok2->next()) {
+                if (tok2->str() == "{") {
+                    tok2 = tok2->link();
+                    continue;
+                }
+                if (isUnevaluated(tok2)) {
+                    tok2 = tok2->linkAt(1);
+                    continue;
+                }
+                if (!tok2->next() || tok2->isControlFlowKeyword() || Token::Match(tok2, "typedef|static|."))
+                    syntaxError(tok);
             }
         }
     }
@@ -8735,6 +8769,8 @@ void Tokenizer::findGarbageCode() const
     // Garbage templates..
     if (isCPP()) {
         for (const Token *tok = tokens(); tok; tok = tok->next()) {
+            if (Token::simpleMatch(tok, "< >") && !(Token::Match(tok->tokAt(-1), "%name%") || (tok->tokAt(-1) && Token::Match(tok->tokAt(-2), "operator %op%"))))
+                syntaxError(tok);
             if (!Token::simpleMatch(tok, "template <"))
                 continue;
             if (tok->previous() && !Token::Match(tok->previous(), ":|;|{|}|)|>|\"C++\"")) {
@@ -9226,7 +9262,7 @@ void Tokenizer::simplifyCppcheckAttribute()
 
 void Tokenizer::simplifyCPPAttribute()
 {
-    if (!isCPP() || mSettings.standards.cpp < Standards::CPP11)
+    if ((isCPP() && mSettings.standards.cpp < Standards::CPP11) || (isC() && mSettings.standards.c < Standards::C23))
         return;
 
     for (Token *tok = list.front(); tok;) {
@@ -10607,6 +10643,8 @@ void Tokenizer::simplifyNamespaceAliases()
         else if (Token::Match(tok, "namespace %name% =") || (isPrev = Token::Match(tok->previous(), "namespace %name% ="))) {
             if (isPrev)
                 tok = tok->previous();
+            if (tok->tokAt(-1) && !Token::Match(tok->tokAt(-1), "[;{}]"))
+                syntaxError(tok->tokAt(-1));
             const std::string name(tok->next()->str());
             Token * tokNameStart = tok->tokAt(3);
             Token * tokNameEnd = tokNameStart;

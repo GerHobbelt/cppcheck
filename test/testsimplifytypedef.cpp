@@ -216,6 +216,7 @@ private:
         TEST_CASE(simplifyTypedef150);
         TEST_CASE(simplifyTypedef151);
         TEST_CASE(simplifyTypedef152);
+        TEST_CASE(simplifyTypedef153);
 
         TEST_CASE(simplifyTypedefFunction1);
         TEST_CASE(simplifyTypedefFunction2); // ticket #1685
@@ -1226,7 +1227,7 @@ private:
                             "LPCSTR ccp;";
 
         const char expected[] =
-            "char c ; "
+            "; char c ; "
             "char * cp ; "
             "const char * ccp ;";
 
@@ -3560,6 +3561,20 @@ private:
               "}"
               " namespace N { enum Anonymous0 { G0 , S = 1 } ; "
               "}";
+        ASSERT_EQUALS(exp, tok(code));
+    }
+
+    void simplifyTypedef153() {
+        const char* code{}, *exp{}; // #12647
+        code = "typedef unsigned long X;\n"
+               "typedef unsigned long X;\n"
+               "typedef X Y;\n"
+               "typedef X* Yp;\n"
+               "typedef X Ya[3];\n"
+               "Y y;\n"
+               "Yp yp;\n"
+               "Ya ya;\n";
+        exp = "long y ; long * yp ; long ya [ 3 ] ;";
         ASSERT_EQUALS(exp, tok(code));
     }
 

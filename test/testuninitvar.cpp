@@ -7438,7 +7438,7 @@ private:
                       "[test.cpp:27]: (error) Uninitialized variable: s.t.j\n",
                       errout_str());
 
-        valueFlowUninit("struct S { int x; };\n"
+        valueFlowUninit("struct S { int x; };\n" // #6933
                         "void f() {\n"
                         "    int i;\n"
                         "    S s(i);\n"
@@ -7503,6 +7503,19 @@ private:
                         "}\n");
         ASSERT_EQUALS("[test.cpp:8]: (error) Uninitialized variable: arr\n", errout_str());
 
+        valueFlowUninit("struct S {\n"
+                        "  void *out;\n"
+                        "};\n"
+                        "void bar(S* s);\n"
+                        "void foo() {\n"
+                        "  S s[1][1];\n"
+                        "  char arr[5];\n"
+                        "  s[0][0].out = &arr;\n"
+                        "  bar(s[0]);\n"
+                        "  int len = strlen(arr);\n"
+                        "}\n");
+        ASSERT_EQUALS("", errout_str());
+
         valueFlowUninit("struct S1 { int x; };\n" // #12401
                         "struct S2 { struct S1 s1; };\n"
                         "struct S2 f() {\n"
@@ -7512,6 +7525,26 @@ private:
                         "    return s2;\n"
                         "}\n");
         ASSERT_EQUALS("", errout_str());
+
+        valueFlowUninit("struct S {\n" // #12685
+                        "    explicit S(double v);\n"
+                        "    double m;\n"
+                        "};\n"
+                        "void f() {\n"
+                        "    double d;\n"
+                        "    S s(d);\n"
+                        "}\n");
+        ASSERT_EQUALS("[test.cpp:7]: (error) Uninitialized variable: d\n", errout_str());
+
+        valueFlowUninit("struct S {\n"
+                        "    explicit S(double v) : m(v) {}\n"
+                        "    double m;\n"
+                        "};\n"
+                        "void f() {\n"
+                        "    double d;\n"
+                        "    S s{ d };\n"
+                        "}\n");
+        ASSERT_EQUALS("[test.cpp:7]: (error) Uninitialized variable: d\n", errout_str());
     }
 
     void uninitvar_memberfunction() {

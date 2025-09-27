@@ -32,6 +32,7 @@
 #include "symboldatabase.h"
 #include "token.h"
 #include "tokenize.h"
+#include "tokenlist.h"
 #include "utils.h"
 #include "vfvalue.h"
 
@@ -815,7 +816,7 @@ bool CheckLeakAutoVar::checkScope(const Token * const startToken,
 }
 
 
-const Token * CheckLeakAutoVar::checkTokenInsideExpression(const Token * const tok, VarInfo &varInfo)
+const Token * CheckLeakAutoVar::checkTokenInsideExpression(const Token * const tok, VarInfo &varInfo, bool inFuncCall)
 {
     // Deallocation and then dereferencing pointer..
     if (tok->varId() > 0) {
@@ -862,7 +863,7 @@ const Token * CheckLeakAutoVar::checkTokenInsideExpression(const Token * const t
     }
 
     // check for function call
-    const Token * const openingPar = isFunctionCall(tok);
+    const Token * const openingPar = inFuncCall ? nullptr : isFunctionCall(tok);
     if (openingPar) {
         const Library::AllocFunc* allocFunc = mSettings->library.getDeallocFuncInfo(tok);
         VarInfo::AllocInfo alloc(allocFunc ? allocFunc->groupId : 0, VarInfo::DEALLOC, tok);
@@ -1045,7 +1046,14 @@ void CheckLeakAutoVar::functionCall(const Token *tokName, const Token *tokOpenin
             const VarInfo::AllocInfo sp_allocation(sp_af ? sp_af->groupId : (arrayDelete ? NEW_ARRAY : NEW), VarInfo::OWNED, allocTok);
             changeAllocStatus(varInfo, sp_allocation, vtok, vtok);
         } else {
-            checkTokenInsideExpression(arg, varInfo);
+            const Token* const nextArg = funcArg->nextArgument();
+            while (arg && ((nextArg && arg != nextArg) || (!nextArg && arg != tokOpeningPar->link()))) {
+                checkTokenInsideExpression(arg, varInfo, /*inFuncCall*/ isLeakIgnore);
+
+                if (isLambdaCaptureList(arg))
+                    break;
+                arg = arg->next();
+            }
         }
         // TODO: check each token in argument expression (could contain multiple variables)
         argNr++;
@@ -1111,7 +1119,7 @@ void CheckLeakAutoVar::ret(const Token *tok, VarInfo &varInfo, const bool isEndO
             for (const Token *tok2 = tok; tok2; tok2 = tok2->next()) {
                 if (tok2->str() == ";")
                     break;
-                if (!Token::Match(tok2, "return|(|{|,"))
+                if (!Token::Match(tok2, "return|(|{|,|*"))
                     continue;
 
                 const Token* tok3 = tok2->next();

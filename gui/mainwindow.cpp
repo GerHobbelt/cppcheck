@@ -247,7 +247,7 @@ MainWindow::MainWindow(TranslationHandler* th, QSettings* settings) :
 
     for (int i = 0; i < mPlatforms.getCount(); i++) {
         PlatformData platform = mPlatforms.mPlatforms[i];
-        QAction *action = new QAction(this);
+        auto *action = new QAction(this);
         platform.mActMainWindow = action;
         mPlatforms.mPlatforms[i] = platform;
         action->setText(platform.mTitle);
@@ -392,10 +392,10 @@ void MainWindow::loadSettings()
     mUI->mActionToolBarFilter->setChecked(showFilterToolbar);
     mUI->mToolBarFilter->setVisible(showFilterToolbar);
 
-    const Settings::Language enforcedLanguage = (Settings::Language)mSettings->value(SETTINGS_ENFORCED_LANGUAGE, 0).toInt();
-    if (enforcedLanguage == Settings::CPP)
+    const Standards::Language enforcedLanguage = (Standards::Language)mSettings->value(SETTINGS_ENFORCED_LANGUAGE, 0).toInt();
+    if (enforcedLanguage == Standards::Language::CPP)
         mUI->mActionEnforceCpp->setChecked(true);
-    else if (enforcedLanguage == Settings::C)
+    else if (enforcedLanguage == Standards::Language::C)
         mUI->mActionEnforceC->setChecked(true);
     else
         mUI->mActionAutoDetectLanguage->setChecked(true);
@@ -469,11 +469,11 @@ void MainWindow::saveSettings() const
     mSettings->setValue(SETTINGS_TOOLBARS_FILTER_SHOW, mUI->mToolBarFilter->isVisible());
 
     if (mUI->mActionEnforceCpp->isChecked())
-        mSettings->setValue(SETTINGS_ENFORCED_LANGUAGE, Settings::CPP);
+        mSettings->setValue(SETTINGS_ENFORCED_LANGUAGE, Standards::Language::CPP);
     else if (mUI->mActionEnforceC->isChecked())
-        mSettings->setValue(SETTINGS_ENFORCED_LANGUAGE, Settings::C);
+        mSettings->setValue(SETTINGS_ENFORCED_LANGUAGE, Standards::Language::C);
     else
-        mSettings->setValue(SETTINGS_ENFORCED_LANGUAGE, Settings::None);
+        mSettings->setValue(SETTINGS_ENFORCED_LANGUAGE, Standards::Language::None);
 
     mApplications->saveSettings();
 
@@ -1021,7 +1021,7 @@ Settings MainWindow::getCppcheckSettings()
             result.platform.loadFromFile(applicationFilePath.toStdString().c_str(), platform.toStdString());
         } else {
             for (int i = Platform::Type::Native; i <= Platform::Type::Unix64; i++) {
-                const Platform::Type p = (Platform::Type)i;
+                const auto p = (Platform::Type)i;
                 if (platform == Platform::toString(p)) {
                     result.platform.set(p);
                     break;
@@ -1091,7 +1091,7 @@ Settings MainWindow::getCppcheckSettings()
         result.platform.set((Platform::Type) mSettings->value(SETTINGS_CHECKED_PLATFORM, 0).toInt());
     result.standards.setCPP(mSettings->value(SETTINGS_STD_CPP, QString()).toString().toStdString());
     result.standards.setC(mSettings->value(SETTINGS_STD_C, QString()).toString().toStdString());
-    result.enforcedLang = (Settings::Language)mSettings->value(SETTINGS_ENFORCED_LANGUAGE, 0).toInt();
+    result.enforcedLang = (Standards::Language)mSettings->value(SETTINGS_ENFORCED_LANGUAGE, 0).toInt();
 
     if (result.jobs <= 1) {
         result.jobs = 1;
@@ -1468,21 +1468,21 @@ void MainWindow::about()
         msg.exec();
     }
     else {
-        AboutDialog *dlg = new AboutDialog(CppCheck::version(), CppCheck::extraVersion(), this);
+        auto *dlg = new AboutDialog(CppCheck::version(), CppCheck::extraVersion(), this);
         dlg->exec();
     }
 }
 
 void MainWindow::showLicense()
 {
-    FileViewDialog *dlg = new FileViewDialog(":COPYING", tr("License"), this);
+    auto *dlg = new FileViewDialog(":COPYING", tr("License"), this);
     dlg->resize(570, 400);
     dlg->exec();
 }
 
 void MainWindow::showAuthors()
 {
-    FileViewDialog *dlg = new FileViewDialog(":AUTHORS", tr("Authors"), this);
+    auto *dlg = new FileViewDialog(":AUTHORS", tr("Authors"), this);
     dlg->resize(350, 400);
     dlg->exec();
 }
@@ -1634,7 +1634,7 @@ void MainWindow::openHelpContents()
 
 void MainWindow::openOnlineHelp()
 {
-    HelpDialog *helpDialog = new HelpDialog;
+    auto *helpDialog = new HelpDialog;
     helpDialog->showMaximized();
 }
 
@@ -1923,7 +1923,7 @@ void MainWindow::enableProjectOpenActions(bool enable)
 
 void MainWindow::openRecentProject()
 {
-    QAction *action = qobject_cast<QAction *>(sender());
+    auto *action = qobject_cast<QAction *>(sender());
     if (!action)
         return;
     const QString project = action->data().toString();
@@ -2012,7 +2012,7 @@ void MainWindow::removeProjectMRU(const QString &project)
 
 void MainWindow::selectPlatform()
 {
-    QAction *action = qobject_cast<QAction *>(sender());
+    auto *action = qobject_cast<QAction *>(sender());
     if (action) {
         const Platform::Type platform = (Platform::Type) action->data().toInt();
         mSettings->setValue(SETTINGS_CHECKED_PLATFORM, platform);

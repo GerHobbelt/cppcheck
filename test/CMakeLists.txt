@@ -12,11 +12,11 @@ if (BUILD_TESTS)
     add_executable(testrunner ${testrunner_SOURCES})
     target_include_directories(testrunner PRIVATE ${PROJECT_SOURCE_DIR}/lib/ ${PROJECT_SOURCE_DIR}/cli/)
     if(USE_BUNDLED_TINYXML2)
-        target_include_directories(testrunner PRIVATE ${PROJECT_SOURCE_DIR}/externals/tinyxml2)
+        target_externals_include_directories(testrunner PRIVATE ${PROJECT_SOURCE_DIR}/externals/tinyxml2)
     else()
         target_include_directories(testrunner SYSTEM PRIVATE ${tinyxml2_INCLUDE_DIRS})
     endif()
-    target_include_directories(testrunner PRIVATE ${PROJECT_SOURCE_DIR}/externals/simplecpp/)
+    target_externals_include_directories(testrunner PRIVATE ${PROJECT_SOURCE_DIR}/externals/simplecpp/)
     if (HAVE_RULES)
         target_link_libraries(testrunner ${PCRE_LIBRARY})
     endif()
@@ -60,11 +60,7 @@ if (BUILD_TESTS)
     endif()
 
     if (REGISTER_TESTS)
-        # CMP0064 requires 3.4
-        # CMAKE_MATCH_<n> usage for if (MATCHES) requires 3.9
-        cmake_minimum_required(VERSION 3.9)
-        cmake_policy(SET CMP0064 NEW)
-        cmake_policy(SET CMP0057 NEW)
+        # CMAKE_MATCH_<n> usage for if (MATCHES) requires CMake 3.9
 
         find_package(Threads REQUIRED)
         include(ProcessorCount)
@@ -117,17 +113,22 @@ if (BUILD_TESTS)
             else()
                 # TODO: remove missingInclude disabling when it no longer is implied by --enable=information
                 # TODO: add syntax check
+                # need to suppress unmatchedSuppression in case valueFlowBailout is not reported
                 add_test(NAME cfg-${TEST_NAME}
                         COMMAND $<TARGET_FILE:cppcheck>
+                        --library=${LIBRARY}
                         --check-library
                         --platform=${PLATFORM}
-                        --library=${LIBRARY}
                         --enable=style,information
                         --inconclusive
                         --force
                         --error-exitcode=1
                         --disable=missingInclude
                         --inline-suppr
+                        --debug-warnings
+                        --suppress=valueFlowBailout
+                        --suppress=purgedConfiguration
+                        --suppress=unmatchedSuppression
                         ${CMAKE_CURRENT_SOURCE_DIR}/cfg/${CFG_TEST}
                 )
             endif()

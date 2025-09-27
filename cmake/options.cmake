@@ -17,7 +17,9 @@ option(ANALYZE_ADDRESS      "Clang dynamic analyzer: fast memory error detector.
 option(ANALYZE_THREAD       "Clang dynamic analyzer: tool that detects data races. "        OFF)
 option(ANALYZE_UNDEFINED    "Clang dynamic analyzer: undefined behavior checker. "          OFF)
 option(ANALYZE_DATAFLOW     "Clang dynamic analyzer: general dynamic dataflow analysis."    OFF)
+
 option(WARNINGS_ARE_ERRORS  "Treat warnings as errors"                                      OFF)
+option(EXTERNALS_AS_SYSTEM  "Treat externals as system includes"                            OFF)
 
 set(USE_MATCHCOMPILER "Auto" CACHE STRING "Usage of match compiler")
 set_property(CACHE USE_MATCHCOMPILER PROPERTY STRINGS Auto Off On Verify) 
@@ -68,6 +70,10 @@ if (CMAKE_VERSION VERSION_EQUAL "3.16" OR CMAKE_VERSION VERSION_GREATER "3.16")
     set(CMAKE_PCH_PROLOGUE "")
 else()
     set(CMAKE_DISABLE_PRECOMPILE_HEADERS On CACHE BOOL "Disable precompiled headers")
+endif()
+
+if (BUILD_TESTS AND REGISTER_TESTS AND CMAKE_VERSION VERSION_LESS "3.9")
+    message(FATAL_ERROR "Registering tests with CTest requires at least CMake 3.9. Use REGISTER_TESTS=OFF to disable this.")
 endif()
 
 set(CMAKE_INCLUDE_DIRS_CONFIGCMAKE ${CMAKE_INSTALL_PREFIX}/include      CACHE PATH "Output directory for headers")

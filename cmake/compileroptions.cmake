@@ -16,6 +16,14 @@ function(target_compile_options_safe TARGET FLAG)
     endif()
 endfunction()
 
+function(target_externals_include_directories TARGET)
+    if (EXTERNALS_AS_SYSTEM)
+        target_include_directories(${TARGET} SYSTEM ${ARGN})
+    else()
+        target_include_directories(${TARGET} ${ARGN})
+    endif()
+endfunction()
+
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     add_compile_options(-Weverything)
 endif()
@@ -77,7 +85,7 @@ elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 
     if (USE_LIBCXX)
         add_compile_options(-stdlib=libc++)
-        add_link_options(-lc++)
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -lc++")
     endif()
 
     # TODO: fix and enable these warnings - or move to suppression list below
@@ -125,6 +133,8 @@ elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 endif()
 
 if (MSVC)
+    # add_link_options() requires CMake 3.13
+
     # General
     add_compile_options(/W4) # Warning Level
     add_compile_options(/Zi) # Debug Information Format - Program Database

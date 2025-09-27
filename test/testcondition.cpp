@@ -472,6 +472,15 @@ private:
         ASSERT_EQUALS("",errout.str());
         check("void f(int a) {\n assert( (a | 0x07) < 7U );\n}");
         ASSERT_EQUALS("",errout.str()); //correct for negative 'a'
+
+        check("void f(int i) {\n" // #11998
+              "    if ((i & 0x100) == 0x200) {}\n"
+              "    if (0x200 == (i & 0x100)) {}\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:3]: (style) The if condition is the same as the previous if condition\n"
+                      "[test.cpp:2]: (style) Expression '(X & 0x100) == 0x200' is always false.\n"
+                      "[test.cpp:3]: (style) Expression '(X & 0x100) == 0x200' is always false.\n",
+                      errout.str());
     }
 
 #define checkPureFunction(code) checkPureFunction_(code, __FILE__, __LINE__)
@@ -5117,6 +5126,39 @@ private:
               "    if (s.empty() || s.size() < 1) {}\n"
               "}\n");
         ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:2]: (style) Condition 's.size()<1' is always false\n", errout.str());
+
+        check("void bar(std::vector<int>& vv) {\n" // #11464
+              "    class F {\n"
+              "    public:\n"
+              "        F(int, std::vector<int>& lv) : mV(lv) {\n"
+              "            mV.push_back(0);\n"
+              "        }\n"
+              "    private:\n"
+              "        std::vector<int>& mV;\n"
+              "    } fi(1, vv);\n"
+              "}\n"
+              "void g() {\n"
+              "    std::vector<int> v;\n"
+              "    bar(v);\n"
+              "    if (v.empty()) {}\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        check("struct F {\n"
+              "    F(int, std::vector<int>&lv) : mV(lv) {\n"
+              "        mV.push_back(0);\n"
+              "    }\n"
+              "    std::vector<int>& mV;\n"
+              "};\n"
+              "void g(std::vector<int>& vv) {\n"
+              "    F(1, vv);\n"
+              "}\n"
+              "void f() {\n"
+              "    std::vector<int> v;\n"
+              "    g(v);\n"
+              "    if (v.empty()) {}\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void alwaysTrueLoop()

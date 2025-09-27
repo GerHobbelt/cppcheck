@@ -22,6 +22,7 @@
 #include "filesettings.h"
 #include "fixture.h"
 #include "helpers.h"
+#include "settings.h"
 
 #include <algorithm>
 #include <list>
@@ -168,8 +169,8 @@ private:
         ASSERT_EQUALS(1, cppcheck.check(test_file_a.path()));
         ASSERT_EQUALS(1, cppcheck.check(test_file_b.path()));
         // TODO: how to properly disable these warnings?
-        errorLogger.errmsgs.erase(std::remove_if(errorLogger.errmsgs.begin(), errorLogger.errmsgs.end(), [](const ErrorMessage& errmsg) {
-            return errmsg.id == "logChecker";
+        errorLogger.errmsgs.erase(std::remove_if(errorLogger.errmsgs.begin(), errorLogger.errmsgs.end(), [](const ErrorMessage& msg) {
+            return msg.id == "logChecker";
         }), errorLogger.errmsgs.end());
         // the internal errorlist is cleared after each check() call
         ASSERT_EQUALS(2, errorLogger.errmsgs.size());

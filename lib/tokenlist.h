@@ -22,15 +22,16 @@
 //---------------------------------------------------------------------------
 
 #include "config.h"
+#include "standards.h"
 
 #include <cstddef>
 #include <iosfwd>
 #include <string>
 #include <vector>
 
-class Settings;
 class Token;
 class TokenList;
+class Settings;
 
 namespace simplecpp {
     class TokenList;
@@ -61,12 +62,12 @@ public:
 
     /** Is the code C. Used for bailouts */
     bool isC() const {
-        return mIsC;
+        return mLang == Standards::Language::C;
     }
 
     /** Is the code CPP. Used for bailouts */
     bool isCPP() const {
-        return mIsCpp;
+        return mLang == Standards::Language::CPP;
     }
 
     /**
@@ -171,7 +172,7 @@ public:
      * Check abstract syntax tree.
      * Throws InternalError on failure
      */
-    void validateAst() const;
+    void validateAst(bool print) const;
 
     /**
      * Verify that the given token is an element of the tokenlist.
@@ -214,8 +215,7 @@ private:
     const Settings* const mSettings{};
 
     /** File is known to be C/C++ code */
-    bool mIsC{};
-    bool mIsCpp{};
+    Standards::Language mLang{Standards::Language::None};
 };
 
 /// @}

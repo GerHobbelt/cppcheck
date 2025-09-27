@@ -166,6 +166,7 @@ private:
         TEST_CASE(array_index_72); // #11784
         TEST_CASE(array_index_73); // #11530
         TEST_CASE(array_index_74); // #11088
+        TEST_CASE(array_index_75);
         TEST_CASE(array_index_multidim);
         TEST_CASE(array_index_switch_in_for);
         TEST_CASE(array_index_for_in_for);   // FP: #2634
@@ -1697,6 +1698,24 @@ private:
         ASSERT_EQUALS(
             "[test.cpp:3] -> [test.cpp:6]: (warning) Either the condition 'x<2' is redundant or the array 'a[3]' is accessed at index 3, which is out of bounds.\n",
             errout.str());
+
+        check("void f() {\n" // #2199
+              "    char a[5];\n"
+              "    for (int i = 0; i < 5; i++) {\n"
+              "        i += 8;\n"
+              "        a[i] = 0;\n"
+              "    }\n"
+              "}\n"
+              "void g() {\n"
+              "    char a[5];\n"
+              "    for (int i = 0; i < 5; i++) {\n"
+              "        a[i + 7] = 0;\n"
+              "    }\n"
+              "}\n");
+        ASSERT_EQUALS(
+            "[test.cpp:5]: (error) Array 'a[5]' accessed at index 8, which is out of bounds.\n"
+            "[test.cpp:11]: (error) Array 'a[5]' accessed at index 11, which is out of bounds.\n",
+            errout.str());
     }
 
     void array_index_59() // #10413
@@ -1956,6 +1975,18 @@ private:
               "  foo(\"q\");\n"
               "}\n");
         ASSERT_EQUALS("", errout.str());
+    }
+
+    // #1644
+    void array_index_75()
+    {
+        check("void f() {\n"
+              "    char buf[10];\n"
+              "    int i = 10;\n"
+              "    while (i >= 3)\n"
+              "        buf[i--] = 0;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:5]: (error) Array 'buf[10]' accessed at index 10, which is out of bounds.\n", errout.str());
     }
 
     void array_index_multidim() {

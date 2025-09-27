@@ -455,6 +455,7 @@ private:
         TEST_CASE(enum16);
         TEST_CASE(enum17);
         TEST_CASE(enum18);
+        TEST_CASE(enum19);
 
         TEST_CASE(sizeOfType);
 
@@ -522,6 +523,7 @@ private:
         TEST_CASE(findFunction56);
         TEST_CASE(findFunction57);
         TEST_CASE(findFunction58); // #13310
+        TEST_CASE(findFunction59);
         TEST_CASE(findFunctionRef1);
         TEST_CASE(findFunctionRef2); // #13328
         TEST_CASE(findFunctionContainer);
@@ -6663,6 +6665,23 @@ private:
         }
     }
 
+    void enum19() {
+        {
+            GET_SYMBOL_DB("enum : std::int8_t { I = -1 };\n" // #13528
+                          "enum : int8_t { J = -1 };\n"
+                          "enum : char { K = -1 };\n");
+            const Token* I = Token::findsimplematch(tokenizer.tokens(), "I");
+            ASSERT(I && I->valueType() && I->valueType()->isEnum());
+            ASSERT_EQUALS(I->valueType()->type, ValueType::CHAR);
+            const Token* J = Token::findsimplematch(I, "J");
+            ASSERT(J && J->valueType() && J->valueType()->isEnum());
+            ASSERT_EQUALS(J->valueType()->type, ValueType::CHAR);
+            const Token* K = Token::findsimplematch(J, "K");
+            ASSERT(K && K->valueType() && K->valueType()->isEnum());
+            ASSERT_EQUALS(K->valueType()->type, ValueType::CHAR);
+        }
+    }
+
     void sizeOfType() {
         // #7615 - crash in Symboldatabase::sizeOfType()
         GET_SYMBOL_DB("enum e;\n"
@@ -8440,6 +8459,17 @@ private:
         ASSERT(a1 && !a1->function());
         const Token *a2 = Token::findsimplematch(tokenizer.tokens(), "a (");
         ASSERT(a2 && a2->function());
+    }
+
+    void findFunction59() { // #13464
+        GET_SYMBOL_DB("void foo(const char[], const std::string&);\n"
+                      "void foo(const std::string&, const std::string&);\n"
+                      "void f() {\n"
+                      "    foo(\"\", \"\");\n"
+                      "}\n");
+        const Token* foo = Token::findsimplematch(tokenizer.tokens(), "foo ( \"\"");
+        ASSERT(foo && foo->function());
+        ASSERT_EQUALS(foo->function()->tokenDef->linenr(), 1);
     }
 
     void findFunctionRef1() {

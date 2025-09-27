@@ -271,7 +271,6 @@ def test_execute_addon_failure_json_ctu_notexist(tmpdir):
 
     _, _, stderr = cppcheck(args)
     ec = 1 if os.name == 'nt' else 127
-    print(stderr)
     assert stderr.splitlines() == [
         "{}:0:0: error: Bailing out from analysis: Checking file failed: Failed to execute addon 'addon.json' - exitcode is {} [internalError]".format(test_file, ec),
         ":0:0: error: Bailing out from analysis: Whole program analysis failed: Failed to execute addon 'addon.json' - exitcode is {} [internalError]".format(ec)
@@ -2673,3 +2672,116 @@ def test_duplicate_suppressions_mixed(tmp_path):
         "cppcheck: error: suppression 'uninitvar' already exists"
     ]
     assert stderr == ''
+
+
+def test_xml_output(tmp_path):  # #13391 / #13485
+    test_file = tmp_path / 'test.cpp'
+    with open(test_file, 'wt') as f:
+        f.write("""
+void f(const void* p)
+{
+    if(p) {}
+    (void)*p; // REMARK: boom
+}
+""")
+
+    _, version_str, _ = cppcheck(['--version'])
+    version_str = version_str.replace('Cppcheck ', '').strip()
+
+    args = [
+        '-q',
+        '--enable=style',
+        '--xml',
+        str(test_file)
+    ]
+    exitcode_1, stdout_1, stderr_1 = cppcheck(args)
+    assert exitcode_1 == 0, stdout_1
+    assert stdout_1 == ''
+    assert (stderr_1 ==
+'''<?xml version="1.0" encoding="UTF-8"?>
+<results version="2">
+    <cppcheck version="{}"/>
+    <errors>
+        <error id="nullPointerRedundantCheck" severity="warning" msg="Either the condition &apos;p&apos; is redundant or there is possible null pointer dereference: p." verbose="Either the condition &apos;p&apos; is redundant or there is possible null pointer dereference: p." cwe="476" file0="{}" remark="boom">
+            <location file="{}" line="5" column="12" info="Null pointer dereference"/>
+            <location file="{}" line="4" column="8" info="Assuming that condition &apos;p&apos; is not redundant"/>
+            <symbol>p</symbol>
+        </error>
+    </errors>
+</results>
+'''.format(version_str, str(test_file).replace('\\', '/'), test_file, test_file))  # TODO: the slashes are inconsistent
+
+
+def test_internal_error_loc_int(tmp_path):
+    test_file = tmp_path / 'test.c'
+    with open(test_file, 'wt') as f:
+        f.write(
+"""
+void f() {
+    int i = 0x10000000000000000;
+}
+""")
+
+    args = [
+        '-q',
+        '--template=simple',
+        str(test_file)
+    ]
+    exitcode, stdout, stderr = cppcheck(args)
+    assert exitcode == 0, stdout
+    assert stdout.splitlines() == []
+    assert stderr.splitlines() == [
+        '{}:3:13: error: Internal Error. MathLib::toBigUNumber: out_of_range: 0x10000000000000000 [internalError]'.format(test_file)
+    ]
+
+
+def __test_addon_suppr(tmp_path, extra_args):
+    test_file = tmp_path / 'test.c'
+    with open(test_file, 'wt') as f:
+        f.write("""
+// cppcheck-suppress misra-c2012-2.3
+typedef int MISRA_5_6_VIOLATION;
+typedef int MISRA_5_6_VIOLATION_1;
+        """)
+
+    args = [
+        '-q',
+        '--template=simple',
+        '--enable=style',
+        '--addon=misra',
+        str(test_file)
+    ]
+
+    args += extra_args
+
+    exitcode, stdout, stderr = cppcheck(args)
+    assert exitcode == 0, stdout
+    assert stdout == ''
+    assert stderr.splitlines() == [
+        '{}:4:1: style: misra violation (use --rule-texts=<file> to get proper output) [misra-c2012-2.3]'.format(test_file),
+    ]
+
+
+# TODO: remove override when all issues are fixed
+def test_addon_suppr_inline(tmp_path):
+    __test_addon_suppr(tmp_path, ['--inline-suppr', '-j1'])
+
+
+# TODO: remove override when all issues are fixed
+@pytest.mark.xfail(strict=True)  # TODO: inline suppression does not work
+def test_addon_suppr_inline_j(tmp_path):
+    __test_addon_suppr(tmp_path, ['--inline-suppr', '-j2'])
+
+
+def test_addon_suppr_cli_line(tmp_path):
+    __test_addon_suppr(tmp_path, ['--suppress=misra-c2012-2.3:*:3'])
+
+
+@pytest.mark.xfail(strict=True)  # #13437 - TODO: suppression needs to match the whole input path
+def test_addon_suppr_cli_file_line(tmp_path):
+    __test_addon_suppr(tmp_path, ['--suppress=misra-c2012-2.3:test.c:3'])
+
+
+def test_addon_suppr_cli_absfile_line(tmp_path):
+    test_file = tmp_path / 'test.c'
+    __test_addon_suppr(tmp_path, ['--suppress=misra-c2012-2.3:{}:3'.format(test_file)])

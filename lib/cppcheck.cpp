@@ -209,7 +209,7 @@ private:
         // Alert only about unique errors.
         // This makes sure the errors of a single check() call are unique.
         // TODO: get rid of this? This is forwarded to another ErrorLogger which is also doing this
-        if (!mErrorList.emplace(std::move(errmsg)).second)
+        if (!mSettings.emitDuplicates && !mErrorList.emplace(std::move(errmsg)).second)
             return;
 
         if (mAnalyzerInformation)
@@ -1893,6 +1893,7 @@ void CppCheck::getErrorMessages(ErrorLogger &errorlogger)
 
     CheckUnusedFunctions::getErrorMessages(errorlogger);
     Preprocessor::getErrorMessages(errorlogger, s);
+    Tokenizer::getErrorMessages(errorlogger, s);
 }
 
 void CppCheck::analyseClangTidy(const FileSettings &fileSettings)
@@ -1990,7 +1991,7 @@ bool CppCheck::analyseWholeProgram()
 
     // cppcheck-suppress shadowFunction - TODO: fix this
     for (Check *check : Check::instances())
-        errors |= check->analyseWholeProgram(&ctu, mFileInfo, mSettings, mErrorLogger);  // TODO: ctu
+        errors |= check->analyseWholeProgram(ctu, mFileInfo, mSettings, mErrorLogger);  // TODO: ctu
 
     if (mUnusedFunctionsCheck)
         errors |= mUnusedFunctionsCheck->check(mSettings, mErrorLogger);
@@ -2041,8 +2042,11 @@ unsigned int CppCheck::analyseWholeProgram(const std::string &buildDir, const st
             }
             // cppcheck-suppress shadowFunction - TODO: fix this
             for (const Check *check : Check::instances()) {
-                if (checkClassAttr == check->name())
-                    fileInfoList.push_back(check->loadFileInfoFromXml(e));
+                if (checkClassAttr == check->name()) {
+                    Check::FileInfo* fi = check->loadFileInfoFromXml(e);
+                    fi->file0 = filesTxtLine.substr(firstColon + 2);
+                    fileInfoList.push_back(fi);
+                }
             }
         }
     }
@@ -2050,7 +2054,7 @@ unsigned int CppCheck::analyseWholeProgram(const std::string &buildDir, const st
     // Analyse the tokens
     // cppcheck-suppress shadowFunction - TODO: fix this
     for (Check *check : Check::instances())
-        check->analyseWholeProgram(&ctuFileInfo, fileInfoList, mSettings, mErrorLogger);
+        check->analyseWholeProgram(ctuFileInfo, fileInfoList, mSettings, mErrorLogger);
 
     if (mUnusedFunctionsCheck)
         mUnusedFunctionsCheck->check(mSettings, mErrorLogger);

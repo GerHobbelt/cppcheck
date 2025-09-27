@@ -1126,8 +1126,7 @@ void Tokenizer::simplifyTypedef()
             if (!ts.fail() && numberOfTypedefs[ts.name()] == 1 &&
                 (numberOfTypedefs.find(ts.getTypedefToken()->strAt(1)) == numberOfTypedefs.end() || ts.getTypedefToken()->strAt(2) == "(")) {
                 if (mSettings.severity.isEnabled(Severity::portability) && ts.isInvalidConstFunctionType(typedefs))
-                    reportError(tok->next(), Severity::portability, "invalidConstFunctionType",
-                                "It is unspecified behavior to const qualify a function type.");
+                    invalidConstFunctionTypeError(tok->next());
                 typedefs.emplace(ts.name(), ts);
                 if (!ts.isStructEtc())
                     tok = ts.endToken();
@@ -3839,7 +3838,7 @@ void Tokenizer::arraySize()
                 if (tok2->link() && Token::Match(tok2, "{|(|[|<")) {
                     if (tok2->str() == "[" && tok2->link()->strAt(1) == "=") { // designated initializer
                         if (Token::Match(tok2, "[ %num% ]"))
-                            sz = std::max(sz, MathLib::toBigUNumber(tok2->strAt(1)) + 1U);
+                            sz = std::max(sz, MathLib::toBigUNumber(tok2->tokAt(1)) + 1U);
                         else {
                             sz = 0;
                             break;
@@ -4019,8 +4018,8 @@ void Tokenizer::simplifyCaseRange()
 {
     for (Token* tok = list.front(); tok; tok = tok->next()) {
         if (Token::Match(tok, "case %num%|%char% ... %num%|%char% :")) {
-            const MathLib::bigint start = MathLib::toBigNumber(tok->strAt(1));
-            MathLib::bigint end = MathLib::toBigNumber(tok->strAt(3));
+            const MathLib::bigint start = MathLib::toBigNumber(tok->tokAt(1));
+            MathLib::bigint end = MathLib::toBigNumber(tok->tokAt(3));
             end = std::min(start + 50, end); // Simplify it 50 times at maximum
             if (start < end) {
                 tok = tok->tokAt(2);
@@ -5500,10 +5499,11 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
 
     // if MACRO
     for (Token *tok = list.front(); tok; tok = tok->next()) {
-        if (Token::Match(tok, "if|for|while|BOOST_FOREACH %name% (")) {
+        if (Token::Match(tok, "if|for|while %name% (")) {
             if (Token::simpleMatch(tok, "for each")) {
-                // 'for each ( )' -> 'asm ( )'
-                tok->str("asm");
+                // 'for each (x in y )' -> 'for (x : y)'
+                if (Token* in = Token::findsimplematch(tok->tokAt(2), "in", tok->linkAt(2)))
+                    in->str(":");
                 tok->deleteNext();
             } else if (tok->strAt(1) == "constexpr") {
                 tok->deleteNext();
@@ -5743,7 +5743,7 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
     if (isCPP() && mSettings.severity.isEnabled(Severity::information)) {
         for (const Token *tok = list.front(); tok; tok = tok->next()) {
             if (Token::Match(tok, "class %type% %type% [:{]")) {
-                unhandled_macro_class_x_y(tok);
+                unhandled_macro_class_x_y(tok, tok->str(), tok->strAt(1), tok->strAt(2), tok->strAt(3));
             }
         }
     }
@@ -8114,16 +8114,16 @@ void Tokenizer::unknownMacroError(const Token *tok1) const
     throw InternalError(tok1, "There is an unknown macro here somewhere. Configuration is required. If " + tok1->str() + " is a macro then please configure it.", InternalError::UNKNOWN_MACRO);
 }
 
-void Tokenizer::unhandled_macro_class_x_y(const Token *tok) const
+void Tokenizer::unhandled_macro_class_x_y(const Token *tok, const std::string& type, const std::string& x, const std::string& y, const std::string& bracket) const
 {
     reportError(tok,
                 Severity::information,
                 "class_X_Y",
                 "The code '" +
-                tok->str() + " " +
-                tok->strAt(1) + " " +
-                tok->strAt(2) + " " +
-                tok->strAt(3) + "' is not handled. You can use -I or --include to add handling of this code.");
+                type + " " +
+                x + " " +
+                y + " " +
+                bracket + "' is not handled. You can use -I or --include to add handling of this code.");
 }
 
 void Tokenizer::macroWithSemicolonError(const Token *tok, const std::string &macroName) const
@@ -8132,6 +8132,14 @@ void Tokenizer::macroWithSemicolonError(const Token *tok, const std::string &mac
                 Severity::information,
                 "macroWithSemicolon",
                 "Ensure that '" + macroName + "' is defined either using -I, --include or -D.");
+}
+
+void Tokenizer::invalidConstFunctionTypeError(const Token *tok) const
+{
+    reportError(tok,
+                Severity::portability,
+                "invalidConstFunctionType",
+                "It is unspecified behavior to const qualify a function type.");
 }
 
 void Tokenizer::cppcheckError(const Token *tok) const
@@ -8736,6 +8744,8 @@ void Tokenizer::findGarbageCode() const
             syntaxError(tok);
         if (Token::Match(tok, "; %assign%"))
             syntaxError(tok);
+        if (Token::Match(tok, "%assign% %name%") && tok->next()->isControlFlowKeyword())
+            syntaxError(tok);
         if (Token::Match(tok, "%cop%|=|,|[ %or%|%oror%|/|%"))
             syntaxError(tok);
         if (Token::Match(tok, "[;([{] %comp%|%oror%|%or%|%|/"))
@@ -8764,6 +8774,8 @@ void Tokenizer::findGarbageCode() const
                 syntaxError(tok, tok->strAt(-1) + " " + tok->str() + " " + tok->strAt(1));
         }
         if (Token::Match(tok, "[{,] . %name%") && !Token::Match(tok->tokAt(3), "[.=[{]"))
+            syntaxError(tok->next());
+        if (Token::Match(tok, "%name% %op% %name%") && !tok->isKeyword() && tok->next()->isIncDecOp())
             syntaxError(tok->next());
         if (Token::Match(tok, "[!|+-/%^~] )|]"))
             syntaxError(tok);
@@ -8839,6 +8851,8 @@ void Tokenizer::findGarbageCode() const
                     syntaxError(tok);
             }
         }
+        if (cpp && tok->str() == "using" && !Token::Match(tok->next(), "::|%name%"))
+            syntaxError(tok);
     }
 
     // ternary operator without :
@@ -9353,10 +9367,10 @@ void Tokenizer::simplifyCppcheckAttribute()
         if (vartok->isName()) {
             if (Token::Match(tok->previous(), "__cppcheck_low__ ( %num% )"))
                 vartok->setCppcheckAttribute(TokenImpl::CppcheckAttributes::Type::LOW,
-                                             MathLib::toBigNumber(tok->strAt(1)));
+                                             MathLib::toBigNumber(tok->tokAt(1)));
             else if (Token::Match(tok->previous(), "__cppcheck_high__ ( %num% )"))
                 vartok->setCppcheckAttribute(TokenImpl::CppcheckAttributes::Type::HIGH,
-                                             MathLib::toBigNumber(tok->strAt(1)));
+                                             MathLib::toBigNumber(tok->tokAt(1)));
         }
 
         // Delete cppcheck attribute..
@@ -9376,6 +9390,8 @@ void Tokenizer::simplifyCPPAttribute()
     // According to cppreference alignas is a c21 feature however the macro is often available when compiling c11
     const bool hasAlignas = ((isCPP() && mSettings.standards.cpp >= Standards::CPP11) || (isC() && mSettings.standards.c >= Standards::C11));
     const bool hasCppAttribute = ((isCPP() && mSettings.standards.cpp >= Standards::CPP11) || (isC() && mSettings.standards.c >= Standards::C23));
+    const bool hasMaybeUnused =((isCPP() && mSettings.standards.cpp >= Standards::CPP17) || (isC() && mSettings.standards.c >= Standards::C23));
+    const bool hasMaybeUnusedUnderscores = (isC() && mSettings.standards.c >= Standards::C23);
 
     if (!hasAlignas && !hasCppAttribute)
         return;
@@ -9408,11 +9424,17 @@ void Tokenizer::simplifyCPPAttribute()
                 if (head && head->str() == "(" && isFunctionHead(head, "{|;")) {
                     head->previous()->isAttributeNodiscard(true);
                 }
-            } else if (Token::findsimplematch(tok->tokAt(2), "maybe_unused", tok->link())) {
+            } else if ((hasMaybeUnusedUnderscores && Token::findsimplematch(tok->tokAt(2), "__maybe_unused__", tok->link()))
+                       || (hasMaybeUnused && Token::findsimplematch(tok->tokAt(2), "maybe_unused", tok->link()))) {
                 Token* head = skipCPPOrAlignAttribute(tok)->next();
                 while (isCPPAttribute(head) || isAlignAttribute(head))
                     head = skipCPPOrAlignAttribute(head)->next();
                 head->isAttributeMaybeUnused(true);
+            } else if (Token::findsimplematch(tok->tokAt(2), "unused", tok->link())) {
+                Token* head = skipCPPOrAlignAttribute(tok)->next();
+                while (isCPPAttribute(head) || isAlignAttribute(head))
+                    head = skipCPPOrAlignAttribute(head)->next();
+                head->isAttributeUnused(true);
             } else if (Token::Match(tok->previous(), ") [ [ expects|ensures|assert default|audit|axiom| : %name% <|<=|>|>= %num% ] ]")) {
                 const Token *vartok = tok->tokAt(4);
                 if (vartok->str() == ":")
@@ -9428,16 +9450,16 @@ void Tokenizer::simplifyCPPAttribute()
                 if (argtok && argtok->str() == vartok->str()) {
                     if (vartok->strAt(1) == ">=")
                         argtok->setCppcheckAttribute(TokenImpl::CppcheckAttributes::Type::LOW,
-                                                     MathLib::toBigNumber(vartok->strAt(2)));
+                                                     MathLib::toBigNumber(vartok->tokAt(2)));
                     else if (vartok->strAt(1) == ">")
                         argtok->setCppcheckAttribute(TokenImpl::CppcheckAttributes::Type::LOW,
-                                                     MathLib::toBigNumber(vartok->strAt(2)) + 1);
+                                                     MathLib::toBigNumber(vartok->tokAt(2)) + 1);
                     else if (vartok->strAt(1) == "<=")
                         argtok->setCppcheckAttribute(TokenImpl::CppcheckAttributes::Type::HIGH,
-                                                     MathLib::toBigNumber(vartok->strAt(2)));
+                                                     MathLib::toBigNumber(vartok->tokAt(2)));
                     else if (vartok->strAt(1) == "<")
                         argtok->setCppcheckAttribute(TokenImpl::CppcheckAttributes::Type::HIGH,
-                                                     MathLib::toBigNumber(vartok->strAt(2)) - 1);
+                                                     MathLib::toBigNumber(vartok->tokAt(2)) - 1);
                 }
             }
         } else {
@@ -9894,7 +9916,7 @@ void Tokenizer::simplifyBitfields()
             !Token::simpleMatch(tok->tokAt(2), "default :")) {
             Token *tok1 = (tok->strAt(1) == "const") ? tok->tokAt(3) : tok->tokAt(2);
             if (Token::Match(tok1, "%name% : %num% [;=]"))
-                tok1->setBits(static_cast<unsigned char>(MathLib::toBigNumber(tok1->strAt(2))));
+                tok1->setBits(static_cast<unsigned char>(MathLib::toBigNumber(tok1->tokAt(2))));
             if (tok1 && tok1->tokAt(2) &&
                 (Token::Match(tok1->tokAt(2), "%bool%|%num%") ||
                  !Token::Match(tok1->tokAt(2), "public|protected|private| %type% ::|<|,|{|;"))) {
@@ -10893,4 +10915,14 @@ bool Tokenizer::isPacked(const Token * bodyStart) const
     return std::any_of(directives.cbegin(), directives.cend(), [&](const Directive& d) {
         return d.linenr < bodyStart->linenr() && d.str == "#pragma pack(1)" && d.file == list.getFiles().front();
     });
+}
+
+void Tokenizer::getErrorMessages(ErrorLogger& errorLogger, const Settings& settings)
+{
+    Tokenizer tokenizer(settings, errorLogger);
+    tokenizer.invalidConstFunctionTypeError(nullptr);
+    // checkLibraryNoReturn
+    tokenizer.unhandled_macro_class_x_y(nullptr, emptyString, emptyString, emptyString, emptyString);
+    tokenizer.macroWithSemicolonError(nullptr, emptyString);
+    tokenizer.unhandledCharLiteral(nullptr, emptyString);
 }

@@ -851,6 +851,30 @@ void CheckOther::suspiciousCaseInSwitchError(const Token* tok, const std::string
                 "Using an operator like '" + operatorString + "' in a case label is suspicious. Did you intend to use a bitwise operator, multiple case labels or if/else instead?", CWE398, Certainty::inconclusive);
 }
 
+static bool isNestedInSwitch(const Scope* scope)
+{
+    while (scope) {
+        if (scope->type == Scope::ScopeType::eSwitch)
+            return true;
+        if (scope->type == Scope::ScopeType::eUnconditional) {
+            scope = scope->nestedIn;
+            continue;
+        }
+        break;
+    }
+    return false;
+}
+
+static bool isVardeclInSwitch(const Token* tok)
+{
+    if (!tok)
+        return false;
+    if (!isNestedInSwitch(tok->scope()))
+        return false;
+    const Token* end = Token::findsimplematch(tok, ";");
+    return end && end->previous()->variable() && end->previous()->variable()->nameToken() == end->previous();
+}
+
 //---------------------------------------------------------------------------
 //    Find consecutive return, break, continue, goto or throw statements. e.g.:
 //        break; break;
@@ -871,6 +895,8 @@ void CheckOther::checkUnreachableCode()
     const bool printInconclusive = mSettings->certainty.isEnabled(Certainty::inconclusive);
     const SymbolDatabase* symbolDatabase = mTokenizer->getSymbolDatabase();
     for (const Scope * scope : symbolDatabase->functionScopes) {
+        if (scope->hasInlineOrLambdaFunction(nullptr, /*onlyInline*/ true))
+            continue;
         for (const Token* tok = scope->bodyStart; tok && tok != scope->bodyEnd; tok = tok->next()) {
             const Token* secondBreak = nullptr;
             const Token* labelName = nullptr;
@@ -958,7 +984,7 @@ void CheckOther::checkUnreachableCode()
                     if (silencedWarning)
                         secondBreak = silencedWarning;
 
-                    if (!labelInFollowingLoop && !silencedCompilerWarningOnly)
+                    if (!labelInFollowingLoop && !silencedCompilerWarningOnly && !isVardeclInSwitch(secondBreak))
                         unreachableCodeError(secondBreak, tok, inconclusive);
                     tok = Token::findmatch(secondBreak, "[}:]");
                 } else if (secondBreak->scope() && secondBreak->scope()->isLoopScope() && secondBreak->str() == "}" && tok->str() == "continue") {
@@ -1416,7 +1442,7 @@ void CheckOther::checkPassByReference()
         if (inconclusive && !mSettings->certainty.isEnabled(Certainty::inconclusive))
             continue;
 
-        if (var->isArray() && var->getTypeName() != "std::array")
+        if (var->isArray() && (!var->isStlType() || Token::simpleMatch(var->nameToken()->next(), "[")))
             continue;
 
         const bool isConst = var->isConst();
@@ -2042,6 +2068,8 @@ static bool isConstStatement(const Token *tok, bool isNestedBracket = false)
         }
         return isConstStatement(tok->astOperand2(), /*isNestedBracket*/ !isChained);
     }
+    if (!tok->astParent() && findLambdaEndToken(tok))
+        return true;
     return false;
 }
 
@@ -2087,7 +2115,8 @@ static bool isConstTop(const Token *tok)
 
 void CheckOther::checkIncompleteStatement()
 {
-    if (!mSettings->severity.isEnabled(Severity::warning))
+    if (!mSettings->severity.isEnabled(Severity::warning) &&
+        !mSettings->isPremiumEnabled("constStatement"))
         return;
 
     logChecker("CheckOther::checkIncompleteStatement"); // warning
@@ -2139,7 +2168,7 @@ void CheckOther::checkIncompleteStatement()
         if (tok->isCpp() && tok->str() == "&" && !(tok->astOperand1() && tok->astOperand1()->valueType() && tok->astOperand1()->valueType()->isIntegral()))
             // Possible archive
             continue;
-        const bool inconclusive = tok->isConstOp();
+        const bool inconclusive = tok->isConstOp() && !mSettings->isPremiumEnabled("constStatement");
         if (mSettings->certainty.isEnabled(Certainty::inconclusive) || !inconclusive)
             constStatementError(tok, tok->isNumber() ? "numeric" : "string", inconclusive);
     }
@@ -2184,6 +2213,8 @@ void CheckOther::constStatementError(const Token *tok, const std::string &type, 
         msg = "Redundant code: Found unused member access.";
     else if (tok->str() == "[" && tok->tokType() == Token::Type::eExtendedOp)
         msg = "Redundant code: Found unused array access.";
+    else if (tok->str() == "[" && !tok->astParent())
+        msg = "Redundant code: Found unused lambda.";
     else if (mSettings->debugwarnings) {
         reportError(tok, Severity::debug, "debug", "constStatementError not handled.");
         return;
@@ -3203,8 +3234,11 @@ void CheckOther::checkIncompleteArrayFill()
 
     for (const Scope * scope : symbolDatabase->functionScopes) {
         for (const Token* tok = scope->bodyStart->next(); tok != scope->bodyEnd; tok = tok->next()) {
-            if (Token::Match(tok, "memset|memcpy|memmove (") && Token::Match(tok->linkAt(1)->tokAt(-2), ", %num% )")) {
-                const Token* tok2 = tok->tokAt(2);
+            if (Token::Match(tok, "memset|memcpy|memmove (")) {
+                std::vector<const Token*> args = getArguments(tok);
+                if (args.size() != 3)
+                    continue;
+                const Token* tok2 = args[0];
                 if (tok2->str() == "::")
                     tok2 = tok2->next();
                 while (Token::Match(tok2, "%name% ::|."))
@@ -3216,19 +3250,19 @@ void CheckOther::checkIncompleteArrayFill()
                 if (!var || !var->isArray() || var->dimensions().empty() || !var->dimension(0))
                     continue;
 
-                if (MathLib::toBigNumber(tok->linkAt(1)->strAt(-1)) == var->dimension(0)) {
-                    int size = mTokenizer->sizeOfType(var->typeStartToken());
-                    if (size == 0 && var->valueType()->pointer)
-                        size = mSettings->platform.sizeof_pointer;
-                    else if (size == 0 && var->valueType())
-                        size = ValueFlow::getSizeOf(*var->valueType(), *mSettings);
-                    const Token* tok3 = tok->next()->astOperand2()->astOperand1()->astOperand1();
-                    if ((size != 1 && size != 100 && size != 0) || var->isPointer()) {
-                        if (printWarning)
-                            incompleteArrayFillError(tok, tok3->expressionString(), tok->str(), false);
-                    } else if (var->valueType()->type == ValueType::Type::BOOL && printPortability) // sizeof(bool) is not 1 on all platforms
-                        incompleteArrayFillError(tok, tok3->expressionString(), tok->str(), true);
-                }
+                if (!args[2]->hasKnownIntValue() || args[2]->getKnownIntValue() != var->dimension(0))
+                    continue;
+                int size = mTokenizer->sizeOfType(var->typeStartToken());
+                if (size == 0 && var->valueType()->pointer)
+                    size = mSettings->platform.sizeof_pointer;
+                else if (size == 0 && var->valueType())
+                    size = ValueFlow::getSizeOf(*var->valueType(), *mSettings);
+                const Token* tok3 = tok->next()->astOperand2()->astOperand1()->astOperand1();
+                if ((size != 1 && size != 100 && size != 0) || var->isPointer()) {
+                    if (printWarning)
+                        incompleteArrayFillError(tok, tok3->expressionString(), tok->str(), false);
+                } else if (var->valueType()->type == ValueType::Type::BOOL && printPortability) // sizeof(bool) is not 1 on all platforms
+                    incompleteArrayFillError(tok, tok3->expressionString(), tok->str(), true);
             }
         }
     }

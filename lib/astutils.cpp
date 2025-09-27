@@ -675,6 +675,8 @@ const Token* getParentLifetime(const Token* tok, const Library& library)
     // If any of the submembers are borrowed types then stop
     if (std::any_of(it.base() - 1, members.cend() - 1, [&](const Token* tok2) {
         const Token* obj = getParentLifetimeObject(tok2);
+        if (!obj)
+            return false;
         const Variable* var = obj->variable();
         // Check for arrays first since astIsPointer will return true, but an array is not a borrowed type
         if (var && var->isArray())
@@ -3113,7 +3115,7 @@ namespace {
         template<class F>
         const Token* operator()(const Token* start, const Token* end, F f) const
         {
-            return findTokenSkipDeadCode(library, start, end, f, *evaluate);
+            return findTokenSkipDeadCode(library, start, end, std::move(f), *evaluate);
         }
     };
 }

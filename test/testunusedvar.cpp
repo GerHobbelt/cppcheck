@@ -74,6 +74,7 @@ private:
         TEST_CASE(structmember27); // #13367
         TEST_CASE(structmember_macro);
         TEST_CASE(classmember);
+        TEST_CASE(structmemberStructuredBinding); // #13107
 
         TEST_CASE(localvar1);
         TEST_CASE(localvar2);
@@ -2021,6 +2022,39 @@ private:
                                "    int i;\n"
                                "};\n"
                                "class D : public C {};\n");
+        ASSERT_EQUALS("", errout_str());
+    }
+
+    void structmemberStructuredBinding() { // #13107
+        checkStructMemberUsage("struct S { int a, b; };\n"
+                               "void f(S &s) {\n"
+                               "    auto& [x, y] = s;\n"
+                               "    x = y;\n"
+                               "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        checkStructMemberUsage("struct S { int a, b; };\n"
+                               "struct T { S s; };\n"
+                               "void f(T &t) {\n"
+                               "    auto& [x, y] = t.s;\n"
+                               "    x = y;\n"
+                               "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        checkStructMemberUsage("struct S { int a, b; };\n"
+                               "void f(std::vector<S> &sv) {\n"
+                               "    for (auto& [x, y] : sv)\n"
+                               "        x = y;\n"
+                               "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        // #13551 - don't crash
+        checkStructMemberUsage("struct S {};\n"
+                               "void f(vector<std::pair<int, int>> p) {\n"
+                               "    for (auto [a, _] : p) {\n"
+                               "        if (a == 0) {}\n"
+                               "    }\n"
+                               "}\n");
         ASSERT_EQUALS("", errout_str());
     }
 

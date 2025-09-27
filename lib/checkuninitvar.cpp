@@ -332,9 +332,9 @@ static void conditionAlwaysTrueOrFalse(const Token *tok, const std::map<nonneg i
             return;
 
         if (tok->str() == "==")
-            *alwaysTrue  = (it->second == MathLib::toBigNumber(numtok->str()));
+            *alwaysTrue  = (it->second == MathLib::toBigNumber(numtok));
         else if (tok->str() == "!=")
-            *alwaysTrue  = (it->second != MathLib::toBigNumber(numtok->str()));
+            *alwaysTrue  = (it->second != MathLib::toBigNumber(numtok));
         else
             return;
         *alwaysFalse = !(*alwaysTrue);
@@ -1708,6 +1708,7 @@ namespace
     /* data for multifile checking */
     class MyFileInfo : public Check::FileInfo {
     public:
+        using Check::FileInfo::FileInfo;
         /** function arguments that data are unconditionally read */
         std::list<CTU::FileInfo::UnsafeUsage> unsafeUsage;
 
@@ -1725,7 +1726,7 @@ Check::FileInfo *CheckUninitVar::getFileInfo(const Tokenizer &tokenizer, const S
     if (unsafeUsage.empty())
         return nullptr;
 
-    auto *fileInfo = new MyFileInfo;
+    auto *fileInfo = new MyFileInfo(tokenizer.list.getFiles()[0]);
     fileInfo->unsafeUsage = unsafeUsage;
     return fileInfo;
 }
@@ -1741,14 +1742,20 @@ Check::FileInfo * CheckUninitVar::loadFileInfoFromXml(const tinyxml2::XMLElement
     return fileInfo;
 }
 
-bool CheckUninitVar::analyseWholeProgram(const CTU::FileInfo *ctu, const std::list<Check::FileInfo*> &fileInfo, const Settings& settings, ErrorLogger &errorLogger)
+bool CheckUninitVar::analyseWholeProgram(const CTU::FileInfo &ctu, const std::list<Check::FileInfo*> &fileInfo, const Settings& settings, ErrorLogger &errorLogger)
 {
-    if (!ctu)
-        return false;
-    bool foundErrors = false;
-    (void)settings; // This argument is unused
+    (void)settings;
 
-    const std::map<std::string, std::list<const CTU::FileInfo::CallBase *>> callsMap = ctu->getCallsMap();
+    CheckUninitVar dummy(nullptr, &settings, &errorLogger);
+    dummy.
+    logChecker("CheckUninitVar::analyseWholeProgram");
+
+    if (fileInfo.empty())
+        return false;
+
+    const std::map<std::string, std::list<const CTU::FileInfo::CallBase *>> callsMap = ctu.getCallsMap();
+
+    bool foundErrors = false;
 
     for (const Check::FileInfo* fi1 : fileInfo) {
         const auto *fi = dynamic_cast<const MyFileInfo*>(fi1);
@@ -1769,7 +1776,7 @@ bool CheckUninitVar::analyseWholeProgram(const CTU::FileInfo *ctu, const std::li
                 continue;
 
             const ErrorMessage errmsg(locationList,
-                                      emptyString,
+                                      fi->file0,
                                       Severity::error,
                                       "Using argument " + unsafeUsage.myArgumentName + " that points at uninitialized variable " + functionCall->callArgumentExpression,
                                       "ctuuninitvar",

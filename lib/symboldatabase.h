@@ -819,6 +819,12 @@ public:
     bool isAttributeNodiscard() const {
         return tokenDef->isAttributeNodiscard();
     }
+    bool isAttributeUnused() const {
+        return tokenDef->isAttributeUnused();
+    }
+    bool isAttributeMaybeUnused() const {
+        return tokenDef->isAttributeMaybeUnused();
+    }
 
     bool hasBody() const {
         return getFlag(fHasBody);
@@ -1126,7 +1132,7 @@ public:
     }
 
     // Is there lambda/inline function(s) in this scope?
-    bool hasInlineOrLambdaFunction(const Token** tokStart = nullptr) const;
+    bool hasInlineOrLambdaFunction(const Token** tokStart = nullptr, bool onlyInline = false) const;
 
     /**
      * @brief find a function

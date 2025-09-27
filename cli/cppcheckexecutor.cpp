@@ -65,7 +65,7 @@
 #endif
 
 #ifdef USE_WINDOWS_SEH
-#include "cppcheckexecutorseh.h"
+#include "sehwrapper.h"
 #endif
 
 #ifdef _WIN32
@@ -372,8 +372,9 @@ int CppCheckExecutor::check(int argc, const char* const argv[])
 int CppCheckExecutor::check_wrapper(const Settings& settings)
 {
 #ifdef USE_WINDOWS_SEH
-    if (settings.exceptionHandling)
-        return check_wrapper_seh(*this, &CppCheckExecutor::check_internal, settings);
+    if (settings.exceptionHandling) {
+        CALL_WITH_SEH_WRAPPER(check_internal(settings));
+    }
 #elif defined(USE_UNIX_SIGNAL_HANDLING)
     if (settings.exceptionHandling)
         register_signal_handler(settings.exceptionOutput);
@@ -622,7 +623,7 @@ void StdLogger::reportErr(const ErrorMessage &msg)
     // TODO: we generate a different message here then we log below
     // TODO: there should be no need for verbose and default messages here
     // Alert only about unique errors
-    if (!mShownErrors.insert(msg.toString(mSettings.verbose)).second)
+    if (!mSettings.emitDuplicates && !mShownErrors.insert(msg.toString(mSettings.verbose)).second)
         return;
 
     if (mSettings.outputFormat == Settings::OutputFormat::sarif)

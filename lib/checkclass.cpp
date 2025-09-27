@@ -3566,6 +3566,7 @@ namespace
     /* multifile checking; one definition rule violations */
     class MyFileInfo : public Check::FileInfo {
     public:
+        using Check::FileInfo::FileInfo;
         struct NameLoc {
             std::string className;
             std::string fileName;
@@ -3662,7 +3663,7 @@ Check::FileInfo *CheckClass::getFileInfo(const Tokenizer &tokenizer, const Setti
     if (classDefinitions.empty())
         return nullptr;
 
-    auto *fileInfo = new MyFileInfo;
+    auto *fileInfo = new MyFileInfo(tokenizer.list.getFiles()[0]);
     fileInfo->classDefinitions.swap(classDefinitions);
     return fileInfo;
 }
@@ -3695,17 +3696,21 @@ Check::FileInfo * CheckClass::loadFileInfoFromXml(const tinyxml2::XMLElement *xm
     return fileInfo;
 }
 
-bool CheckClass::analyseWholeProgram(const CTU::FileInfo *ctu, const std::list<Check::FileInfo*> &fileInfo, const Settings& settings, ErrorLogger &errorLogger)
+bool CheckClass::analyseWholeProgram(const CTU::FileInfo &ctu, const std::list<Check::FileInfo*> &fileInfo, const Settings& settings, ErrorLogger &errorLogger)
 {
-    bool foundErrors = false;
-    (void)ctu; // This argument is unused
-    (void)settings; // This argument is unused
-
-    std::unordered_map<std::string, MyFileInfo::NameLoc> all;
+    (void)ctu;
+    (void)settings;
 
     CheckClass dummy(nullptr, &settings, &errorLogger);
     dummy.
     logChecker("CheckClass::analyseWholeProgram");
+
+    if (fileInfo.empty())
+        return false;
+
+    bool foundErrors = false;
+
+    std::unordered_map<std::string, MyFileInfo::NameLoc> all;
 
     for (const Check::FileInfo* fi1 : fileInfo) {
         const auto *fi = dynamic_cast<const MyFileInfo*>(fi1);
@@ -3728,7 +3733,7 @@ bool CheckClass::analyseWholeProgram(const CTU::FileInfo *ctu, const std::list<C
             locationList.emplace_back(it->second.fileName, it->second.lineNumber, it->second.column);
 
             const ErrorMessage errmsg(std::move(locationList),
-                                      emptyString,
+                                      fi->file0,
                                       Severity::error,
                                       "$symbol:" + nameLoc.className +
                                       "\nThe one definition rule is violated, different classes/structs have the same name '$symbol'",

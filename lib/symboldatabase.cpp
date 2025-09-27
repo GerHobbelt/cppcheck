@@ -1831,7 +1831,7 @@ void SymbolDatabase::setArrayDimensionsUsingValueFlow()
 
                 if (Token::Match(tokenList.front(), "; %num% ;")) {
                     dimension.known = true;
-                    dimension.num = MathLib::toBigNumber(tokenList.front()->strAt(1));
+                    dimension.num = MathLib::toBigNumber(tokenList.front()->tokAt(1));
                 }
 
                 continue;
@@ -3698,7 +3698,7 @@ bool Variable::arrayDimensions(const Settings& settings, bool& isContainer)
             if (Token::Match(tok, "%num% [,>]")) {
                 dimension_.tok = tok;
                 dimension_.known = true;
-                dimension_.num = MathLib::toBigNumber(tok->str());
+                dimension_.num = MathLib::toBigNumber(tok);
             } else if (tok) {
                 dimension_.tok = tok;
                 dimension_.known = false;
@@ -3731,7 +3731,8 @@ bool Variable::arrayDimensions(const Settings& settings, bool& isContainer)
             // TODO: only perform when ValueFlow is enabled
             // TODO: collect timing information for this call?
             ValueFlow::valueFlowConstantFoldAST(const_cast<Token *>(dimension_.tok), settings);
-            if (dimension_.tok && dimension_.tok->hasKnownIntValue()) {
+            if (dimension_.tok && (dimension_.tok->hasKnownIntValue() ||
+                                   (dimension_.tok->isTemplateArg() && !dimension_.tok->values().empty()))) {
                 dimension_.num = dimension_.tok->getKnownIntValue();
                 dimension_.known = true;
             }
@@ -5520,7 +5521,7 @@ static bool hasEmptyCaptureList(const Token* tok) {
     return Token::simpleMatch(listTok, "[ ]");
 }
 
-bool Scope::hasInlineOrLambdaFunction(const Token** tokStart) const
+bool Scope::hasInlineOrLambdaFunction(const Token** tokStart, bool onlyInline) const
 {
     return std::any_of(nestedList.begin(), nestedList.end(), [&](const Scope* s) {
         // Inline function
@@ -5530,12 +5531,12 @@ bool Scope::hasInlineOrLambdaFunction(const Token** tokStart) const
             return true;
         }
         // Lambda function
-        if (s->type == Scope::eLambda && !hasEmptyCaptureList(s->bodyStart)) {
+        if (!onlyInline && s->type == Scope::eLambda && !hasEmptyCaptureList(s->bodyStart)) {
             if (tokStart)
                 *tokStart = s->bodyStart;
             return true;
         }
-        if (s->hasInlineOrLambdaFunction(tokStart))
+        if (s->hasInlineOrLambdaFunction(tokStart, onlyInline))
             return true;
         return false;
     });
@@ -5753,7 +5754,8 @@ const Function* Scope::findFunction(const Token *tok, bool requireConst, Referen
         return matches.empty() ? nullptr : matches[0];
     }
 
-    std::vector<const Function*> fallback1Func, fallback2Func;
+    // store function and number of matching arguments
+    std::vector<std::pair<const Function*, size_t>> fallback1Func, fallback2Func;
 
     // check each function against the arguments in the function call for a match
     for (std::size_t i = 0; i < matches.size();) {
@@ -5926,16 +5928,16 @@ const Function* Scope::findFunction(const Token *tok, bool requireConst, Referen
         // check if all arguments matched
         if (same == hasToBe) {
             if (constFallback || (!requireConst && func->isConst()))
-                fallback1Func.emplace_back(func);
+                fallback1Func.emplace_back(func, same);
             else
                 return func;
         }
 
         else {
             if (same + fallback1 == hasToBe)
-                fallback1Func.emplace_back(func);
+                fallback1Func.emplace_back(func, same);
             else if (same + fallback2 + fallback1 == hasToBe)
-                fallback2Func.emplace_back(func);
+                fallback2Func.emplace_back(func, same);
         }
 
         if (!erased)
@@ -5943,14 +5945,24 @@ const Function* Scope::findFunction(const Token *tok, bool requireConst, Referen
     }
 
     // Fallback cases
+    auto fb_pred = [](const std::pair<const Function*, size_t>& a, const std::pair<const Function*, size_t>& b) {
+        return a.second > b.second;
+    };
+    // sort according to matching arguments
+    std::sort(fallback1Func.begin(), fallback1Func.end(), fb_pred);
+    std::sort(fallback2Func.begin(), fallback2Func.end(), fb_pred);
     for (const auto& fb : { fallback1Func, fallback2Func }) {
         if (fb.size() == 1)
-            return fb.front();
+            return fb[0].first;
+        if (fb.size() >= 2) {
+            if (fb[0].second > fb[1].second)
+                return fb[0].first;
+        }
         if (fb.size() == 2) {
-            if (fb[0]->isConst() && !fb[1]->isConst())
-                return fb[1];
-            if (fb[1]->isConst() && !fb[0]->isConst())
-                return fb[0];
+            if (fb[0].first->isConst() && !fb[1].first->isConst())
+                return fb[1].first;
+            if (fb[1].first->isConst() && !fb[0].first->isConst())
+                return fb[0].first;
         }
     }
 
@@ -5971,11 +5983,11 @@ const Function* Scope::findFunction(const Token *tok, bool requireConst, Referen
     for (const auto& fb : { fallback1Func, fallback2Func }) {
         const Function* ret = nullptr;
         for (std::size_t i = 0; i < fb.size(); ++i) {
-            if (std::find(matches.cbegin(), matches.cend(), fb[i]) == matches.cend())
+            if (std::find(matches.cbegin(), matches.cend(), fb[i].first) == matches.cend())
                 continue;
-            if (this == fb[i]->nestedIn) {
+            if (this == fb[i].first->nestedIn) {
                 if (!ret)
-                    ret = fb[i];
+                    ret = fb[i].first;
                 else {
                     ret = nullptr;
                     break;
@@ -6581,10 +6593,12 @@ void SymbolDatabase::setValueType(Token* tok, const Enumerator& enumerator, cons
         valuetype.setDebugPath(tok, loc);
     valuetype.typeScope = enumerator.scope;
     const Token * type = enumerator.scope->enumType;
+    if (type && type->astParent())
+        type = type->astParent();
     if (type) {
         valuetype.type = ValueType::typeFromString(type->str(), type->isLong());
-        if (valuetype.type == ValueType::Type::UNKNOWN_TYPE && type->isStandardType())
-            valuetype.fromLibraryType(type->str(), mSettings);
+        if (valuetype.type == ValueType::Type::UNKNOWN_TYPE)
+            valuetype.fromLibraryType(type->expressionString(), mSettings);
 
         if (valuetype.isIntegral()) {
             if (type->isSigned())
@@ -7172,7 +7186,7 @@ static const Token* parsedecl(const Token* type,
             else if (enum_type->isUnsigned())
                 valuetype->sign = ValueType::Sign::UNSIGNED;
             else
-                valuetype->sign = defaultSignedness;
+                valuetype->sign = defaultSignedness; // TODO: this is implementation-dependent might be separate from char
             const ValueType::Type t = ValueType::typeFromString(enum_type->str(), enum_type->isLong());
             if (t != ValueType::Type::UNKNOWN_TYPE)
                 valuetype->type = t;
@@ -7441,7 +7455,7 @@ void SymbolDatabase::setValueTypeInTokenList(bool reportDebugWarnings, Token *to
                 const bool unsignedSuffix = (tokStr.find_last_of("uU") != std::string::npos);
                 ValueType::Sign sign = unsignedSuffix ? ValueType::Sign::UNSIGNED : ValueType::Sign::SIGNED;
                 ValueType::Type type = ValueType::Type::INT;
-                const MathLib::biguint value = MathLib::toBigUNumber(tokStr);
+                const MathLib::biguint value = MathLib::toBigUNumber(tokStr, tok);
                 for (std::size_t pos = tokStr.size() - 1U; pos > 0U; --pos) {
                     const char suffix = tokStr[pos];
                     if (suffix == 'u' || suffix == 'U')
@@ -7573,7 +7587,7 @@ void SymbolDatabase::setValueTypeInTokenList(bool reportDebugWarnings, Token *to
                 else if (tok->previous()->isSigned())
                     valuetype.sign = ValueType::Sign::SIGNED;
                 else if (valuetype.isIntegral() && valuetype.type != ValueType::UNKNOWN_INT)
-                    valuetype.sign = mDefaultSignedness;
+                    valuetype.sign = (valuetype.type == ValueType::Type::CHAR) ? mDefaultSignedness : ValueType::Sign::SIGNED;
                 setValueType(tok, valuetype);
             }
 

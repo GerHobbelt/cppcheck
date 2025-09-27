@@ -2145,7 +2145,7 @@ private:
                        "    static const struct ab {\n"
                        "        int a,b;\n"
                        "        int get_a() { return a; }"
-                       "    } = { 0, 0 };\n"
+                       "    } x = { 0, 0 };\n"
                        "}", true, false);
         ASSERT_EQUALS("", errout_str());
 
@@ -7880,7 +7880,7 @@ private:
         std::list<Check::FileInfo*> fileInfo;
         Check& c = getCheck<CheckUninitVar>();
         fileInfo.push_back(c.getFileInfo(tokenizer, settings));
-        c.analyseWholeProgram(ctu, fileInfo, settings, *this); // TODO: check result
+        c.analyseWholeProgram(*ctu, fileInfo, settings, *this); // TODO: check result
         while (!fileInfo.empty()) {
             delete fileInfo.back();
             fileInfo.pop_back();

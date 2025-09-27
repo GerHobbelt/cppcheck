@@ -102,11 +102,12 @@ public:
     /** Base class used for whole-program analysis */
     class CPPCHECKLIB FileInfo {
     public:
-        FileInfo() = default;
+        explicit FileInfo(std::string f0 = {}) : file0(std::move(f0)) {}
         virtual ~FileInfo() = default;
         virtual std::string toString() const {
             return std::string();
         }
+        std::string file0;
     };
 
     virtual FileInfo * getFileInfo(const Tokenizer& /*tokenizer*/, const Settings& /*settings*/) const {
@@ -119,11 +120,7 @@ public:
     }
 
     // Return true if an error is reported.
-    virtual bool analyseWholeProgram(const CTU::FileInfo *ctu, const std::list<FileInfo*> &fileInfo, const Settings& /*settings*/, ErrorLogger & /*errorLogger*/) {
-        (void)ctu;
-        (void)fileInfo;
-        //(void)settings;
-        //(void)errorLogger;
+    virtual bool analyseWholeProgram(const CTU::FileInfo& /*ctu*/, const std::list<FileInfo*>& /*fileInfo*/, const Settings& /*settings*/, ErrorLogger & /*errorLogger*/) {
         return false;
     }
 

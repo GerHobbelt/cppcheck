@@ -59,6 +59,7 @@ private:
         TEST_CASE(zeroDiv18);
         TEST_CASE(zeroDiv19);
         TEST_CASE(zeroDiv20); // #11175
+        TEST_CASE(zeroDiv21);
 
         TEST_CASE(zeroDivCond); // division by zero / useless condition
 
@@ -677,6 +678,17 @@ private:
               "    return 42/(++x);\n"
               "}");
         ASSERT_EQUALS("[test.cpp:4]: (error) Division by zero.\n", errout_str());
+    }
+
+    void zeroDiv21()
+    {
+        check("int f(int n) {\n"
+              "    return 1 / ((1 / n) - 1);\n"
+              "}\n"
+              "int g() {\n"
+              "    return f(1);\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:2]: (error) Division by zero.\n", errout_str());
     }
 
     void zeroDivCond() {
@@ -2439,6 +2451,9 @@ private:
               "void g(const std::vector<int> v[2]) {}\n"
               "int h(const std::array<std::vector<int>, 2> a) { return a[0][0]; }\n");
         ASSERT_EQUALS("[test.cpp:4]: (performance) Function parameter 'a' should be passed by const reference.\n", errout_str());
+
+        check("void f(const std::array<int, 10> a[]) {}\n"); // #13524
+        ASSERT_EQUALS("", errout_str());
 
         /*const*/ Settings settings1 = settingsBuilder().platform(Platform::Type::Win64).build();
         check("using ui64 = unsigned __int64;\n"
@@ -5111,7 +5126,7 @@ private:
               "    {\n"
               "    case 2:\n"
               "        y |= z;\n"
-              "        z++\n"
+              "        z++;\n"
               "    default:\n"
               "        y |= z;\n"
               "        break;\n"
@@ -5662,6 +5677,74 @@ private:
         ASSERT_EQUALS("[test.cpp:6]: (style) Consecutive return, break, continue, goto or throw statements are unnecessary.\n"
                       "[test.cpp:1]: (style) Parameter 'argv' can be declared as const array\n",
                       errout_str());
+
+        check("int f(int i) {\n" // #13491
+              "    switch (i) {\n"
+              "    case 0:\n"
+              "        return 0;\n"
+              "        int j;\n"
+              "    case 1:\n"
+              "    case 2:\n"
+              "        j = 5;\n"
+              "        return j + i;\n"
+              "    }\n"
+              "    return 3;\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        check("int f(int i) {\n"
+              "    switch (i) {\n"
+              "    {\n"
+              "    case 0:\n"
+              "        return 0;\n"
+              "    }\n"
+              "    {\n"
+              "        int j;\n"
+              "    case 1:\n"
+              "    case 2:\n"
+              "        j = 5;\n"
+              "        return j + i;\n"
+              "    }\n"
+              "    }\n"
+              "    return 3;\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        check("int f(int i) {\n"
+              "    switch (i) {\n"
+              "    case 0:\n"
+              "        return 0;\n"
+              "        int j;\n"
+              "        dostuff();\n"
+              "    case 1:\n"
+              "    case 2:\n"
+              "        j = 5;\n"
+              "        return j + i;\n"
+              "    }\n"
+              "    return 3;\n"
+              "}\n");
+        TODO_ASSERT_EQUALS("[test.cpp:6]: (style) Statements following 'return' will never be executed.\n", "", errout_str());
+
+        check("int f() {\n" // #13472
+              "    int var;\n"
+              "    auto int ret();\n"
+              "    int ret() {\n"
+              "        return var;\n"
+              "    }\n"
+              "    var = 42;\n"
+              "    return ret();\n"
+              "}\n", /*cpp*/ false);
+        ASSERT_EQUALS("", errout_str());
+
+        check("void f() {\n" // #13516
+              "    io_uring_for_each_cqe(&ring, head, cqe) {\n"
+              "        if (cqe->res == -EOPNOTSUPP)\n"
+              "            printf(\"error\");\n"
+              "        goto ok;\n"
+              "    }\n"
+              "    usleep(10000);\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
     }
 
     void redundantContinue() {
@@ -9562,6 +9645,13 @@ private:
               "    memset(a, false, 5);\n"
               "}");
         ASSERT_EQUALS("[test.cpp:3]: (portability, inconclusive) Array 'a' might be filled incompletely. Did you forget to multiply the size given to 'memset()' with 'sizeof(*a)'?\n", errout_str());
+
+        check("void f() {\n"
+              "    const int n = 5;"
+              "    int a[n];\n"
+              "    memset(a, 0, n);\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:3]: (warning, inconclusive) Array 'a' is filled incompletely. Did you forget to multiply the size given to 'memset()' with 'sizeof(*a)'?\n", errout_str());
     }
 
     void redundantVarAssignment() {
@@ -10972,6 +11062,13 @@ private:
               "    C(A<T> x_, B<T> y_) : x(x_), y(y_) {}\n"
               "};\n");
         ASSERT_EQUALS("", errout_str()); // don't crash
+
+        check("template <typename T, int N>\n" // #13537
+              "    struct S {\n"
+              "    T a[N];\n"
+              "};\n"
+              "void f(S<char, 3> s) {}\n");
+        ASSERT_EQUALS("", errout_str());
     }
 
     void checkComparisonFunctionIsAlwaysTrueOrFalse() {

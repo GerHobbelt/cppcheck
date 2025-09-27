@@ -25,12 +25,7 @@
 #include "tokenize.h"
 
 #include <list>
-#include <sstream> // IWYU pragma: keep
-
-class TestMemleakInClass;
-class TestMemleakNoVar;
-class TestMemleakStructMember;
-
+#include <sstream>
 
 class TestMemleak : private TestFixture {
 public:

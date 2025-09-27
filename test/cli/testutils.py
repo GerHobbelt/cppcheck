@@ -77,6 +77,41 @@ def cppcheck(args, env=None, remove_checkers_report=True, cwd=None, cppcheck_exe
     exe = cppcheck_exe if cppcheck_exe else __lookup_cppcheck_exe()
     assert exe is not None, 'no cppcheck binary found'
 
+    if 'TEST_CPPCHECK_INJECT_J' in os.environ:
+        found_j = False
+        for arg in args:
+            if arg.startswith('-j'):
+                found_j = True
+                break
+        if not found_j:
+            arg_j = '-j' + str(os.environ['TEST_CPPCHECK_INJECT_J'])
+            args.append(arg_j)
+
+    if 'TEST_CPPCHECK_INJECT_CLANG' in os.environ:
+        found_clang = False
+        for arg in args:
+            if arg.startswith('--clang'):
+                found_clang = True
+                break
+        if not found_clang:
+            arg_clang = '--clang=' + str(os.environ['TEST_CPPCHECK_INJECT_CLANG'])
+            args.append(arg_clang)
+
+    if 'TEST_CPPCHECK_INJECT_EXECUTOR' in os.environ:
+        found_jn = False
+        found_executor = False
+        for arg in args:
+            if arg.startswith('-j') and arg != '-j1':
+                found_jn = True
+                continue
+            if arg.startswith('--executor'):
+                found_executor = True
+                continue
+        # only add '--executor' if we are actually using multiple jobs
+        if found_jn and not found_executor:
+            arg_executor = '--executor=' + str(os.environ['TEST_CPPCHECK_INJECT_EXECUTOR'])
+            args.append(arg_executor)
+
     logging.info(exe + ' ' + ' '.join(args))
     p = subprocess.Popen([exe] + args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, cwd=cwd)
     try:

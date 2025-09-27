@@ -22,6 +22,7 @@
 #include "platform.h"
 #include "settings.h"
 #include "fixture.h"
+#include "standards.h"
 #include "token.h"
 #include "tokenize.h"
 #include "tokenlist.h"
@@ -254,7 +255,8 @@ private:
         Tokenizer tokenizer(settings1, this);
 
         std::istringstream istr(code);
-        tokenizer.list.createTokens(istr, Standards::Language::CPP);
+        if (!tokenizer.list.createTokens(istr, Standards::Language::CPP))
+            return "";
         tokenizer.createLinks();
         tokenizer.simplifyTypedef();
 
@@ -295,7 +297,8 @@ private:
         Tokenizer tokenizer(settings1, this);
 
         std::istringstream istr(code);
-        tokenizer.list.createTokens(istr, "file.c");
+        if (!tokenizer.list.createTokens(istr, "file.c"))
+            return "";
         tokenizer.createLinks();
         tokenizer.simplifyTypedef();
         try {
@@ -4156,7 +4159,7 @@ private:
 
         Tokenizer tokenizer(settings1, this);
         std::istringstream istr(code);
-        tokenizer.list.createTokens(istr, "file.c");
+        ASSERT(tokenizer.list.createTokens(istr, "file.c"));
         tokenizer.createLinks();
         tokenizer.simplifyTypedef();
 

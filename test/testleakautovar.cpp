@@ -24,12 +24,9 @@
 #include "fixture.h"
 #include "tokenize.h"
 
-#include <sstream> // IWYU pragma: keep
+#include <sstream>
 #include <string>
 #include <vector>
-
-class TestLeakAutoVarStrcpy;
-class TestLeakAutoVarWindows;
 
 class TestLeakAutoVar : public TestFixture {
 public:
@@ -113,6 +110,7 @@ private:
         TEST_CASE(deallocuse12);
         TEST_CASE(deallocuse13);
         TEST_CASE(deallocuse14);
+        TEST_CASE(deallocuse15);
 
         TEST_CASE(doublefree1);
         TEST_CASE(doublefree2);
@@ -671,6 +669,17 @@ private:
               "        if (d) {}\n"
               "}", /*cpp*/ true);
         ASSERT_EQUALS("[test.cpp:6]: (error) Memory leak: d\n", errout.str());
+
+        check("struct S {\n" // #12354
+              "    int i{};\n"
+              "    void f();\n"
+              "};\n"
+              "void f(S* p, bool b) {\n"
+              "    if (b)\n"
+              "        p = new S();\n"
+              "    p->f();\n"
+              "}", /*cpp*/ true);
+        ASSERT_EQUALS("[test.cpp:9]: (error) Memory leak: p\n", errout.str());
     }
 
     void realloc1() {
@@ -1033,6 +1042,15 @@ private:
               "    }, 1);\n"
               "    return 0;\n"
               "}\n", /*cpp*/ true);
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void deallocuse15() {
+        check("bool FileExists(const char* filename) {\n" // #12490
+              "    FILE* f = fopen(filename, \"rb\");\n"
+              "    if (f) fclose(f);\n"
+              "    return f;\n"
+              "}\n");
         ASSERT_EQUALS("", errout.str());
     }
 
@@ -3115,6 +3133,7 @@ private:
         TEST_CASE(fclose_false_positive); // #9575
         TEST_CASE(strcpy_false_negative);
         TEST_CASE(doubleFree);
+        TEST_CASE(memleak_std_string);
     }
 
     void returnedValue() { // #9298
@@ -3168,6 +3187,27 @@ private:
               "    free(p);\n"
               "}\n");
         ASSERT_EQUALS("", errout.str());
+    }
+
+    void memleak_std_string() {
+        check("struct S {\n" // #12354
+              "    std::string s;\n"
+              "    void f();\n"
+              "};\n"
+              "void f(S* p, bool b) {\n"
+              "    if (b)\n"
+              "        p = new S();\n"
+              "    p->f();\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:9]: (error) Memory leak: p\n", errout.str());
+
+        check("class B { std::string s; };\n" // #12062
+              "class D : public B {};\n"
+              "void g() {\n"
+              "    auto d = new D();\n"
+              "    if (d) {}\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:6]: (error) Memory leak: d\n", errout.str());
     }
 };
 
@@ -3248,3 +3288,39 @@ private:
 };
 
 REGISTER_TEST(TestLeakAutoVarWindows)
+
+class TestLeakAutoVarPosix : public TestFixture {
+public:
+    TestLeakAutoVarPosix() : TestFixture("TestLeakAutoVarPosix") {}
+
+private:
+    const Settings settings = settingsBuilder().library("std.cfg").library("posix.cfg").build();
+
+    void check_(const char* file, int line, const char code[]) {
+        // Clear the error buffer..
+        errout.str("");
+
+        // Tokenize..
+        Tokenizer tokenizer(settings, this);
+        std::istringstream istr(code);
+        ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
+
+        // Check for leaks..
+        runChecks<CheckLeakAutoVar>(tokenizer, this);
+    }
+
+    void run() override {
+        TEST_CASE(memleak_getline);
+    }
+
+    void memleak_getline() {
+        check("void f(std::ifstream &is) {\n" // #12297
+              "    std::string str;\n"
+              "    if (getline(is, str, 'x').good()) {};\n"
+              "    if (!getline(is, str, 'x').good()) {};\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+    }
+};
+
+REGISTER_TEST(TestLeakAutoVarPosix)

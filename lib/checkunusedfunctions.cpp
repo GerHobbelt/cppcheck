@@ -34,18 +34,14 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
-#include <fstream> // IWYU pragma: keep
+#include <fstream>
 #include <map>
-#include <sstream> // IWYU pragma: keep
+#include <sstream>
 #include <tuple>
 #include <utility>
 #include <vector>
 
 #include "xml.h"
-
-namespace CTU {
-    class FileInfo;
-}
 
 //---------------------------------------------------------------------------
 

@@ -40,6 +40,7 @@
 #include <iterator>
 #include <numeric> // std::accumulate
 #include <sstream>
+#include <utility>
 
 #include "xml.h"
 
@@ -326,7 +327,7 @@ void CheckBufferOverrun::arrayIndex()
             const Token* changeTok = var->scope()->bodyStart;
             bool isChanged = false;
             while ((changeTok = findVariableChanged(changeTok->next(), var->scope()->bodyEnd, /*indirect*/ 0, var->declarationId(),
-                                                    /*globalvar*/ false, mSettings, mTokenizer->isCPP()))) {
+                                                    /*globalvar*/ false, mSettings))) {
                 if (!Token::simpleMatch(changeTok->astParent(), "[")) {
                     isChanged = true;
                     break;
@@ -792,7 +793,7 @@ void CheckBufferOverrun::stringNotZeroTerminated()
                 const Token *rhs = tok2->next()->astOperand2();
                 if (!rhs || !rhs->hasKnownIntValue() || rhs->getKnownIntValue() != 0)
                     continue;
-                if (isSameExpression(mTokenizer->isCPP(), false, args[0], tok2->link()->astOperand1(), mSettings->library, false, false))
+                if (isSameExpression(false, args[0], tok2->link()->astOperand1(), mSettings->library, false, false))
                     isZeroTerminated = true;
             }
             if (isZeroTerminated)
@@ -948,13 +949,14 @@ bool CheckBufferOverrun::isCtuUnsafePointerArith(const Settings *settings, const
 /** @brief Parse current TU and extract file info */
 Check::FileInfo *CheckBufferOverrun::getFileInfo(const Tokenizer *tokenizer, const Settings *settings) const
 {
-    auto *fileInfo = new MyFileInfo;
-    fileInfo->unsafeArrayIndex = CTU::getUnsafeUsage(tokenizer, settings, isCtuUnsafeArrayIndex);
-    fileInfo->unsafePointerArith = CTU::getUnsafeUsage(tokenizer, settings, isCtuUnsafePointerArith);
-    if (fileInfo->unsafeArrayIndex.empty() && fileInfo->unsafePointerArith.empty()) {
-        delete fileInfo;
+    const std::list<CTU::FileInfo::UnsafeUsage> &unsafeArrayIndex = CTU::getUnsafeUsage(tokenizer, settings, isCtuUnsafeArrayIndex);
+    const std::list<CTU::FileInfo::UnsafeUsage> &unsafePointerArith = CTU::getUnsafeUsage(tokenizer, settings, isCtuUnsafePointerArith);
+    if (unsafeArrayIndex.empty() && unsafePointerArith.empty()) {
         return nullptr;
     }
+    auto *fileInfo = new MyFileInfo;
+    fileInfo->unsafeArrayIndex = unsafeArrayIndex;
+    fileInfo->unsafePointerArith = unsafePointerArith;
     return fileInfo;
 }
 
@@ -1088,7 +1090,7 @@ void CheckBufferOverrun::objectIndex()
                     if (var->valueType()->pointer > obj->valueType()->pointer)
                         continue;
                 }
-                if (obj->valueType() && var->valueType() && (obj->isCast() || (mTokenizer->isCPP() && isCPPCast(obj)) || obj->valueType()->pointer)) { // allow cast to a different type
+                if (obj->valueType() && var->valueType() && (obj->isCast() || (obj->isCpp() && isCPPCast(obj)) || obj->valueType()->pointer)) { // allow cast to a different type
                     const auto varSize = var->valueType()->typeSize(mSettings->platform);
                     if (varSize == 0)
                         continue;

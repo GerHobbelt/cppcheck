@@ -21,6 +21,7 @@
 #include "errortypes.h"
 #include "mathlib.h"
 #include "settings.h"
+#include "standards.h"
 #include "symboldatabase.h"
 #include "token.h"
 #include "tokenize.h"
@@ -37,7 +38,7 @@
 #include <map>
 #include <memory>
 #include <set>
-#include <sstream> // IWYU pragma: keep
+#include <sstream>
 #include <stack>
 #include <string>
 #include <utility>

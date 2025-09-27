@@ -19,7 +19,6 @@
 #include "errortypes.h"
 #include "fixture.h"
 #include "helpers.h"
-#include "library.h"
 #include "platform.h"
 #include "settings.h"
 #include "sourcelocation.h"
@@ -34,12 +33,10 @@
 #include <iterator>
 #include <limits>
 #include <list>
-#include <map>
 #include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 class TestSymbolDatabase;
@@ -424,6 +421,7 @@ private:
         TEST_CASE(symboldatabase102);
         TEST_CASE(symboldatabase103);
         TEST_CASE(symboldatabase104);
+        TEST_CASE(symboldatabase105);
 
         TEST_CASE(createSymbolDatabaseFindAllScopes1);
         TEST_CASE(createSymbolDatabaseFindAllScopes2);
@@ -819,7 +817,7 @@ private:
         }
         {
             reset();
-            givenACodeSampleToTokenize constpointer("const int* p;");
+            const SimpleTokenizer constpointer(*this, "const int* p;");
             Variable v2(constpointer.tokens()->tokAt(3), constpointer.tokens()->next(), constpointer.tokens()->tokAt(2), 0, AccessControl::Public, nullptr, nullptr, &settings1);
             ASSERT(false == v2.isArray());
             ASSERT(true == v2.isPointer());
@@ -5551,6 +5549,24 @@ private:
                               "void S::f(const bool b) {}\n");
             ASSERT(db != nullptr);
             ASSERT_EQUALS("", errout.str());
+        }
+    }
+
+    void symboldatabase105() {
+        {
+            GET_SYMBOL_DB_DBG("template <class T>\n"
+                              "struct S : public std::deque<T> {\n"
+                              "    using std::deque<T>::clear;\n"
+                              "    void f();\n"
+                              "};\n"
+                              "template <class T>\n"
+                              "void S<T>::f() {\n"
+                              "    clear();\n"
+                              "}\n");
+            ASSERT(db != nullptr);
+            ASSERT_EQUALS("", errout.str());
+            const Token* const c = Token::findsimplematch(tokenizer.tokens(), "clear (");
+            ASSERT(!c->type());
         }
     }
 

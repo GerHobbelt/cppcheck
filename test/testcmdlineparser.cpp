@@ -33,7 +33,6 @@
 #include "timer.h"
 #include "utils.h"
 
-#include <cstdint>
 #include <cstdio>
 #include <list>
 #include <memory>
@@ -300,7 +299,7 @@ private:
         TEST_CASE(checksMaxTime);
         TEST_CASE(checksMaxTime2);
         TEST_CASE(checksMaxTimeInvalid);
-#ifdef THREADING_MODEL_FORK
+#ifdef HAS_THREADING_MODEL_FORK
         TEST_CASE(loadAverage);
         TEST_CASE(loadAverage2);
         TEST_CASE(loadAverageInvalid);
@@ -339,6 +338,7 @@ private:
         TEST_CASE(ruleFileEmpty);
         TEST_CASE(ruleFileMissing);
         TEST_CASE(ruleFileInvalid);
+        TEST_CASE(ruleFileNoRoot);
 #else
         TEST_CASE(ruleFileNotSupported);
 #endif
@@ -349,6 +349,26 @@ private:
         TEST_CASE(signedCharUnsignedChar);
         TEST_CASE(library);
         TEST_CASE(libraryMissing);
+        TEST_CASE(suppressXml);
+        TEST_CASE(suppressXmlEmpty);
+        TEST_CASE(suppressXmlMissing);
+        TEST_CASE(suppressXmlInvalid);
+        TEST_CASE(suppressXmlNoRoot);
+        TEST_CASE(executorDefault);
+        TEST_CASE(executorAuto);
+        TEST_CASE(executorAutoNoJobs);
+#if defined(HAS_THREADING_MODEL_THREAD)
+        TEST_CASE(executorThread);
+        TEST_CASE(executorThreadNoJobs);
+#else
+        TEST_CASE(executorThreadNotSupported);
+#endif
+#if defined(HAS_THREADING_MODEL_FORK)
+        TEST_CASE(executorProcess);
+        TEST_CASE(executorProcessNoJobs);
+#else
+        TEST_CASE(executorProcessNotSupported);
+#endif
 
         TEST_CASE(ignorepaths1);
         TEST_CASE(ignorepaths2);
@@ -1890,7 +1910,7 @@ private:
         ASSERT_EQUALS("cppcheck: error: argument to '--checks-max-time=' is not valid - not an integer.\n", logger->str());
     }
 
-#ifdef THREADING_MODEL_FORK
+#ifdef HAS_THREADING_MODEL_FORK
     void loadAverage() {
         REDIRECT;
         const char * const argv[] = {"cppcheck", "-l", "12", "file.cpp"};
@@ -2163,6 +2183,13 @@ private:
         ASSERT_EQUALS_ENUM(CmdLineParser::Result::Fail, parser->parseFromArgs(3, argv));
         ASSERT_EQUALS("cppcheck: error: unable to load rule-file 'rule.xml' (XML_ERROR_EMPTY_DOCUMENT).\n", logger->str());
     }
+
+    void ruleFileNoRoot() {
+        REDIRECT;
+        ScopedFile file("rule.xml", "<?xml version=\"1.0\"?>");
+        const char * const argv[] = {"cppcheck", "--rule-file=rule.xml", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(3, argv));
+    }
 #else
     void ruleFileNotSupported() {
         REDIRECT;
@@ -2188,6 +2215,133 @@ private:
         ASSERT_EQUALS("posix2", *settings->libraries.cbegin());
         ASSERT_EQUALS("cppcheck: Failed to load library configuration file 'posix2'. File not found\n", logger->str());
     }
+
+    void suppressXml() {
+        REDIRECT;
+        ScopedFile file("suppress.xml",
+                        "<suppressions>\n"
+                        "<suppress>\n"
+                        "<id>uninitvar</id>\n"
+                        "</suppress>\n"
+                        "</suppressions>");
+        const char * const argv[] = {"cppcheck", "--suppress-xml=suppress.xml", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(3, argv));
+        const auto& supprs = settings->supprs.nomsg.getSuppressions();
+        ASSERT_EQUALS(1, supprs.size());
+        const auto it = supprs.cbegin();
+        ASSERT_EQUALS("uninitvar", it->errorId);
+    }
+
+    void suppressXmlEmpty() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--suppress-xml=", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Fail, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS("cppcheck: error: failed to load suppressions XML '' (XML_ERROR_FILE_NOT_FOUND).\n", logger->str());
+    }
+
+    void suppressXmlMissing() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--suppress-xml=suppress.xml", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Fail, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS("cppcheck: error: failed to load suppressions XML 'suppress.xml' (XML_ERROR_FILE_NOT_FOUND).\n", logger->str());
+    }
+
+    void suppressXmlInvalid() {
+        REDIRECT;
+        ScopedFile file("suppress.xml", "");
+        const char * const argv[] = {"cppcheck", "--suppress-xml=suppress.xml", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Fail, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS("cppcheck: error: failed to load suppressions XML 'suppress.xml' (XML_ERROR_EMPTY_DOCUMENT).\n", logger->str());
+    }
+
+    void suppressXmlNoRoot() {
+        REDIRECT;
+        ScopedFile file("suppress.xml", "<?xml version=\"1.0\"?>");
+        const char * const argv[] = {"cppcheck", "--suppress-xml=suppress.xml", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Fail, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS("cppcheck: error: failed to load suppressions XML 'suppress.xml' (no root node found).\n", logger->str());
+    }
+
+    void executorDefault() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(2, argv));
+#if defined(HAS_THREADING_MODEL_FORK)
+        ASSERT_EQUALS_ENUM(Settings::ExecutorType::Process, settings->executor);
+#elif defined(HAS_THREADING_MODEL_THREAD)
+        ASSERT_EQUALS_ENUM(Settings::ExecutorType::Thread, settings->executor);
+#endif
+    }
+
+    void executorAuto() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "-j2", "--executor=auto", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(4, argv));
+#if defined(HAS_THREADING_MODEL_FORK)
+        ASSERT_EQUALS_ENUM(Settings::ExecutorType::Process, settings->executor);
+#elif defined(HAS_THREADING_MODEL_THREAD)
+        ASSERT_EQUALS_ENUM(Settings::ExecutorType::Thread, settings->executor);
+#endif
+    }
+
+    void executorAutoNoJobs() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--executor=auto", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(3, argv));
+#if defined(HAS_THREADING_MODEL_FORK)
+        ASSERT_EQUALS_ENUM(Settings::ExecutorType::Process, settings->executor);
+#elif defined(HAS_THREADING_MODEL_THREAD)
+        ASSERT_EQUALS_ENUM(Settings::ExecutorType::Thread, settings->executor);
+#endif
+    }
+
+#if defined(HAS_THREADING_MODEL_THREAD)
+    void executorThread() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "-j2", "--executor=thread", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(4, argv));
+        ASSERT_EQUALS_ENUM(Settings::ExecutorType::Thread, settings->executor);
+    }
+
+    void executorThreadNoJobs() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--executor=thread", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS_ENUM(Settings::ExecutorType::Thread, settings->executor);
+        ASSERT_EQUALS("cppcheck: '--executor' has no effect as only a single job will be used.\n", logger->str());
+    }
+#else
+    void executorThreadNotSupported() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "-j2", "--executor=thread", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Fail, parser->parseFromArgs(4, argv));
+        ASSERT_EQUALS("cppcheck: error: executor type 'thread' cannot be used as Cppcheck has not been built with a respective threading model.\n", logger->str());
+    }
+#endif
+
+#if defined(HAS_THREADING_MODEL_FORK)
+    void executorProcess() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "-j2", "--executor=process", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(4, argv));
+        ASSERT_EQUALS_ENUM(Settings::ExecutorType::Process, settings->executor);
+    }
+
+    void executorProcessNoJobs() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--executor=process", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS_ENUM(Settings::ExecutorType::Process, settings->executor);
+        ASSERT_EQUALS("cppcheck: '--executor' has no effect as only a single job will be used.\n", logger->str());
+    }
+#else
+    void executorProcessNotSupported() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "-j2", "--executor=process", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Fail, parser->parseFromArgs(4, argv));
+        ASSERT_EQUALS("cppcheck: error: executor type 'process' cannot be used as Cppcheck has not been built with a respective threading model.\n", logger->str());
+    }
+#endif
 
     void ignorepaths1() {
         REDIRECT;

@@ -1,7 +1,5 @@
-# Some convenient links:
-# - https://github.com/actions/virtual-environments/blob/master/images/win/Windows2019-Readme.md
-#
-
+# Syntax reference https://help.github.com/en/actions/reference/workflow-syntax-for-github-actions
+# Environment reference https://help.github.com/en/actions/reference/virtual-environments-for-github-hosted-runners
 name: CI-windows
 
 on:
@@ -160,15 +158,36 @@ jobs:
         if: matrix.config == 'release'
         run: .\bin\testrunner.exe || exit /b !errorlevel!
 
-      - name: Run test/cli
+      - name: Prepare test/cli
         if: matrix.config == 'release'
         run: |
           :: since FILESDIR is not set copy the binary to the root so the addons are found
           :: copy .\build\bin\Release\cppcheck.exe .\cppcheck.exe || exit /b !errorlevel!
           copy .\bin\cppcheck.exe .\cppcheck.exe || exit /b !errorlevel!
           copy .\bin\cppcheck-core.dll .\cppcheck-core.dll || exit /b !errorlevel!
+
+      - name: Run test/cli
+        if: matrix.config == 'release'
+        run: |
           cd test/cli || exit /b !errorlevel!
           python -m pytest -Werror --strict-markers -vv || exit /b !errorlevel!
+
+      - name: Run test/cli (-j2)
+        if: matrix.config == 'release'
+        run: |
+          cd test/cli || exit /b !errorlevel!
+          python -m pytest -Werror --strict-markers -vv || exit /b !errorlevel!
+        env:
+          TEST_CPPCHECK_INJECT_J: 2
+
+      # TODO: install clang
+      - name: Run test/cli (--clang)
+        if: false # matrix.config == 'release'
+        run: |
+          cd test/cli || exit /b !errorlevel!
+          python -m pytest -Werror --strict-markers -vv || exit /b !errorlevel!
+        env:
+          TEST_CPPCHECK_INJECT_CLANG: clang
 
       - name: Test addons
         if: matrix.config == 'release'

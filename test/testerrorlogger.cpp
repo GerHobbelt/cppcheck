@@ -24,6 +24,7 @@
 
 #include <list>
 #include <string>
+#include <utility>
 
 #include "xml.h"
 
@@ -278,6 +279,8 @@ private:
                                "</error>";
         tinyxml2::XMLDocument doc;
         ASSERT(doc.Parse(xmldata, sizeof(xmldata)) == tinyxml2::XML_SUCCESS);
+        const auto * const rootnode = doc.FirstChildElement();
+        ASSERT(rootnode);
         ErrorMessage msg(doc.FirstChildElement());
         ASSERT_EQUALS("errorId", msg.id);
         ASSERT_EQUALS_ENUM(Severity::error, msg.severity);

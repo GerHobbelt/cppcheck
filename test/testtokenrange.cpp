@@ -18,6 +18,7 @@
 
 #include "settings.h"
 #include "fixture.h"
+#include "helpers.h"
 #include "token.h"
 #include "tokenize.h"
 #include "tokenlist.h"
@@ -36,8 +37,6 @@ public:
     TestTokenRange() : TestFixture("TestTokenRange") {}
 
 private:
-    const Settings settings;
-
     void run() override {
         TEST_CASE(enumerationToEnd);
         TEST_CASE(untilHelperToEnd);
@@ -71,39 +70,35 @@ private:
     }
 
     void enumerationToEnd() const {
-        std::istringstream istr("void a(){} void main(){ if(true){a();} }");
-        TokenList tokenList(&settings);
-        tokenList.createTokens(istr, "test.cpp");
+        const char code[] = "void a(){} void main(){ if(true){a();} }";
+        const SimpleTokenList tokenList(code);
         ASSERT_EQUALS("", testTokenRange(ConstTokenRange{ tokenList.front(), nullptr }, tokenList.front(), nullptr));
     }
 
     void untilHelperToEnd() const {
-        std::istringstream istr("void a(){} void main(){ if(true){a();} }");
-        TokenList tokenList(&settings);
-        tokenList.createTokens(istr, "test.cpp");
+        const char code[] = "void a(){} void main(){ if(true){a();} }";
+        const SimpleTokenList tokenList(code);
         ASSERT_EQUALS("", testTokenRange(tokenList.front()->until(nullptr), tokenList.front(), nullptr));
     }
 
     void untilHelperPartWay() const {
-        std::istringstream istr("void a(){} void main(){ if(true){a();} }");
-        TokenList tokenList(&settings);
-        tokenList.createTokens(istr, "test.cpp");
+        const char code[] = "void a(){} void main(){ if(true){a();} }";
+        const SimpleTokenList tokenList(code);
         const Token* start = tokenList.front()->tokAt(4);
         const Token* end = start->tokAt(8);
         ASSERT_EQUALS("", testTokenRange(start->until(end), start, end));
     }
 
     void partialEnumeration() const {
-        std::istringstream istr("void a(){} void main(){ if(true){a();} }");
-        TokenList tokenList(&settings);
-        tokenList.createTokens(istr, "test.cpp");
+        const char code[] = "void a(){} void main(){ if(true){a();} }";
+        const SimpleTokenList tokenList(code);
         const Token* start = tokenList.front()->tokAt(4);
         const Token* end = tokenList.front()->tokAt(10);
         ASSERT_EQUALS("", testTokenRange(ConstTokenRange{ start, end }, start, end));
     }
 
     void scopeExample() const {
-        Tokenizer tokenizer(settings);
+        Tokenizer tokenizer(settingsDefault);
         std::istringstream sample("void a(){} void main(){ if(true){a();} }");
         ASSERT(tokenizer.tokenize(sample, "test.cpp"));
 
@@ -118,9 +113,8 @@ private:
     }
 
     void exampleAlgorithms() const {
-        std::istringstream istr("void a(){} void main(){ if(true){a();} }");
-        TokenList tokenList(&settings);
-        tokenList.createTokens(istr, "test.cpp");
+        const char code[] = "void a(){} void main(){ if(true){a();} }";
+        const SimpleTokenList tokenList(code);
         ConstTokenRange range{ tokenList.front(), nullptr };
         ASSERT_EQUALS(true, std::all_of(range.begin(), range.end(), [](const Token*) {
             return true;

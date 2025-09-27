@@ -30,7 +30,7 @@
 #include <cctype>   // std::isdigit, std::isalnum, etc
 #include <cstring>
 #include <functional> // std::bind, std::placeholders
-#include <sstream> // IWYU pragma: keep
+#include <sstream>
 #include <utility>
 
 #include "xml.h"
@@ -103,15 +103,16 @@ std::string SuppressionList::parseXmlFile(const char *filename)
 {
     tinyxml2::XMLDocument doc;
     const tinyxml2::XMLError error = doc.LoadFile(filename);
-    if (error == tinyxml2::XML_ERROR_FILE_NOT_FOUND)
-        return "File not found";
     if (error != tinyxml2::XML_SUCCESS)
-        return "Failed to parse XML file";
+        return std::string("failed to load suppressions XML '") + filename + "' (" + tinyxml2::XMLDocument::ErrorIDToName(error) + ").";
 
     const tinyxml2::XMLElement * const rootnode = doc.FirstChildElement();
+    if (!rootnode)
+        return std::string("failed to load suppressions XML '") + filename + "' (no root node found).";
+    // TODO: check for proper root node 'suppressions'
     for (const tinyxml2::XMLElement * e = rootnode->FirstChildElement(); e; e = e->NextSiblingElement()) {
         if (std::strcmp(e->Name(), "suppress") != 0)
-            return "Invalid suppression xml file format, expected <suppress> element but got a \"" + std::string(e->Name()) + '\"';
+            return std::string("invalid suppression xml file '") + filename + "', expected 'suppress' element but got a '" + e->Name() + "'.";
 
         Suppression s;
         for (const tinyxml2::XMLElement * e2 = e->FirstChildElement(); e2; e2 = e2->NextSiblingElement()) {
@@ -127,7 +128,7 @@ std::string SuppressionList::parseXmlFile(const char *filename)
             else if (*text && std::strcmp(e2->Name(), "hash") == 0)
                 s.hash = strToInt<std::size_t>(text);
             else
-                return "Unknown suppression element \"" + std::string(e2->Name()) + "\", expected id/fileName/lineNumber/symbolName/hash";
+                return std::string("unknown element '") + e2->Name() + "' in suppressions XML '" + filename + "', expected id/fileName/lineNumber/symbolName/hash.";
         }
 
         const std::string err = addSuppression(std::move(s));
@@ -455,6 +456,20 @@ void SuppressionList::dump(std::ostream & out) const
             out << " symbolName=\"" << ErrorLogger::toxml(suppression.symbolName) << '\"';
         if (suppression.hash > 0)
             out << " hash=\"" << suppression.hash << '\"';
+        if (suppression.lineBegin != Suppression::NO_LINE)
+            out << " lineBegin=\"" << suppression.lineBegin << '"';
+        if (suppression.lineEnd != Suppression::NO_LINE)
+            out << " lineEnd=\"" << suppression.lineEnd << '"';
+        if (suppression.type == SuppressionList::Type::file)
+            out << " type=\"file\"";
+        else if (suppression.type == SuppressionList::Type::block)
+            out << " type=\"block\"";
+        else if (suppression.type == SuppressionList::Type::blockBegin)
+            out << " type=\"blockBegin\"";
+        else if (suppression.type == SuppressionList::Type::blockEnd)
+            out << " type=\"blockEnd\"";
+        else if (suppression.type == SuppressionList::Type::macro)
+            out << " type=\"macro\"";
         out << " />" << std::endl;
     }
     out << "  </suppressions>" << std::endl;

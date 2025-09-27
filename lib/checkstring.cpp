@@ -189,11 +189,11 @@ void CheckString::checkSuspiciousStringCompare()
                 continue;
 
             const ValueType* varType = varTok->valueType();
-            if (mTokenizer->isCPP() && (!varType || !varType->isIntegral()))
+            if (varTok->isCpp() && (!varType || !varType->isIntegral()))
                 continue;
 
             if (litTok->tokType() == Token::eString) {
-                if (mTokenizer->isC() || (varType && varType->pointer))
+                if (varTok->isC() || (varType && varType->pointer))
                     suspiciousStringCompareError(tok, varTok->expressionString(), litTok->isLong());
             } else if (litTok->tokType() == Token::eChar && varType && varType->pointer) {
                 suspiciousStringCompareError_char(tok, varTok->expressionString());
@@ -396,7 +396,7 @@ void CheckString::overlappingStrcmp()
                     if (args1[1]->isLiteral() &&
                         args2[1]->isLiteral() &&
                         args1[1]->str() != args2[1]->str() &&
-                        isSameExpression(mTokenizer->isCPP(), true, args1[0], args2[0], mSettings->library, true, false))
+                        isSameExpression(true, args1[0], args2[0], mSettings->library, true, false))
                         overlappingStrcmpError(eq0, ne0);
                 }
             }
@@ -444,8 +444,7 @@ void CheckString::sprintfOverlappingData()
                 while (arg->isCast())
                     arg = arg->astOperand2() ? arg->astOperand2() : arg->astOperand1();
 
-                const bool same = isSameExpression(mTokenizer->isCPP(),
-                                                   false,
+                const bool same = isSameExpression(false,
                                                    dest,
                                                    arg,
                                                    mSettings->library,

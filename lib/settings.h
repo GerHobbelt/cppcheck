@@ -33,12 +33,15 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <list>
+#include <map>
 #include <set>
 #include <string>
 #include <tuple>
 #include <vector>
 #include <unordered_set>
+#include <utility>
 
 enum class SHOWTIME_MODES;
 namespace ValueFlow {
@@ -191,6 +194,18 @@ public:
     /** @brief Is --exception-handling given */
     bool exceptionHandling{};
 #endif
+
+    enum class ExecutorType
+    {
+#ifdef HAS_THREADING_MODEL_THREAD
+        Thread,
+#endif
+#ifdef HAS_THREADING_MODEL_FORK
+        Process
+#endif
+    };
+
+    ExecutorType executor;
 
     // argv[0]
     std::string exename;
@@ -461,6 +476,8 @@ public:
     void setMisraRuleTexts(const ExecuteCmdFn& executeCommand);
     void setMisraRuleTexts(const std::string& data);
     std::string getMisraRuleText(const std::string& id, const std::string& text) const;
+
+    static ExecutorType defaultExecutor();
 
 private:
     static std::string parseEnabled(const std::string &str, std::tuple<SimpleEnableGroup<Severity>, SimpleEnableGroup<Checks>> &groups);

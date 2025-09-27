@@ -21,6 +21,7 @@
 #include "color.h"
 #include "cppcheck.h"
 #include "path.h"
+#include "settings.h"
 #include "suppressions.h"
 #include "token.h"
 #include "tokenlist.h"
@@ -31,8 +32,9 @@
 #include <cassert>
 #include <cctype>
 #include <cstring>
+#include <fstream>
 #include <iomanip>
-#include <sstream> // IWYU pragma: keep
+#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <utility>

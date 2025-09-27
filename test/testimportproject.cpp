@@ -24,8 +24,9 @@
 
 #include <list>
 #include <map>
-#include <sstream> // IWYU pragma: keep
+#include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 class TestImporter : public ImportProject {

@@ -40,7 +40,7 @@
 #include <iterator>
 #include <map>
 #include <set>
-#include <sstream> // IWYU pragma: keep
+#include <sstream>
 #include <stack>
 #include <type_traits>
 #include <unordered_set>
@@ -491,7 +491,7 @@ int multiComparePercent(const Token *tok, const char*& haystack, nonneg int vari
         // Type (%type%)
     {
         haystack += 5;
-        if (tok->isName() && tok->varId() == 0 && (tok->str() != "delete" || !tok->isKeyword())) // HACK: this is legacy behaviour, it should return false for all keywords, except types
+        if (tok->isName() && tok->varId() == 0)
             return 1;
     }
     break;
@@ -2752,4 +2752,9 @@ const Token* findLambdaEndScope(const Token* tok) {
 bool Token::isCpp() const
 {
     return mTokensFrontBack.list.isCPP();
+}
+
+bool Token::isC() const
+{
+    return mTokensFrontBack.list.isC();
 }

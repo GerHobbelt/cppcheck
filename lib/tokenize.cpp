@@ -48,7 +48,7 @@
 #include <exception>
 #include <memory>
 #include <set>
-#include <sstream> // IWYU pragma: keep
+#include <sstream>
 #include <stack>
 #include <stdexcept>
 #include <unordered_map>
@@ -313,7 +313,7 @@ bool Tokenizer::duplicateTypedef(Token **tokPtr, const Token *name, const Token 
                             return false;
                         } else if (tok->previous()->str() == "union") {
                             return tok->next()->str() != ";";
-                        } else if (isCPP() && tok->previous()->str() == "class") {
+                        } else if (tok->isCpp() && tok->previous()->str() == "class") {
                             return tok->next()->str() != ";";
                         }
                         if (tok)
@@ -1697,7 +1697,7 @@ void Tokenizer::simplifyTypedefCpp()
                     }
 
                     // check for member functions
-                    else if (isCPP() && tok2->str() == "(" && isFunctionHead(tok2, "{:")) {
+                    else if (tok2->isCpp() && tok2->str() == "(" && isFunctionHead(tok2, "{:")) {
                         const Token *func = tok2->previous();
 
                         /** @todo add support for multi-token operators */
@@ -1724,7 +1724,7 @@ void Tokenizer::simplifyTypedefCpp()
                     // check for entering a new scope
                     else if (tok2->str() == "{") {
                         // check for entering a new namespace
-                        if (isCPP()) {
+                        if (tok2->isCpp()) {
                             if (tok2->strAt(-2) == "namespace") {
                                 if (classLevel < spaceInfo.size() &&
                                     spaceInfo[classLevel].isNamespace &&
@@ -1753,7 +1753,7 @@ void Tokenizer::simplifyTypedefCpp()
 
                 // check for operator typedef
                 /** @todo add support for multi-token operators */
-                else if (isCPP() &&
+                else if (tok2->isCpp() &&
                          tok2->str() == "operator" &&
                          tok2->next() &&
                          tok2->next()->str() == typeName->str() &&
@@ -1940,7 +1940,7 @@ void Tokenizer::simplifyTypedefCpp()
 
                     // start substituting at the typedef name by replacing it with the type
                     Token* replStart = tok2; // track first replaced token
-                    for (Token* tok3 = typeStart; tok3->str() != ";"; tok3 = tok3->next())
+                    for (Token* tok3 = typeStart; tok3 && (tok3->str() != ";"); tok3 = tok3->next())
                         tok3->isSimplifiedTypedef(true);
                     if (isPointerTypeCall) {
                         tok2->deleteThis();
@@ -2840,6 +2840,32 @@ bool Tokenizer::simplifyUsing()
     if (!isCPP() || mSettings.standards.cpp < Standards::CPP11)
         return false;
 
+    // simplify using N::x; to using x = N::x;
+    for (Token* tok = list.front(); tok; tok = tok->next()) {
+        if (!Token::Match(tok, "using ::| %name% ::"))
+            continue;
+        const Token* ns = tok->tokAt(tok->strAt(1) == "::" ? 2 : 1);
+        if (ns->isKeyword())
+            continue;
+        Token* end = tok->tokAt(3);
+        while (end && !Token::Match(end, "[;,]")) {
+            if (end->str() == "<" && end->link()) // skip template args
+                end = end->link()->next();
+            else
+                end = end->next();
+        }
+        if (!end)
+            continue;
+        if (!end->tokAt(-1)->isNameOnly() || end->tokAt(-2)->isLiteral()) // e.g. operator=, operator""sv
+            continue;
+        tok->insertToken(end->strAt(-1))->insertToken("=")->isSimplifiedTypedef(true);
+        if (end->str() == ",") { // comma-separated list
+            end->str(";");
+            end->insertToken("using");
+        }
+        tok = end;
+    }
+
     const unsigned int maxReplacementTokens = 1000; // limit the number of tokens we replace
 
     bool substitute = false;
@@ -2907,8 +2933,11 @@ bool Tokenizer::simplifyUsing()
         std::string scope = currentScope->fullName;
         Token *usingStart = tok;
         Token *start;
-        if (tok->strAt(2) == "=")
+        if (tok->strAt(2) == "=") {
+            if (currentScope->type == ScopeInfo3::Record && tok->tokAt(2)->isSimplifiedTypedef())  // don't simplify within class definition
+                continue;
             start = tok->tokAt(3);
+        }
         else
             start = tok->linkAt(2)->tokAt(3);
         Token *usingEnd = findSemicolon(start);
@@ -3330,17 +3359,6 @@ void Tokenizer::simplifyUsingError(const Token* usingStart, const Token* usingEn
     }
 }
 
-bool Tokenizer::createTokens(std::istream &code,
-                             const std::string& FileName)
-{
-    return list.createTokens(code, FileName);
-}
-
-void Tokenizer::createTokens(simplecpp::TokenList&& tokenList)
-{
-    list.createTokens(std::move(tokenList));
-}
-
 bool Tokenizer::simplifyTokens1(const std::string &configuration)
 {
     // Fill the map mTypeSize..
@@ -3426,7 +3444,7 @@ bool Tokenizer::tokenize(std::istream &code,
                          const char FileName[],
                          const std::string &configuration)
 {
-    if (!createTokens(code, FileName))
+    if (!list.createTokens(code, FileName))
         return false;
 
     return simplifyTokens1(configuration);
@@ -4513,7 +4531,7 @@ void Tokenizer::setVarIdPass1()
     for (Token *tok = list.front(); tok; tok = tok->next()) {
         if (tok->isOp())
             continue;
-        if (isCPP() && Token::simpleMatch(tok, "template <")) {
+        if (tok->isCpp() && Token::simpleMatch(tok, "template <")) {
             Token* closingBracket = tok->next()->findClosingBracket();
             if (closingBracket)
                 tok = closingBracket;
@@ -4707,7 +4725,7 @@ void Tokenizer::setVarIdPass1()
                     ;
                 else if (Token::Match(prev2, "%type% ( !!)") && Token::simpleMatch(tok2->link(), ") ;")) {
                     // In C++ , a variable can't be called operator+ or something like that.
-                    if (isCPP() &&
+                    if (prev2->isCpp() &&
                         prev2->isOperatorKeyword())
                         continue;
 
@@ -4789,7 +4807,7 @@ void Tokenizer::setVarIdPass1()
 
         if (tok->isName() && !tok->isKeyword() && !tok->isStandardType()) {
             // don't set variable id after a struct|enum|union
-            if (Token::Match(tok->previous(), "struct|enum|union") || (isCPP() && tok->strAt(-1) == "class"))
+            if (Token::Match(tok->previous(), "struct|enum|union") || (tok->isCpp() && tok->strAt(-1) == "class"))
                 continue;
 
             bool globalNamespace = false;
@@ -4806,7 +4824,7 @@ void Tokenizer::setVarIdPass1()
             }
 
             // function declaration inside executable scope? Function declaration is of form: type name "(" args ")"
-            if (scopeStack.top().isExecutable && Token::Match(tok, "%name% [,)]")) {
+            if (scopeStack.top().isExecutable && Token::Match(tok, "%name% [,)[]")) {
                 bool par = false;
                 const Token *start, *end;
 
@@ -4826,7 +4844,7 @@ void Tokenizer::setVarIdPass1()
                 }
 
                 // search end of function declaration
-                for (end = tok->next(); Token::Match(end, "%name%|*|&|,"); end = end->next()) {}
+                for (end = tok->next(); Token::Match(end, "%name%|*|&|,|[|]|%num%"); end = end->next()) {}
 
                 // there are tokens which can't appear at the begin of a function declaration such as "return"
                 const bool isNotstartKeyword = start->next() && notstart.find(start->next()->str()) != notstart.end();
@@ -5741,10 +5759,9 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
     // Remove redundant parentheses
     simplifyRedundantParentheses();
 
-    if (isCPP())
+    if (isCPP()) {
         simplifyTypeIntrinsics();
 
-    if (!isC()) {
         // Handle templates..
         if (mTimerResults) {
             Timer t("Tokenizer::simplifyTokens1::simplifyTokenList1::simplifyTemplates", mSettings.showtime, mTimerResults);
@@ -6138,7 +6155,7 @@ void Tokenizer::simplifyHeadersAndUnusedTemplates()
     // functions and types to keep
     std::set<std::string> keep;
     for (const Token *tok = list.front(); tok; tok = tok->next()) {
-        if (isCPP() && Token::simpleMatch(tok, "template <")) {
+        if (tok->isCpp() && Token::simpleMatch(tok, "template <")) {
             const Token *closingBracket = tok->next()->findClosingBracket();
             if (Token::Match(closingBracket, "> class|struct %name% {"))
                 tok = closingBracket->linkAt(3);
@@ -6643,7 +6660,10 @@ Token *Tokenizer::simplifyAddBracesPair(Token *tok, bool commandWithCondition)
             }
             if (!tokEnd || tokEnd->str() != ";") {
                 // No trailing ;
-                return tok;
+                if (tokStatement->isUpperCaseName())
+                    unknownMacroError(tokStatement);
+                else
+                    syntaxError(tokStatement);
             }
         }
 
@@ -6869,7 +6889,7 @@ void Tokenizer::simplifyFunctionPointers()
             Token::Match(tok, "static_cast < %type% %type%| *| *| ( * ) (")) {
             Token *tok1 = tok;
 
-            if (isCPP() && tok1->str() == "static_cast")
+            if (tok1->isCpp() && tok1->str() == "static_cast")
                 tok1 = tok1->next();
 
             tok1 = tok1->next();
@@ -6982,7 +7002,7 @@ void Tokenizer::simplifyVarDecl(const bool only_k_r_fpar)
 
 void Tokenizer::simplifyVarDecl(Token * tokBegin, const Token * const tokEnd, const bool only_k_r_fpar)
 {
-    const bool isCPP11  = mSettings.standards.cpp >= Standards::CPP11;
+    const bool isCPP11 = isCPP() && (mSettings.standards.cpp >= Standards::CPP11);
 
     // Split up variable declarations..
     // "int a=4;" => "int a; a=4;"
@@ -7070,7 +7090,7 @@ void Tokenizer::simplifyVarDecl(Token * tokBegin, const Token * const tokEnd, co
             continue;
         if (isCPP11 && type0->str() == "using")
             continue;
-        if (isCPP() && type0->str() == "namespace")
+        if (type0->isCpp() && Token::Match(type0, "namespace|delete"))
             continue;
 
         bool isconst = false;
@@ -7729,7 +7749,7 @@ bool Tokenizer::simplifyRedundantParentheses()
         if (tok->str() != "(")
             continue;
 
-        if (isCPP() && Token::simpleMatch(tok->previous(), "} (")) {
+        if (tok->isCpp() && Token::simpleMatch(tok->previous(), "} (")) {
             const Token* plp = tok->previous()->link()->previous();
             if (Token::Match(plp, "%name%|>|] {") || (Token::simpleMatch(plp, ")") && Token::simpleMatch(plp->link()->previous(), "]")))
                 continue;
@@ -8424,7 +8444,7 @@ void Tokenizer::findGarbageCode() const
             if (!Token::Match(tok->next(), "( !!)"))
                 syntaxError(tok);
             if (tok->str() != "for") {
-                if (isGarbageExpr(tok->next(), tok->linkAt(1), mSettings.standards.cpp>=Standards::cppstd_t::CPP17))
+                if (isGarbageExpr(tok->next(), tok->linkAt(1), isCPP() && (mSettings.standards.cpp>=Standards::cppstd_t::CPP17)))
                     syntaxError(tok);
             }
         }
@@ -9113,7 +9133,7 @@ void Tokenizer::simplifyCppcheckAttribute()
 
 void Tokenizer::simplifyCPPAttribute()
 {
-    if (mSettings.standards.cpp < Standards::CPP11 || isC())
+    if (!isCPP() || mSettings.standards.cpp < Standards::CPP11)
         return;
 
     for (Token *tok = list.front(); tok;) {
@@ -10516,6 +10536,8 @@ void Tokenizer::simplifyNamespaceAliases()
 
             int endScope = scope;
             Token * tokLast = tokNameEnd->next();
+            if (!tokLast)
+                return;
             Token * tokNext = tokLast->next();
             Token * tok2 = tokNext;
 

@@ -26,7 +26,7 @@
 #include "tokenize.h"
 
 #include <limits>
-#include <sstream> // IWYU pragma: keep
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -2792,13 +2792,12 @@ private:
               "}");
         ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:4]: (warning) Identical condition 'x>100', second condition is always false\n", errout.str());
 
-        check("void f(int x) {\n"  // #8217 - crash for incomplete code
-              "  if (x > 100) { return; }\n"
-              "  X(do);\n"
-              "  if (x > 100) {}\n"
-              "}");
-        // TODO: we should probably throw unknownMacro InternalError. Complain that the macro X must be defined. We can't check the code well without the definition.
-        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:4]: (style) Condition 'x>100' is always false\n", errout.str());
+        ASSERT_THROW(check("void f(int x) {\n"  // #8217 - crash for incomplete code
+                           "  if (x > 100) { return; }\n"
+                           "  X(do);\n"
+                           "  if (x > 100) {}\n"
+                           "}"),
+                     InternalError);
 
         check("void f(const int *i) {\n"
               "  if (!i) return;\n"
@@ -5712,6 +5711,13 @@ private:
               "        return s.size()>2U && s[0]=='4' && s[0]=='2';\n"
               "}\n");
         ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:2]: (style) Return value 's[0]=='2'' is always false\n", errout.str());
+
+        check("void f(int i) { if (i == 1 || 2) {} }\n"); // #12487
+        ASSERT_EQUALS("[test.cpp:1]: (style) Condition 'i==1||2' is always true\n", errout.str());
+
+        check("enum E { E1 = 1, E2 = 2 };\n"
+              "void f(int i) { if (i == E1 || E2) {} }\n");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Condition 'i==E1||E2' is always true\n", errout.str());
     }
 
     void pointerAdditionResultNotNull() {

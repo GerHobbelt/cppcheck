@@ -39,7 +39,6 @@
 #include <list>
 #include <map>
 #include <unordered_set>
-#include <utility>
 #include <vector>
 
 
@@ -166,7 +165,7 @@ void CheckUninitVar::checkScope(const Scope* scope, const std::set<std::string> 
                 continue;
         }
 
-        bool stdtype = mTokenizer->isC() && arrayTypeDefs.find(var.typeStartToken()->str()) == arrayTypeDefs.end();
+        bool stdtype = var.typeStartToken()->isC() && arrayTypeDefs.find(var.typeStartToken()->str()) == arrayTypeDefs.end();
         const Token* tok = var.typeStartToken();
         for (; tok != var.nameToken() && tok->str() != "<"; tok = tok->next()) {
             if (tok->isStandardType() || tok->isEnumType())
@@ -726,7 +725,7 @@ bool CheckUninitVar::checkScopeForVariable(const Token *tok, const Variable& var
                     if (!membervar.empty()) {
                         if (!suppressErrors && Token::Match(tok, "%name% . %name%") && tok->strAt(2) == membervar && Token::Match(tok->next()->astParent(), "%cop%|return|throw|?"))
                             uninitStructMemberError(tok, tok->str() + "." + membervar);
-                        else if (mTokenizer->isCPP() && !suppressErrors && Token::Match(tok, "%name%") && Token::Match(tok->astParent(), "return|throw|?")) {
+                        else if (tok->isCpp() && !suppressErrors && Token::Match(tok, "%name%") && Token::Match(tok->astParent(), "return|throw|?")) {
                             if (std::any_of(tok->values().cbegin(), tok->values().cend(), [](const ValueFlow::Value& v) {
                                 return v.isUninitValue() && !v.isInconclusive();
                             }))
@@ -1307,7 +1306,7 @@ const Token* CheckUninitVar::isVariableUsage(const Token *vartok, const Library&
     // Stream read/write
     // FIXME this code is a hack!!
     if (cpp && Token::Match(valueExpr->astParent(), "<<|>>")) {
-        if (isLikelyStreamRead(cpp, vartok->previous()))
+        if (isLikelyStreamRead(vartok->previous()))
             return nullptr;
 
         if (const auto* vt = valueExpr->valueType()) {
@@ -1318,7 +1317,7 @@ const Token* CheckUninitVar::isVariableUsage(const Token *vartok, const Library&
                 return nullptr;
         }
     }
-    if (astIsRhs(derefValue) && isLikelyStreamRead(cpp, derefValue->astParent()))
+    if (astIsRhs(derefValue) && isLikelyStreamRead(derefValue->astParent()))
         return nullptr;
 
     // Assignment with overloaded &
@@ -1429,7 +1428,7 @@ bool CheckUninitVar::isMemberVariableAssignment(const Token *tok, const std::str
             return true;
         if (Token::Match(tok->tokAt(-2), "[(,=] &"))
             return true;
-        if (isLikelyStreamRead(mTokenizer->isCPP(), tok->previous()))
+        if (isLikelyStreamRead(tok->previous()))
             return true;
         if ((tok->previous() && tok->previous()->isConstOp()) || Token::Match(tok->previous(), "[|="))
             ; // member variable usage
@@ -1648,7 +1647,7 @@ void CheckUninitVar::valueFlowUninit()
                     if (!isleaf && Token::Match(tok->astParent(), ". %name%") && (tok->astParent()->next()->varId() || tok->astParent()->next()->isEnumerator()))
                         continue;
                 }
-                const ExprUsage usage = getExprUsage(tok, v->indirect, mSettings, mTokenizer->isCPP());
+                const ExprUsage usage = getExprUsage(tok, v->indirect, mSettings);
                 if (usage == ExprUsage::NotUsed || usage == ExprUsage::Inconclusive)
                     continue;
                 if (!v->subexpressions.empty() && usage == ExprUsage::PassedByReference)
@@ -1659,7 +1658,7 @@ void CheckUninitVar::valueFlowUninit()
                     continue;
                 if (usage != ExprUsage::Used) {
                     if (!(Token::Match(tok->astParent(), ". %name% (|[") && uninitderef) &&
-                        isVariableChanged(tok, v->indirect, mSettings, mTokenizer->isCPP()))
+                        isVariableChanged(tok, v->indirect, mSettings))
                         continue;
                     if (isVariableChangedByFunctionCall(tok, v->indirect, mSettings, &inconclusive) || inconclusive)
                         continue;

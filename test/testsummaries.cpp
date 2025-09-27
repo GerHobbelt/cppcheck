@@ -22,7 +22,7 @@
 #include "fixture.h"
 #include "tokenize.h"
 
-#include <sstream> // IWYU pragma: keep
+#include <sstream>
 #include <string>
 
 
@@ -44,8 +44,7 @@ private:
         errout.str("");
 
         // tokenize..
-        const Settings settings;
-        Tokenizer tokenizer(settings, this);
+        Tokenizer tokenizer(settingsDefault, this);
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, filename), file, line);
         return Summaries::create(&tokenizer, "");

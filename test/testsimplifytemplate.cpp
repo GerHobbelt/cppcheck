@@ -27,7 +27,7 @@
 #include "tokenlist.h"
 
 #include <cstring>
-#include <sstream> // IWYU pragma: keep
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -2880,7 +2880,7 @@ private:
                            "struct f<b::B<0>> ; "
                            "} "
                            "} "
-                           "b :: f<b::B<0>> g1 ; struct b :: B<0> { using B<0> :: d ; } ; "
+                           "b :: f<b::B<0>> g1 ; struct b :: B<0> { using d = B<0> :: d ; } ; "
                            "struct b :: f<b::B<0>> { } ;";
         ASSERT_EQUALS(exp, tok(code));
     }
@@ -3573,7 +3573,7 @@ private:
                             "};";
         const char exp[] = "template < typename ... > struct a ; "
                            "template < typename b , typename c , typename ... d > struct a < b c :: * , d ... > { "
-                           "using b :: e ; "
+                           "using e = b :: e ; "
                            "static_assert ( e :: f ? sizeof... ( d ) : sizeof... ( d ) , \"\" ) ; "
                            "} ;";
         ASSERT_EQUALS(exp, tok(code));
@@ -5290,7 +5290,8 @@ private:
         Tokenizer tokenizer(settings, this);
 
         std::istringstream istr(code);
-        tokenizer.createTokens(istr, "test.cpp");
+        if (!tokenizer.list.createTokens(istr, "test.cpp"))
+            return false;
         tokenizer.createLinks();
         tokenizer.splitTemplateRightAngleBrackets(false);
 
@@ -5357,7 +5358,8 @@ private:
         Tokenizer tokenizer(settings, this);
 
         std::istringstream istr(code);
-        tokenizer.createTokens(istr, "test.cpp");
+        if (!tokenizer.list.createTokens(istr, "test.cpp"))
+            return false;
         tokenizer.createLinks();
         tokenizer.splitTemplateRightAngleBrackets(false);
 
@@ -5427,7 +5429,8 @@ private:
         Tokenizer tokenizer(settings, this);
 
         std::istringstream istr(code);
-        tokenizer.createTokens(istr, "test.cpp");
+        if (!tokenizer.list.createTokens(istr, "test.cpp"))
+            return false;
         tokenizer.createLinks();
         tokenizer.splitTemplateRightAngleBrackets(false);
 
@@ -5456,7 +5459,8 @@ private:
         Tokenizer tokenizer(settings, this);
 
         std::istringstream istr(code);
-        tokenizer.createTokens(istr, "test.cpp");
+        if (!tokenizer.list.createTokens(istr, "test.cpp"))
+            return false;
         tokenizer.createLinks();
         tokenizer.splitTemplateRightAngleBrackets(false);
 

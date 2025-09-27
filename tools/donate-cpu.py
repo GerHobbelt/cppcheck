@@ -125,10 +125,10 @@ for arg in sys.argv[1:]:
         print('Unhandled argument: ' + arg)
         sys.exit(1)
 
-if sys.version_info.major < 3 or (sys.version_info.major == 3 and sys.version_info.minor < 4):
+if sys.version_info.major < 3 or (sys.version_info.major == 3 and sys.version_info.minor < 6):
     print("#" * 80)
     print("IMPORTANT")
-    print("Please run the client with at least Python 3.4, thanks!")
+    print("Please run the client with at least Python 3.6, thanks!")
     print("#" * 80)
     time.sleep(2)
     sys.exit(1)
@@ -249,12 +249,12 @@ while True:
 
             def get_client_version_head(path):
                 cmd = 'python3' + ' ' + os.path.join(path, 'tools', 'donate-cpu.py') + ' ' + '--version'
-                p = subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, universal_newlines=True)
-                try:
-                    comm = p.communicate()
-                    return comm[0].strip()
-                except:
-                    return None
+                with subprocess.Popen(cmd.split(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, universal_newlines=True) as p:
+                    try:
+                        comm = p.communicate()
+                        return comm[0].strip()
+                    except:
+                        return None
 
             client_version_head = get_client_version_head(tree_path)
         c, errout, info, t, cppcheck_options, timing_info = lib.scan_package(tree_path, source_path, libraries, capture_callstack)

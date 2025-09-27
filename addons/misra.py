@@ -2387,6 +2387,9 @@ class MisraChecker:
                     e = getEssentialType(token.astOperand2)
                 if not e:
                     continue
+                if e == "char" and vt1.type == "int":
+                    # When arithmetic operations are performed on char values, they are usually promoted to int
+                    continue
                 lhsbits = vt1.bits if vt1.bits else bitsOfEssentialType(vt1.type)
                 if lhsbits > bitsOfEssentialType(e):
                     self.reportError(token, 10, 6)
@@ -3311,6 +3314,10 @@ class MisraChecker:
                 if tok.next.str == "(" or tok.str in ["EOF"]:
                     continue
                 if isKeyword(tok.str) or isStdLibId(tok.str):
+                    continue
+                if tok.astParent is None:
+                    continue
+                if tok.astParent.str == "." and tok.astParent.valueType:
                     continue
                 self.report_config_error(tok, "Variable '%s' is unknown" % tok.str)
 
@@ -4615,6 +4622,19 @@ class MisraChecker:
             self.executeCheck(2209, self.misra_22_9, cfg)
             self.executeCheck(2210, self.misra_22_10, cfg)
 
+    def read_ctu_info_line(self, line):
+        if not line.startswith('{'):
+            return None
+        try:
+            ctu_info = json.loads(line)
+        except json.decoder.JSONDecodeError:
+            return None
+        if 'summary' not in ctu_info:
+            return None
+        if 'data' not in ctu_info:
+            return None
+        return ctu_info
+
     def analyse_ctu_info(self, ctu_info_files):
         all_typedef_info = {}
         all_tagname_info = {}
@@ -4630,15 +4650,17 @@ class MisraChecker:
         def is_different_location(loc1, loc2):
             return loc1['file'] != loc2['file'] or loc1['line'] != loc2['line']
 
+        def is_different_file(loc1, loc2):
+            return loc1['file'] != loc2['file']
+
         try:
             for filename in ctu_info_files:
                 for line in open(filename, 'rt'):
-                    if not line.startswith('{'):
+                    s = self.read_ctu_info_line(line)
+                    if s is None:
                         continue
-
-                    s = json.loads(line)
-                    summary_type = s['summary']
-                    summary_data = s['data']
+                    summary_type = s.get('summary', '')
+                    summary_data = s.get('data', None)
 
                     if summary_type == 'MisraTypedefInfo':
                         for new_typedef_info in summary_data:
@@ -4676,7 +4698,7 @@ class MisraChecker:
                                 all_macro_info[key] = new_macro
 
                     if summary_type == 'MisraExternalIdentifiers':
-                        for s in summary_data:
+                        for s in sorted(summary_data, key=lambda d: "%s %s %s" %(d['file'],d['line'], d['column'] )):
                             is_declaration = s['decl']
                             if is_declaration:
                                 all_external_identifiers = all_external_identifiers_decl
@@ -4684,10 +4706,13 @@ class MisraChecker:
                                 all_external_identifiers = all_external_identifiers_def
 
                             name = s['name']
-                            if name in all_external_identifiers and is_different_location(s, all_external_identifiers[name]):
-                                num = 5 if is_declaration else 6
-                                self.reportError(Location(s), 8, num)
-                                self.reportError(Location(all_external_identifiers[name]), 8, num)
+                            if name in all_external_identifiers:
+                                if is_declaration and is_different_location(s, all_external_identifiers[name]):
+                                    self.reportError(Location(s), 8, 5)
+                                    self.reportError(Location(all_external_identifiers[name]), 8, 5)
+                                elif is_different_file(s, all_external_identifiers[name]):
+                                    self.reportError(Location(s), 8, 6)
+                                    self.reportError(Location(all_external_identifiers[name]), 8, 6)
                             all_external_identifiers[name] = s
 
                     if summary_type == 'MisraInternalIdentifiers':

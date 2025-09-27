@@ -16,33 +16,31 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef checkersH
-#define checkersH
-
-#include <map>
-#include <string>
-#include <vector>
+#ifndef fileSettingsH
+#define fileSettingsH
 
 #include "config.h"
+#include "platform.h"
 
-namespace checkers {
-    extern CPPCHECKLIB const std::map<std::string, std::string> allCheckers;
-    extern CPPCHECKLIB const std::map<std::string, std::string> premiumCheckers;
+#include <list>
+#include <set>
+#include <string>
 
-    struct CPPCHECKLIB MisraInfo {
-        int a;
-        int b;
-        const char* str;
-        int amendment;
-    };
+/** File settings. Multiple configurations for a file is allowed. */
+struct CPPCHECKLIB FileSettings {
+    std::string cfg;
+    std::string filename;
+    std::string defines;
+    std::string cppcheckDefines() const {
+        return defines + (msc ? ";_MSC_VER=1900" : "") + (useMfc ? ";__AFXWIN_H__=1" : "");
+    }
+    std::set<std::string> undefs;
+    std::list<std::string> includePaths;
+    std::list<std::string> systemIncludePaths;
+    std::string standard;
+    Platform::Type platformType = Platform::Type::Unspecified;
+    bool msc{};
+    bool useMfc{};
+};
 
-    extern CPPCHECKLIB const char Req[]; // = "Required";
-    extern CPPCHECKLIB const char Adv[]; // = "Advisory";
-    extern CPPCHECKLIB const char Man[]; // = "Mandatory";
-
-    extern CPPCHECKLIB const std::vector<MisraInfo> misraC2012Rules;
-
-    extern CPPCHECKLIB const std::map<std::string, std::string> misraRuleSeverity;
-}
-
-#endif
+#endif // fileSettingsH

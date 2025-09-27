@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2023 Cppcheck team.
+ * Copyright (C) 2007-2024 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -19,6 +19,7 @@
 #include "helpers.h"
 
 #include "filelister.h"
+#include "filesettings.h"
 #include "path.h"
 #include "pathmatch.h"
 #include "preprocessor.h"
@@ -82,14 +83,14 @@ ScopedFile::~ScopedFile() {
         // TODO: remove all files
         // TODO: simplify the function call
         // hack to be able to delete *.plist output files
-        std::list<std::pair<std::string, std::size_t>> files;
+        std::list<FileWithDetails> files;
         const std::string res = FileLister::addFiles(files, mPath, {".plist"}, false, PathMatch({}));
         if (!res.empty()) {
             std::cout << "ScopedFile(" << mPath + ") - generating file list failed (" << res << ")" << std::endl;
         }
         for (const auto &f : files)
         {
-            const std::string &file = f.first;
+            const std::string &file = f.path();
             const int rm_f_res = std::remove(file.c_str());
             if (rm_f_res != 0) {
                 std::cout << "ScopedFile(" << mPath + ") - could not delete '" << file << "' (" << rm_f_res << ")" << std::endl;
@@ -111,37 +112,52 @@ ScopedFile::~ScopedFile() {
 }
 
 // TODO: we should be using the actual Preprocessor implementation
-std::string PreprocessorHelper::getcode(Preprocessor &preprocessor, const std::string &filedata, const std::string &cfg, const std::string &filename, SuppressionList *inlineSuppression)
+std::string PreprocessorHelper::getcode(const Settings& settings, ErrorLogger& errorlogger, const std::string &filedata, const std::string &cfg, const std::string &filename, SuppressionList *inlineSuppression)
+{
+    std::map<std::string, std::string> cfgcode = getcode(settings, errorlogger, filedata.c_str(), std::set<std::string>{cfg}, filename, inlineSuppression);
+    const auto it = cfgcode.find(cfg);
+    if (it == cfgcode.end())
+        return "";
+    return it->second;
+}
+
+std::map<std::string, std::string> PreprocessorHelper::getcode(const Settings& settings, ErrorLogger& errorlogger, const char code[], const std::string &filename, SuppressionList *inlineSuppression)
+{
+    return getcode(settings, errorlogger, code, {}, filename, inlineSuppression);
+}
+
+std::map<std::string, std::string> PreprocessorHelper::getcode(const Settings& settings, ErrorLogger& errorlogger, const char code[], std::set<std::string> cfgs, const std::string &filename, SuppressionList *inlineSuppression)
 {
     simplecpp::OutputList outputList;
     std::vector<std::string> files;
 
-    std::istringstream istr(filedata);
-    simplecpp::TokenList tokens1(istr, files, Path::simplifyPath(filename), &outputList);
+    std::istringstream istr(code);
+    simplecpp::TokenList tokens(istr, files, Path::simplifyPath(filename), &outputList);
+    Preprocessor preprocessor(settings, errorlogger);
     if (inlineSuppression)
-        preprocessor.inlineSuppressions(tokens1, *inlineSuppression);
-    tokens1.removeComments();
-    preprocessor.simplifyPragmaAsm(&tokens1);
+        preprocessor.inlineSuppressions(tokens, *inlineSuppression);
+    tokens.removeComments();
+    preprocessor.simplifyPragmaAsm(&tokens);
     preprocessor.removeComments();
 
     preprocessor.reportOutput(outputList, true);
 
     if (Preprocessor::hasErrors(outputList))
-        return "";
+        return {};
 
-    std::string ret;
-    try {
-        // TODO: also preserve location information when #include exists - enabling that will fail since #line is treated like a regular token
-        ret = preprocessor.getcode(tokens1, cfg, files, filedata.find("#file") != std::string::npos);
-    } catch (const simplecpp::Output &) {
-        ret.clear();
+    std::map<std::string, std::string> cfgcode;
+    if (cfgs.empty())
+        cfgs = preprocessor.getConfigs(tokens);
+    for (const std::string & config : cfgs) {
+        try {
+            // TODO: also preserve location information when #include exists - enabling that will fail since #line is treated like a regular token
+            cfgcode[config] = preprocessor.getcode(tokens, config, files, std::string(code).find("#file") != std::string::npos);
+        } catch (const simplecpp::Output &) {
+            cfgcode[config] = "";
+        }
     }
 
-    // Since "files" is a local variable the tracking info must be cleared..
-    preprocessor.mMacroUsage.clear();
-    preprocessor.mIfCond.clear();
-
-    return ret;
+    return cfgcode;
 }
 
 void PreprocessorHelper::preprocess(const char code[], std::vector<std::string> &files, Tokenizer& tokenizer, ErrorLogger& errorlogger)

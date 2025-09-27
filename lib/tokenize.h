@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2023 Cppcheck team.
+ * Copyright (C) 2007-2024 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,7 +36,7 @@ class TimerResults;
 class Token;
 class TemplateSimplifier;
 class ErrorLogger;
-struct Directive;
+struct Directive; // IWYU pragma: keep
 enum class Severity;
 
 /// @addtogroup Core
@@ -538,7 +538,7 @@ private:
     void reportError(const Token* tok, const Severity severity, const std::string& id, const std::string& msg, bool inconclusive = false) const;
     void reportError(const std::list<const Token*>& callstack, Severity severity, const std::string& id, const std::string& msg, bool inconclusive = false) const;
 
-    bool duplicateTypedef(Token **tokPtr, const Token *name, const Token *typeDef) const;
+    bool duplicateTypedef(Token *&tokPtr, const Token *name, const Token *typeDef) const;
 
     void unsupportedTypedef(const Token *tok) const;
 

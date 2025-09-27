@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2023 Cppcheck team.
+ * Copyright (C) 2007-2024 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,8 +23,10 @@
 #include "helpers.h"
 #include "settings.h"
 #include "tokenize.h"
+#include "tokenlist.h"
 
 #include <list>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -7634,6 +7636,15 @@ private:
                                   "    int a, b{};\n"
                                   "};");
         ASSERT_EQUALS("", errout_str());
+
+        checkInitializerListOrder("class Foo {\n" // #3524
+                                  "public:\n"
+                                  "    Foo(int arg) : a(b), b(arg) {}\n"
+                                  "    int a;\n"
+                                  "    int b;\n"
+                                  "};\n");
+        ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:4]: (style, inconclusive) Member variable 'Foo::a' uses an uninitialized argument 'b' due to the order of declarations.\n",
+                      errout_str());
     }
 
 #define checkInitializationListUsage(code) checkInitializationListUsage_(code, __FILE__, __LINE__)
@@ -8852,7 +8863,7 @@ private:
             const std::string filename = std::to_string(fileInfo.size()) + ".cpp";
             ASSERT(tokenizer.list.createTokens(istr, filename));
             ASSERT(tokenizer.simplifyTokens1(""));
-            fileInfo.push_back(check.getFileInfo(&tokenizer, &settingsDefault));
+            fileInfo.push_back(check.getFileInfo(tokenizer, settingsDefault));
         }
 
         // Check code..
@@ -8896,7 +8907,7 @@ private:
 
         // Check..
         const Check& c = getCheck<CheckClass>();
-        Check::FileInfo * fileInfo = (c.getFileInfo)(&tokenizer, &settings1);
+        Check::FileInfo * fileInfo = (c.getFileInfo)(tokenizer, settings1);
 
         delete fileInfo;
     }
@@ -8948,6 +8959,23 @@ private:
         checkReturnByReference("struct S {\n"
                                "    std::string f(std::string s) { return s; }\n"
                                "};\n");
+        ASSERT_EQUALS("", errout_str());
+
+        checkReturnByReference("struct S { S(); };\n" // #12620
+                               "S::S() = delete;\n");
+        ASSERT_EQUALS("", errout_str()); // don't crash
+
+        checkReturnByReference("struct S {\n" // #12626
+                               "    std::string s;\n"
+                               "    operator std::string_view() const { return s; }\n"
+                               "    std::string_view get() const { return s; }\n"
+                               "};\n"
+                               "template<typename T>\n"
+                               "struct U {\n"
+                               "    T t;\n"
+                               "    operator const T& () const { return t; }\n"
+                               "};\n"
+                               "U<std::string> u;\n");
         ASSERT_EQUALS("", errout_str());
     }
 };

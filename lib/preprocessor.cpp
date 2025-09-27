@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2023 Cppcheck team.
+ * Copyright (C) 2007-2024 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,6 +32,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <iterator>
 #include <sstream>
 #include <utility>
 
@@ -40,20 +41,6 @@
 static bool sameline(const simplecpp::Token *tok1, const simplecpp::Token *tok2)
 {
     return tok1 && tok2 && tok1->location.sameline(tok2->location);
-}
-
-/**
- * Remove heading and trailing whitespaces from the input parameter.
- * If string is all spaces/tabs, return empty string.
- * @param s The string to trim.
- */
-static std::string trim(const std::string& s)
-{
-    const std::string::size_type beg = s.find_first_not_of(" \t");
-    if (beg == std::string::npos)
-        return "";
-    const std::string::size_type end = s.find_last_not_of(" \t");
-    return s.substr(beg, end - beg + 1);
 }
 
 Directive::Directive(std::string _file, const int _linenr, const std::string &_str) :

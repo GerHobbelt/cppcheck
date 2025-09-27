@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2023 Cppcheck team.
+ * Copyright (C) 2007-2024 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -41,7 +41,6 @@
 #include <tuple>
 #include <vector>
 #include <unordered_set>
-#include <utility>
 
 enum class SHOWTIME_MODES;
 namespace ValueFlow {
@@ -263,6 +262,9 @@ public:
 
     /** @brief max number of sets of arguments to pass to subfuncions in valueflow */
     int performanceValueFlowMaxSubFunctionArgs = 256;
+
+    /** @brief pid of cppcheck. Intention is that this is set in the main process. */
+    int pid;
 
     /** @brief plist output (--plist-output=&lt;dir&gt;) */
     std::string plistOutput;

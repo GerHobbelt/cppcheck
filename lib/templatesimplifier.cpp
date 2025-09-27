@@ -983,7 +983,7 @@ void TemplateSimplifier::getTemplateInstantiations()
             // parse backwards and add template instantiations
             // TODO
             for (; tok2 && tok2 != tok; tok2 = tok2->previous()) {
-                if (Token::Match(tok2, ",|< %name% <") &&
+                if (Token::Match(tok2, ",|< %name% <") && !tok2->next()->isKeyword() &&
                     (tok2->strAt(3) == ">" || templateParameters(tok2->tokAt(2)))) {
                     addInstantiation(tok2->next(), tok->scopeInfo()->name);
                 } else if (Token::Match(tok2->next(), "class|struct"))
@@ -993,9 +993,9 @@ void TemplateSimplifier::getTemplateInstantiations()
             // Add outer template..
             if (templateParameters(tok->next()) || tok->strAt(2) == ">") {
                 while (true) {
-                    const std::string fullName = scopeName + (scopeName.empty()?"":" :: ") +
-                                                 qualification + (qualification.empty()?"":" :: ") + tok->str();
-                    const auto it = std::find_if(mTemplateDeclarations.cbegin(), mTemplateDeclarations.cend(), FindFullName(fullName));
+                    std::string fullName = scopeName + (scopeName.empty()?"":" :: ") +
+                                           qualification + (qualification.empty()?"":" :: ") + tok->str();
+                    const auto it = std::find_if(mTemplateDeclarations.cbegin(), mTemplateDeclarations.cend(), FindFullName(std::move(fullName)));
                     if (it != mTemplateDeclarations.end()) {
                         // full name matches
                         addInstantiation(tok, it->scope());
@@ -1442,14 +1442,14 @@ bool TemplateSimplifier::getTemplateNamePositionTemplateFunction(const Token *to
         } else if (Token::Match(tok->next(), "%type% <")) {
             const Token *closing = tok->tokAt(2)->findClosingBracket();
             if (closing) {
-                if (closing->strAt(1) == "(" && TokenList::isFunctionHead(closing->next(), ";|{|:"))
+                if (closing->strAt(1) == "(" && TokenList::isFunctionHead(closing->next(), ";{:"))
                     return true;
                 while (tok->next() && tok->next() != closing) {
                     tok = tok->next();
                     namepos++;
                 }
             }
-        } else if (Token::Match(tok->next(), "%type% (") && TokenList::isFunctionHead(tok->tokAt(2), ";|{|:")) {
+        } else if (Token::Match(tok->next(), "%type% (") && TokenList::isFunctionHead(tok->tokAt(2), ";{:")) {
             return true;
         }
         tok = tok->next();
@@ -2622,6 +2622,13 @@ void TemplateSimplifier::simplifyTemplateArgs(Token *start, const Token *end, st
         }
 
         for (Token *tok = first->next(); tok && tok != end; tok = tok->next()) {
+            if (tok->isKeyword() && endsWith(tok->str(), "_cast")) {
+                Token* tok2 = tok->next()->findClosingBracket();
+                if (!Token::simpleMatch(tok2, "> ("))
+                    syntaxError(tok);
+                tok = tok2->linkAt(1);
+                continue;
+            }
             if (Token::Match(tok, "( %num%|%bool% )") &&
                 (tok->previous() && !tok->previous()->isName())) {
                 tok->deleteThis();
@@ -3179,7 +3186,7 @@ bool TemplateSimplifier::simplifyTemplateInstantiations(
             continue;
 
         Token * const tok2 = instantiation.token();
-        if (!mTokenList.getFiles().empty())
+        if ((mSettings.reportProgress != -1) && !mTokenList.getFiles().empty())
             mErrorLogger.reportProgress(mTokenList.getFiles()[0], "TemplateSimplifier::simplifyTemplateInstantiations()", tok2->progressValue());
 
         if (maxtime > 0 && std::time(nullptr) > maxtime) {
@@ -3255,7 +3262,7 @@ bool TemplateSimplifier::simplifyTemplateInstantiations(
     // TODO: remove the specialized check and handle all uninstantiated templates someday.
     if (!instantiated && specialized) {
         auto * tok2 = const_cast<Token *>(templateDeclaration.nameToken());
-        if (!mTokenList.getFiles().empty())
+        if ((mSettings.reportProgress != -1) && !mTokenList.getFiles().empty())
             mErrorLogger.reportProgress(mTokenList.getFiles()[0], "TemplateSimplifier::simplifyTemplateInstantiations()", tok2->progressValue());
 
         if (maxtime > 0 && std::time(nullptr) > maxtime) {
@@ -3314,9 +3321,9 @@ bool TemplateSimplifier::simplifyTemplateInstantiations(
 
         // New classname/funcname..
         const std::string newName(templateDeclaration.name() + " < " + typeForNewName + " >");
-        const std::string newFullName(templateDeclaration.scope() + (templateDeclaration.scope().empty() ? "" : " :: ") + newName);
+        std::string newFullName(templateDeclaration.scope() + (templateDeclaration.scope().empty() ? "" : " :: ") + newName);
 
-        if (expandedtemplates.insert(newFullName).second) {
+        if (expandedtemplates.insert(std::move(newFullName)).second) {
             expandTemplate(templateDeclaration, templateDeclaration, typeParametersInDeclaration, newName, !specialized && !isVar);
             instantiated = true;
             mChanged = true;

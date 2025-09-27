@@ -241,7 +241,7 @@ namespace {
 
         void printRaw(const std::string &message) override
         {
-            std::cout << message << std::endl;
+            std::cout << message << std::endl; // TODO: should not append newline
         }
     };
 
@@ -415,7 +415,7 @@ bool CppCheckExecutor::reportSuppressions(const Settings &settings, const Suppre
     if (settings.inlineSuppressions) {
         // report unmatched unusedFunction suppressions
         err |= SuppressionList::reportUnmatchedSuppressions(
-            suppressions.getUnmatchedInlineSuppressions(), errorLogger);
+            suppressions.getUnmatchedInlineSuppressions(unusedFunctionCheckEnabled), errorLogger);
     }
 
     err |= SuppressionList::reportUnmatchedSuppressions(suppressions.getUnmatchedGlobalSuppressions(unusedFunctionCheckEnabled), errorLogger);
@@ -641,23 +641,24 @@ void StdLogger::reportErr(const ErrorMessage &msg)
     if (msg.severity == Severity::internal)
         return;
 
-    // TODO: we generate a different message here then we log below
-    // TODO: there should be no need for verbose and default messages here
-    // Alert only about unique errors
-    if (!mSettings.emitDuplicates && !mShownErrors.insert(msg.toString(mSettings.verbose)).second)
-        return;
-
     ErrorMessage msgCopy = msg;
     msgCopy.guideline = getGuideline(msgCopy.id, mSettings.reportType,
                                      mGuidelineMapping, msgCopy.severity);
     msgCopy.classification = getClassification(msgCopy.guideline, mSettings.reportType);
 
+    // TODO: there should be no need for verbose and default messages here
+    const std::string msgStr = msgCopy.toString(mSettings.verbose, mSettings.templateFormat, mSettings.templateLocation);
+
+    // Alert only about unique errors
+    if (!mSettings.emitDuplicates && !mShownErrors.insert(msgStr).second)
+        return;
+
     if (mSettings.outputFormat == Settings::OutputFormat::sarif)
-        mSarifReport.addFinding(msgCopy);
+        mSarifReport.addFinding(std::move(msgCopy));
     else if (mSettings.outputFormat == Settings::OutputFormat::xml)
         reportErr(msgCopy.toXML());
     else
-        reportErr(msgCopy.toString(mSettings.verbose, mSettings.templateFormat, mSettings.templateLocation));
+        reportErr(msgStr);
 }
 
 /**

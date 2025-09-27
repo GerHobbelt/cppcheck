@@ -26,13 +26,13 @@
 #include "errortypes.h"
 #include "findtoken.h"
 #include "library.h"
-#include "mathlib.h"
 #include "settings.h"
 #include "symboldatabase.h"
 #include "token.h"
 #include "tokenize.h"
 #include "tokenlist.h"
 #include "valueflow.h"
+#include "vfvalue.h"
 
 #include <algorithm>
 #include <cctype>
@@ -434,6 +434,13 @@ void CheckNullPointer::nullConstantDereference()
     }
 }
 
+void CheckNullPointer::nullPointerError(const Token *tok)
+{
+    ValueFlow::Value v(0);
+    v.setKnown();
+    nullPointerError(tok, "", &v, false);
+}
+
 void CheckNullPointer::nullPointerError(const Token *tok, const std::string &varname, const ValueFlow::Value *value, bool inconclusive)
 {
     const std::string errmsgcond("$symbol:" + varname + '\n' + ValueFlow::eitherTheConditionIsRedundant(value ? value->condition : nullptr) + " or there is possible null pointer dereference: $symbol.");
@@ -546,11 +553,11 @@ void CheckNullPointer::pointerArithmeticError(const Token* tok, const ValueFlow:
 
     std::string id = "nullPointerArithmetic";
     if (value && value->unknownFunctionReturn == ValueFlow::Value::UnknownFunctionReturn::outOfMemory) {
-        errmsg = "If memory allocation fail: " + ((char)std::tolower(errmsg[0]) + errmsg.substr(1));
+        errmsg = "If memory allocation fails: " + ((char)std::tolower(errmsg[0]) + errmsg.substr(1));
         id += "OutOfMemory";
     }
     else if (value && value->unknownFunctionReturn == ValueFlow::Value::UnknownFunctionReturn::outOfResources) {
-        errmsg = "If resource allocation fail: " + ((char)std::tolower(errmsg[0]) + errmsg.substr(1));
+        errmsg = "If resource allocation fails: " + ((char)std::tolower(errmsg[0]) + errmsg.substr(1));
         id += "OutOfResources";
     }
 

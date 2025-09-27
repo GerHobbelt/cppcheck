@@ -27,11 +27,13 @@
 #include "symboldatabase.h"
 #include "token.h"
 #include "valueflow.h"
+#include "vfvalue.h"
 
 #include "vf_settokenvalue.h"
 
 #include <climits>
 #include <cstddef>
+#include <cstdint>
 #include <exception>
 #include <limits>
 #include <utility>

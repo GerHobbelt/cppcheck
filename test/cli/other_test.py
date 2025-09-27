@@ -2033,6 +2033,7 @@ def test_ignore(tmpdir):
     with open(test_file, 'wt'):
         pass
 
+    # TODO: this should say that all paths are ignored
     lines_exp = [
         'cppcheck: error: could not find or open any of the paths given.',
         'cppcheck: Maybe all paths were ignored?'
@@ -2222,89 +2223,66 @@ def __write_compdb(tmpdir, test_file):
     return compile_commands
 
 
-# TODO: -i appears to be ignored
-@pytest.mark.xfail(strict=True)
-def test_ignore_project_2(tmpdir):
+def __test_ignore_project_2(tmpdir, extra_args, append=False, inject_path=False):
     os.mkdir(os.path.join(tmpdir, 'src'))
     test_file = os.path.join(tmpdir, 'src', 'test.cpp')
     with open(test_file, 'wt'):
         pass
 
     lines_exp = [
-        'cppcheck: error: could not find or open any of the paths given.',
-        'cppcheck: Maybe all paths were ignored?'
+        'cppcheck: error: no C or C++ source files found.',
+        'cppcheck: all paths were ignored'
     ]
-
     project_file = __write_compdb(tmpdir, test_file)
     args = [
-        '-itest.cpp',
+        '-q',
         '--project={}'.format(project_file)
     ]
 
-    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
-    assert exitcode == 1, stdout
+    if inject_path:
+        extra_args = [ extra_args[0].replace('$path', str(test_file)) ]
+    if append:
+        args += extra_args
+    else:
+        args = extra_args + args
+    print(args)
+
+    exitcode, stdout, stderr = cppcheck(args, cwd=tmpdir)
+    assert exitcode == 1, stdout if stdout else stderr
     assert stdout.splitlines() == lines_exp
 
+
+@pytest.mark.xfail(strict=True)  # TODO: -i appears to be ignored
+def test_ignore_project_2_file(tmpdir):
+    __test_ignore_project_2(tmpdir, ['-itest.cpp'])
+
+
+@pytest.mark.xfail(strict=True)  # TODO: -i appears to be ignored
+def test_ignore_project_2_file_append(tmpdir):
     # make sure it also matches when specified after project
-    project_file = __write_compdb(tmpdir, test_file)
-    args = [
-        '--project={}'.format(project_file),
-        '-itest.cpp'
-    ]
+    __test_ignore_project_2(tmpdir, ['-itest.cpp'], append=True)
 
-    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
-    assert exitcode == 1, stdout
-    assert stdout.splitlines() == lines_exp
 
-    project_file = __write_compdb(tmpdir, test_file)
-    args = [
-        '-isrc/test.cpp',
-        '--project={}'.format(project_file)
-    ]
+@pytest.mark.xfail(strict=True)  # TODO: -i appears to be ignored
+def test_ignore_project_2_file_relative(tmpdir):
+    __test_ignore_project_2(tmpdir, ['-isrc/test.cpp'])
 
-    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
-    assert exitcode == 1, stdout
-    assert stdout.splitlines() == lines_exp
 
-    project_file = __write_compdb(tmpdir, test_file)
-    args = [
-        '-isrc\\test.cpp',
-        '--project={}'.format(project_file)
-    ]
+@pytest.mark.xfail(strict=True)  # TODO: -i appears to be ignored
+def test_ignore_project_2_file_relative_backslash(tmpdir):
+    __test_ignore_project_2(tmpdir, ['-isrc\\test.cpp'])
 
-    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
-    assert exitcode == 1, stdout
-    assert stdout.splitlines() == lines_exp
 
-    project_file = __write_compdb(tmpdir, test_file)
-    args = [
-        '-isrc/',
-        '--project={}'.format(project_file)
-    ]
+def test_ignore_project_2_path_relative(tmpdir):
+    __test_ignore_project_2(tmpdir, ['-isrc/'])
 
-    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
-    assert exitcode == 1, stdout
-    assert stdout.splitlines() == lines_exp
 
-    project_file = __write_compdb(tmpdir, test_file)
-    args = [
-        '-isrc\\',
-        '--project={}'.format(project_file)
-    ]
+def test_ignore_project_2_path_relative_backslash(tmpdir):
+    __test_ignore_project_2(tmpdir, ['-isrc\\'])
 
-    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
-    assert exitcode == 1, stdout
-    assert stdout.splitlines() == lines_exp
 
-    project_file = __write_compdb(tmpdir, test_file)
-    args = [
-        '-i{}'.format(test_file),
-        '--project={}'.format(project_file)
-    ]
-
-    exitcode, stdout, _ = cppcheck(args, cwd=tmpdir)
-    assert exitcode == 1, stdout
-    assert stdout.splitlines() == lines_exp
+def test_ignore_project_2_abspath(tmpdir):
+    __test_ignore_project_2(tmpdir, ['-i$path'], inject_path=True)
 
 
 def test_dumpfile_platform(tmpdir):
@@ -3161,3 +3139,234 @@ def test_debug_valueflow_xml(tmp_path):  # #13606
     assert value_elem[1].attrib['floatvalue'] == '1e-07'
     assert 'floatvalue' in value_elem[2].attrib
     assert value_elem[2].attrib['floatvalue'] == '1e-07'
+
+
+def test_dir_ignore(tmp_path):
+    test_file = tmp_path / 'test.cpp'
+    with open(test_file, 'wt'):
+        pass
+
+    lib_dir = tmp_path / 'lib'
+    os.mkdir(lib_dir)
+    lib_test_file = lib_dir / 'test.cpp'
+    with open(lib_test_file, 'wt'):
+        pass
+
+    args = [
+        '-ilib',
+        '--debug-ignore',
+        str(tmp_path)
+    ]
+    # make sure the whole directory is being ignored instead of each of its contents individually
+    out_lines = [
+        'ignored path: {}'.format(lib_dir),
+        'Checking {} ...'.format(test_file)
+    ]
+
+    assert_cppcheck(args, ec_exp=0, err_exp=[], out_exp=out_lines, cwd=str(tmp_path))
+
+
+def test_check_headers(tmp_path):
+    test_file_h = tmp_path / 'test.h'
+    with open(test_file_h, 'wt') as f:
+        f.write(
+"""
+inline void hdr()
+{
+    (void)(*((int*)0));
+}
+""")
+
+    test_file_c = tmp_path / 'test.c'
+    with open(test_file_c, 'wt') as f:
+        f.write(
+"""
+#include "test.h"
+
+void f() {}
+""")
+
+    args = [
+        '-q',
+        '--template=simple',
+        '--no-check-headers',
+        str(test_file_c)
+    ]
+    exitcode, stdout, stderr = cppcheck(args)
+    assert exitcode == 0, stdout
+    assert stdout.splitlines() == []
+    assert stderr.splitlines() == []  # no error since the header is not checked
+
+
+def test_unique_error(tmp_path):  # #6366
+    test_file = tmp_path / 'test.c'
+    with open(test_file, 'wt') as f:
+        f.write(
+"""void f()
+{
+    const long m[9] = {};
+    long a=m[9], b=m[9];
+    (void)a;
+    (void)b;
+}
+""")
+
+    args = [
+        '-q',
+        '--template=simple',
+        str(test_file)
+    ]
+    exitcode, stdout, stderr = cppcheck(args)
+    assert exitcode == 0, stdout
+    assert stdout.splitlines() == []
+    assert stderr.splitlines() == [
+        "{}:4:13: error: Array 'm[9]' accessed at index 9, which is out of bounds. [arrayIndexOutOfBounds]".format(test_file),
+        "{}:4:21: error: Array 'm[9]' accessed at index 9, which is out of bounds. [arrayIndexOutOfBounds]".format(test_file)
+    ]
+
+
+def test_check_unused_templates_class(tmp_path):
+    test_file_h = tmp_path / 'test.h'
+    with open(test_file_h, 'wt') as f:
+        f.write(
+"""template<class T>
+class HdrCl1
+{
+    HdrCl1()
+    {
+        (void)(*((int*)0));
+    }
+};
+
+template<typename T>
+class HdrCl2
+{
+    HdrCl2()
+    {
+        (void)(*((int*)0));
+    }
+};
+
+template<class T>
+struct HdrSt1
+{
+    HdrSt1()
+    {
+        (void)(*((int*)0));
+    }
+};
+
+template<typename T>
+struct HdrSt2
+{
+    HdrSt2()
+    {
+        (void)(*((int*)0));
+    }
+};
+""")
+
+    test_file = tmp_path / 'test.cpp'
+    with open(test_file, 'wt') as f:
+        f.write(
+"""#include "test.h"
+
+template<class T>
+class Cl1
+{
+    CL1()
+    {
+        (void)(*((int*)0));
+    }
+};
+
+template<typename T>
+class Cl2
+{
+    Cl2()
+    {
+        (void)(*((int*)0));
+    }
+};
+
+template<class T>
+struct St1
+{
+    St1()
+    {
+        (void)(*((int*)0));
+    }
+};
+
+template<typename T>
+struct St2
+{
+    St2()
+    {
+        (void)(*((int*)0));
+    }
+};
+
+void f() {}
+""")
+
+    args = [
+        '-q',
+        '--template=simple',
+        '--no-check-unused-templates',
+        str(test_file)
+    ]
+    exitcode, stdout, stderr = cppcheck(args)
+    assert exitcode == 0, stdout
+    assert stdout.splitlines() == []
+    assert stderr.splitlines() == []  # no error since the unused templates are not being checked
+
+
+@pytest.mark.xfail(strict=True)  # TODO: only the first unused templated function is not being checked
+def test_check_unused_templates_func(tmp_path):  # #13714
+    test_file_h = tmp_path / 'test.h'
+    with open(test_file_h, 'wt') as f:
+        f.write(
+"""template<class T>
+void f_t_hdr_1()
+{
+    (void)(*((int*)0));
+}
+
+template<typename T>
+void f_t_hdr_2()
+{
+    (void)(*((int*)0));
+}
+""")
+
+    test_file = tmp_path / 'test.cpp'
+    with open(test_file, 'wt') as f:
+        f.write(
+"""#include "test.h"
+
+template<class T>
+void f_t_1()
+{
+    (void)(*((int*)0));
+}
+
+template<typename T>
+void f_t_2()
+{
+    (void)(*((int*)0));
+}
+
+void f() {}
+""")
+
+    args = [
+        '-q',
+        '--template=simple',
+        '--no-check-unused-templates',
+        str(test_file)
+    ]
+    exitcode, stdout, stderr = cppcheck(args)
+    assert exitcode == 0, stdout
+    assert stdout.splitlines() == []
+    assert stderr.splitlines() == []  # no error since the unused templates are not being checked

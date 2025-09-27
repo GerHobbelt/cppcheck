@@ -203,7 +203,7 @@ private:
         }
 
         // TODO: there should be no need for the verbose and default messages here
-        std::string errmsg = msg.toString(mSettings.verbose);
+        std::string errmsg = msg.toString(mSettings.verbose, mSettings.templateFormat, mSettings.templateLocation);
         if (errmsg.empty())
             return;
 
@@ -400,7 +400,7 @@ static void createDumpFile(const Settings& settings,
           << " pointer_bit=\"" << (settings.platform.sizeof_pointer * settings.platform.char_bit) << '\"'
           << " wchar_t_bit=\"" << (settings.platform.sizeof_wchar_t * settings.platform.char_bit) << '\"'
           << " size_t_bit=\"" << (settings.platform.sizeof_size_t * settings.platform.char_bit) << '\"'
-          << "/>" << '\n';
+          << "/>\n";
 }
 
 static std::string detectPython(const CppCheck::ExecuteCmdFn &executeCommand)
@@ -433,8 +433,6 @@ static std::vector<picojson::value> executeAddon(const AddonInfo &addonInfo,
                                                  const std::string &premiumArgs,
                                                  const CppCheck::ExecuteCmdFn &executeCommand)
 {
-    const std::string redirect = "2>&1";
-
     std::string pythonExe;
 
     if (!addonInfo.executable.empty())
@@ -463,7 +461,7 @@ static std::vector<picojson::value> executeAddon(const AddonInfo &addonInfo,
     args += fileArg;
 
     std::string result;
-    if (const int exitcode = executeCommand(pythonExe, split(args), redirect, result)) {
+    if (const int exitcode = executeCommand(pythonExe, split(args), "2>&1", result)) {
         std::string message("Failed to execute addon '" + addonInfo.name + "' - exitcode is " + std::to_string(exitcode));
         std::string details = pythonExe + " " + args;
         if (result.size() > 2) {
@@ -585,17 +583,17 @@ static bool reportClangErrors(std::istream &is, const std::function<void(const E
         if (pos1 >= pos2 || pos2 >= pos3)
             continue;
 
-        const std::string filename = line.substr(0, pos1);
+        std::string filename = line.substr(0, pos1);
         const std::string linenr = line.substr(pos1+1, pos2-pos1-1);
         const std::string colnr = line.substr(pos2+1, pos3-pos2-1);
         const std::string msg = line.substr(line.find(':', pos3+1) + 2);
 
-        const std::string locFile = Path::toNativeSeparators(filename);
+        std::string locFile = Path::toNativeSeparators(std::move(filename));
         const int line_i = strToInt<int>(linenr);
         const int column = strToInt<unsigned int>(colnr);
         ErrorMessage::FileLocation loc(locFile, line_i, column);
         ErrorMessage errmsg({std::move(loc)},
-                            locFile,
+                            std::move(locFile),
                             Severity::error,
                             msg,
                             "syntaxError",
@@ -680,7 +678,7 @@ unsigned int CppCheck::checkClang(const FileWithDetails &file)
                               file.spath();
     const std::string redirect2 = clangStderr.empty() ? "2>&1" : ("2> " + clangStderr);
     if (mSettings.verbose && !mSettings.quiet) {
-        mErrorLogger.reportOut(exe + " " + args2);
+        mErrorLogger.reportOut(exe + " " + args2, Color::Reset);
     }
 
     std::string output2;
@@ -736,6 +734,7 @@ unsigned int CppCheck::checkClang(const FileWithDetails &file)
         std::string dumpFile;
         createDumpFile(mSettings, file, fdump, dumpFile);
         if (fdump.is_open()) {
+            fdump << getLibraryDumpData();
             // TODO: use tinyxml2 to create XML
             fdump << "<dump cfg=\"\">\n";
             for (const ErrorMessage& errmsg: compilerWarnings)
@@ -744,7 +743,6 @@ unsigned int CppCheck::checkClang(const FileWithDetails &file)
             fdump << "    <c version=\"" << mSettings.standards.getC() << "\"/>\n";
             fdump << "    <cpp version=\"" << mSettings.standards.getCPP() << "\"/>\n";
             fdump << "  </standards>\n";
-            fdump << getLibraryDumpData();
             tokenizer.dump(fdump);
             fdump << "</dump>\n";
             fdump << "</dumps>\n";
@@ -866,19 +864,19 @@ unsigned int CppCheck::checkFile(const FileWithDetails& file, const std::string 
         mErrorLogger.reportOut(std::string("Checking ") + fixedpath + ' ' + cfgname + std::string("..."), Color::FgGreen);
 
         if (mSettings.verbose) {
-            mErrorLogger.reportOut("Defines:" + mSettings.userDefines);
+            mErrorLogger.reportOut("Defines:" + mSettings.userDefines, Color::Reset);
             std::string undefs;
             for (const std::string& U : mSettings.userUndefs) {
                 if (!undefs.empty())
                     undefs += ';';
                 undefs += ' ' + U;
             }
-            mErrorLogger.reportOut("Undefines:" + undefs);
+            mErrorLogger.reportOut("Undefines:" + undefs, Color::Reset);
             std::string includePaths;
             for (const std::string &I : mSettings.includePaths)
                 includePaths += " -I" + I;
-            mErrorLogger.reportOut("Includes:" + includePaths);
-            mErrorLogger.reportOut(std::string("Platform:") + mSettings.platform.toString());
+            mErrorLogger.reportOut("Includes:" + includePaths, Color::Reset);
+            mErrorLogger.reportOut(std::string("Platform:") + mSettings.platform.toString(), Color::Reset);
         }
     }
 
@@ -1065,6 +1063,7 @@ unsigned int CppCheck::checkFile(const FileWithDetails& file, const std::string 
         std::string dumpFile;
         createDumpFile(mSettings, file, fdump, dumpFile);
         if (fdump.is_open()) {
+            fdump << getLibraryDumpData();
             fdump << dumpProlog;
             if (!mSettings.dump)
                 filesDeleter.addFile(dumpFile);
@@ -1113,7 +1112,7 @@ unsigned int CppCheck::checkFile(const FileWithDetails& file, const std::string 
                 pos = 0;
                 while ((pos = codeWithoutCfg.find(Preprocessor::macroChar,pos)) != std::string::npos)
                     codeWithoutCfg[pos] = ' ';
-                mErrorLogger.reportOut(codeWithoutCfg);
+                mErrorLogger.reportOut(codeWithoutCfg, Color::Reset);
                 continue;
             }
 
@@ -1227,10 +1226,10 @@ unsigned int CppCheck::checkFile(const FileWithDetails& file, const std::string 
             for (const std::string &s : configurationError)
                 msg += '\n' + s;
 
-            const std::string locFile = Path::toNativeSeparators(file.spath());
+            std::string locFile = Path::toNativeSeparators(file.spath());
             ErrorMessage::FileLocation loc(locFile, 0, 0);
             ErrorMessage errmsg({std::move(loc)},
-                                locFile,
+                                std::move(locFile),
                                 Severity::information,
                                 msg,
                                 "noValidConfiguration",
@@ -1778,13 +1777,13 @@ void CppCheck::executeAddonsWholeProgram(const std::list<FileWithDetails> &files
         return;
 
     if (mSettings.buildDir.empty()) {
-        const std::string fileName = std::to_string(mSettings.pid) + ".ctu-info";
+        std::string fileName = std::to_string(mSettings.pid) + ".ctu-info";
         FilesDeleter filesDeleter;
         filesDeleter.addFile(fileName);
         std::ofstream fout(fileName);
         fout << ctuInfo;
         fout.close();
-        executeAddons({fileName}, "");
+        executeAddons({std::move(fileName)}, "");
         return;
     }
 

@@ -157,6 +157,9 @@ Library::Library(const Library& other)
 
 Library& Library::operator=(const Library& other) &
 {
+    if (this == &other)
+        return *this;
+
     mData.reset(new LibraryData(*other.mData));
     return *this;
 }
@@ -1431,7 +1434,7 @@ bool Library::isNotLibraryFunction(const Token *ftok, const Function **func) con
     if (ftok->isKeyword() || ftok->isStandardType())
         return true;
 
-    if (ftok->function() && ftok->function()->nestedIn && ftok->function()->nestedIn->type != Scope::eGlobal)
+    if (ftok->function() && ftok->function()->nestedIn && ftok->function()->nestedIn->type != ScopeType::eGlobal)
         return true;
 
     // variables are not library functions.
@@ -1597,6 +1600,10 @@ const std::string& Library::returnValue(const Token *ftok) const
 
 const std::string& Library::returnValueType(const Token *ftok) const
 {
+    while (Token::simpleMatch(ftok, "::"))
+        ftok = ftok->astOperand2() ? ftok->astOperand2() : ftok->astOperand1();
+    if (!ftok)
+        return mEmptyString;
     if (isNotLibraryFunction(ftok)) {
         if (Token::simpleMatch(ftok->astParent(), ".") && ftok->astParent()->astOperand1()) {
             const Token* contTok = ftok->astParent()->astOperand1();
@@ -1886,9 +1893,15 @@ bool Library::isSmartPointer(const Token* tok) const
 const Library::SmartPointer* Library::detectSmartPointer(const Token* tok, bool withoutStd) const
 {
     std::string typestr = withoutStd ? "std::" : "";
-    while (Token::Match(tok, "%name%|::")) {
-        typestr += tok->str();
+    if (tok->str() == "::")
         tok = tok->next();
+    while (Token::Match(tok, "%name% ::")) {
+        typestr += tok->str();
+        typestr += "::";
+        tok = tok->tokAt(2);
+    }
+    if (tok && tok->isName()) {
+        typestr += tok->str();
     }
     auto it = mData->mSmartPointers.find(typestr);
     if (it == mData->mSmartPointers.end())

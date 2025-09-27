@@ -137,7 +137,7 @@ public:
     /**
      * Check code in the headers, this is on by default but can
      * be turned off to save CPU */
-    bool checkHeaders = true; // TODO: CLI
+    bool checkHeaders = true;
 
     /** Check for incomplete info in library files? */
     bool checkLibrary{};
@@ -152,7 +152,7 @@ public:
     std::set<std::string> checkUnknownFunctionReturn; // TODO: move to Library?
 
     /** Check unused/uninstantiated templates */
-    bool checkUnusedTemplates = true; // TODO: CLI
+    bool checkUnusedTemplates = true;
 
     /** Use Clang */
     bool clang{};
@@ -183,6 +183,9 @@ public:
 
     /** @brief Is --debug-clang-output given? */
     bool debugClangOutput{};
+
+    /** @brief Is --debug-ignore given? */
+    bool debugignore{};
 
     /** @brief Internal: Is --debug-lookup or --debug-lookup=all given? */
     bool debuglookup{};

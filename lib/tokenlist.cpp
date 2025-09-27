@@ -31,11 +31,13 @@
 #include "standards.h"
 #include "token.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cstdint>
 #include <exception>
 #include <functional>
 #include <iostream>
+#include <iterator>
 #include <utility>
 #include <set>
 #include <stack>
@@ -113,9 +115,11 @@ void TokenList::determineCppC()
 int TokenList::appendFileIfNew(std::string fileName)
 {
     // Has this file been tokenized already?
-    for (int i = 0; i < mFiles.size(); ++i)
-        if (Path::sameFileName(mFiles[i], fileName))
-            return i;
+    auto it = std::find_if(mFiles.cbegin(), mFiles.cend(), [&](const std::string& f) {
+        return Path::sameFileName(f, fileName);
+    });
+    if (it != mFiles.cend())
+        return static_cast<int>(std::distance(mFiles.cbegin(), it));
 
     // The "mFiles" vector remembers what files have been tokenized..
     mFiles.push_back(std::move(fileName));
@@ -249,8 +253,10 @@ void TokenList::addtoken(const Token *tok)
         mTokensFrontBack.front = new Token(mTokensFrontBack);
         mTokensFrontBack.back = mTokensFrontBack.front;
         mTokensFrontBack.back->str(tok->str());
-        mTokensFrontBack.back->originalName(tok->originalName());
-        mTokensFrontBack.back->setMacroName(tok->getMacroName());
+        if (!tok->originalName().empty())
+            mTokensFrontBack.back->originalName(tok->originalName());
+        if (!tok->getMacroName().empty())
+            mTokensFrontBack.back->setMacroName(tok->getMacroName());
     }
 
     mTokensFrontBack.back->flags(tok->flags());
@@ -327,7 +333,8 @@ void TokenList::insertTokens(Token *dest, const Token *src, nonneg int n)
         dest->varId(src->varId());
         dest->tokType(src->tokType());
         dest->flags(src->flags());
-        dest->setMacroName(src->getMacroName());
+        if (!src->getMacroName().empty())
+            dest->setMacroName(src->getMacroName());
         src  = src->next();
         --n;
     }
@@ -410,7 +417,8 @@ void TokenList::createTokens(simplecpp::TokenList&& tokenList)
         mTokensFrontBack.back->fileIndex(tok->location.fileIndex);
         mTokensFrontBack.back->linenr(tok->location.line);
         mTokensFrontBack.back->column(tok->location.col);
-        mTokensFrontBack.back->setMacroName(tok->macro);
+        if (!tok->macro.empty())
+            mTokensFrontBack.back->setMacroName(tok->macro);
 
         tok = tok->next;
         if (tok)

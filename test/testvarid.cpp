@@ -275,7 +275,7 @@ private:
         Tokenizer tokenizer(settings, *this);
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.list.createTokens(istr, filename), file, line);
-        EXPECT_EQ(true, tokenizer.simplifyTokens1(""));
+        ASSERT_EQUALS(true, tokenizer.simplifyTokens1(""));
 
         // result..
         Token::stringifyOptions options = Token::stringifyOptions::forDebugVarId();
@@ -2532,6 +2532,50 @@ private:
                       "3: int a@2 ; int & b@3 ;\n"
                       "4: } ;\n",
                       tokenize(code11));
+
+        const char code12[] = "template<typename... T>\n" // # 13070
+                              "    struct S1 : T... {\n"
+                              "    constexpr S1(const T& ... p) : T{ p } {}\n"
+                              "};\n"
+                              "namespace p { struct S2 {}; }\n"
+                              "struct S3 {\n"
+                              "    S3() {}\n"
+                              "    bool f(p::S2& c);\n"
+                              "};\n";
+        ASSERT_EQUALS("1: template < typename ... T >\n"
+                      "2: struct S1 : T ... {\n"
+                      "3: constexpr S1 ( const T & ... p@1 ) : T { p@1 } { }\n"
+                      "4: } ;\n"
+                      "5: namespace p { struct S2 { } ; }\n"
+                      "6: struct S3 {\n"
+                      "7: S3 ( ) { }\n"
+                      "8: bool f ( p :: S2 & c@2 ) ;\n"
+                      "9: } ;\n",
+                      tokenize(code12));
+
+        const char code13[] = "template <typename... T>\n" // #13088
+                              "struct B {};\n"
+                              "template <typename... T>\n"
+                              "struct D : B<T>... {\n"
+                              "    template <typename... P>\n"
+                              "    D(P&&... p) : B<T>(std::forward<P>(p))... {}\n"
+                              "};\n"
+                              "template <typename... T>\n"
+                              "struct S {\n"
+                              "    D<T...> d;\n"
+                              "};\n";
+        ASSERT_EQUALS("1: template < typename ... T >\n"
+                      "2: struct B { } ;\n"
+                      "3: template < typename ... T >\n"
+                      "4: struct D : B < T > ... {\n"
+                      "5: template < typename ... P >\n"
+                      "6: D ( P && ... p@1 ) : B < T > ( std :: forward < P > ( p@1 ) ) ... { }\n"
+                      "7: } ;\n"
+                      "8: template < typename ... T >\n"
+                      "9: struct S {\n"
+                      "10: D < T ... > d@2 ;\n"
+                      "11: } ;\n",
+                      tokenize(code13));
     }
 
     void varid_initListWithBaseTemplate() {

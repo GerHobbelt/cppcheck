@@ -114,6 +114,7 @@ private:
         TEST_CASE(constVariable);
         TEST_CASE(constParameterCallback);
         TEST_CASE(constPointer);
+        TEST_CASE(constArray);
 
         TEST_CASE(switchRedundantAssignmentTest);
         TEST_CASE(switchRedundantOperationTest);
@@ -1766,11 +1767,11 @@ private:
                       errout_str());
     }
 
-#define checkOldStylePointerCast(code) checkOldStylePointerCast_(code, __FILE__, __LINE__)
+#define checkOldStylePointerCast(...) checkOldStylePointerCast_(__FILE__, __LINE__, __VA_ARGS__)
     template<size_t size>
-    void checkOldStylePointerCast_(const char (&code)[size], const char* file, int line) {
-        // #5560 - set c++03
-        const Settings settings = settingsBuilder().severity(Severity::style).cpp(Standards::CPP03).build();
+    void checkOldStylePointerCast_(const char* file, int line, const char (&code)[size], Standards::cppstd_t std = Standards::CPPLatest) {
+
+        const Settings settings = settingsBuilder().severity(Severity::style).cpp(std).build();
 
         // Tokenize..
         SimpleTokenizer tokenizerCpp(settings, *this);
@@ -1891,7 +1892,7 @@ private:
                                  "{ virtual G* createGui(S*, C*) const = 0; };\n"
                                  "\n"
                                  "class MS : public M\n"
-                                 "{ virtual void addController(C*) override {} };");
+                                 "{ virtual void addController(C*) override {} };", Standards::CPP03);
         ASSERT_EQUALS("", errout_str());
 
         // #6164
@@ -1984,6 +1985,19 @@ private:
                                  "  r = 0;\n"
                                  "}\n");
         ASSERT_EQUALS("[test.cpp:2]: (style) C-style reference casting\n", errout_str());
+
+        // #11430
+        checkOldStylePointerCast("struct B {\n"
+                                 "    float* data() const;\n"
+                                 "};\n"
+                                 "namespace N {\n"
+                                 "    bool f(float* v);\n"
+                                 "}\n"
+                                 "bool g(B& b) {\n"
+                                 "    using float_ptr = float*;\n"
+                                 "    return N::f(float_ptr(b.data()));\n"
+                                 "}\n");
+        ASSERT_EQUALS("[test.cpp:9]: (style) C-style pointer casting\n", errout_str());
     }
 
 #define checkInvalidPointerCast(...) checkInvalidPointerCast_(__FILE__, __LINE__, __VA_ARGS__)
@@ -3394,14 +3408,6 @@ private:
               "}\n");
         ASSERT_EQUALS("", errout_str());
 
-        check("void f(std::array<int, 2>& a) {\n"
-              "    if (a[0]) {}\n"
-              "}\n"
-              "void g(std::array<int, 2>& a) {\n"
-              "    a.fill(0);\n"
-              "}\n");
-        ASSERT_EQUALS("[test.cpp:1]: (style) Parameter 'a' can be declared as const array\n", errout_str());
-
         // #11682
         check("struct b {\n"
               "    void mutate();\n"
@@ -3823,19 +3829,6 @@ private:
               "}\n");
         ASSERT_EQUALS("", errout_str());
 
-        check("int f() {\n"
-              "    static int i[1] = {};\n"
-              "    return i[0];\n"
-              "}\n");
-        ASSERT_EQUALS("[test.cpp:2]: (style) Variable 'i' can be declared as const array\n", errout_str());
-
-        check("int f() {\n"
-              "    static int i[] = { 0 };\n"
-              "    int j = i[0] + 1;\n"
-              "    return j;\n"
-              "}\n");
-        ASSERT_EQUALS("[test.cpp:2]: (style) Variable 'i' can be declared as const array\n", errout_str());
-
         // #10471
         check("void f(std::array<int, 1> const& i) {\n"
               "    if (i[0] == 0) {}\n"
@@ -3912,19 +3905,6 @@ private:
               "};\n"
               "S<int*> s;\n");
         ASSERT_EQUALS("", errout_str());
-
-        check("void f(int i) {\n"
-              "    const char *tmp;\n"
-              "    char* a[] = { \"a\", \"aa\" };\n"
-              "    static char* b[] = { \"b\", \"bb\" };\n"
-              "    tmp = a[i];\n"
-              "    printf(\"%s\", tmp);\n"
-              "    tmp = b[i];\n"
-              "    printf(\"%s\", tmp);\n"
-              "}\n");
-        ASSERT_EQUALS("[test.cpp:3]: (style) Variable 'a' can be declared as const array\n"
-                      "[test.cpp:4]: (style) Variable 'b' can be declared as const array\n",
-                      errout_str());
 
         check("typedef void* HWND;\n" // #11084
               "void f(const HWND h) {\n"
@@ -4225,6 +4205,66 @@ private:
               "    (void)s->i;\n"
               "}\n");
         ASSERT_EQUALS("[test.cpp:2]: (style) Parameter 's' can be declared as pointer to const\n",
+                      errout_str());
+
+        check("void f(int* a, int* b, int i) {\n" // #13072
+              "    a[b[i]] = 0;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:1]: (style) Parameter 'b' can be declared as pointer to const\n",
+                      errout_str());
+
+        check("int f(int* a, int* b, int i) {\n" // #13085
+              "    a[*(b + i)] = 0;\n"
+              "    return *(b + i);\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:1]: (style) Parameter 'b' can be declared as pointer to const\n",
+                      errout_str());
+    }
+
+    void constArray() {
+        check("void f(std::array<int, 2>& a) {\n"
+              "    if (a[0]) {}\n"
+              "}\n"
+              "void g(std::array<int, 2>& a) {\n"
+              "    a.fill(0);\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:1]: (style) Parameter 'a' can be declared as const array\n", errout_str());
+
+        check("int f() {\n"
+              "    static int i[1] = {};\n"
+              "    return i[0];\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Variable 'i' can be declared as const array\n", errout_str());
+
+        check("int f() {\n"
+              "    static int i[] = { 0 };\n"
+              "    int j = i[0] + 1;\n"
+              "    return j;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Variable 'i' can be declared as const array\n", errout_str());
+
+        check("void f(int i) {\n"
+              "    const char *tmp;\n"
+              "    char* a[] = { \"a\", \"aa\" };\n"
+              "    static char* b[] = { \"b\", \"bb\" };\n"
+              "    tmp = a[i];\n"
+              "    printf(\"%s\", tmp);\n"
+              "    tmp = b[i];\n"
+              "    printf(\"%s\", tmp);\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:3]: (style) Variable 'a' can be declared as const array\n"
+                      "[test.cpp:4]: (style) Variable 'b' can be declared as const array\n",
+                      errout_str());
+
+        check("int f(int i, int j) {\n" // #13069
+              "    int a[3][4] = {\n"
+              "        { 2,  2, -1, -1 },\n"
+              "        { 2, -1,  2, -1 },\n"
+              "        { 2, -1, -1,  2 },\n"
+              "    };\n"
+              "    return a[j][i];\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Variable 'a' can be declared as const array\n",
                       errout_str());
     }
 

@@ -40,6 +40,7 @@
 #include <iostream>
 #include <istream>
 #include <iterator>
+#include <list>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -56,6 +57,9 @@
 #include <version>
 #ifdef __cpp_lib_span
 #include <span>
+#endif
+#ifdef __cpp_lib_format
+#include <format>
 #endif
 
 #if __cplusplus <= 201402L
@@ -707,6 +711,12 @@ size_t bufferAccessOutOfBounds_wcsrtombs(char * dest, const wchar_t ** src, size
     // cppcheck-suppress bufferAccessOutOfBounds
     (void)std::wcsrtombs(buf,src,43,ps);
     return std::wcsrtombs(dest,src,len,ps);
+}
+
+void deallocuse_wcrtomb(char *buff) { // #13119
+    free(buff);
+    // cppcheck-suppress deallocuse
+    wcrtomb(buff, L'x', nullptr);
 }
 
 void invalidFunctionArg_std_string_substr(const std::string &str, std::size_t pos, std::size_t len) {
@@ -5149,6 +5159,14 @@ void unusedvar_stringstream(const char* p)
     std::stringstream sstr(p);
 }
 
+void unusedvar_stdcomplex()
+{
+    // cppcheck-suppress unusedVariable
+    std::complex<double> z1;
+    // cppcheck-suppress unreadVariable
+    std::complex<double> z2(0.0, 0.0);
+}
+
 int passedByValue_std_array1(std::array<int, 2> a)
 {
     return a[0] + a[1];
@@ -5178,6 +5196,31 @@ struct S_std_as_const { // #12974
     }
     std::list<int> l;
 };
+
+#if __cpp_lib_format
+void unreadVariable_std_format_error(char * c)
+{
+    // cppcheck-suppress unreadVariable
+    std::format_error x(c);
+}
+#endif
+
+void eraseIteratorOutOfBounds_std_list1()
+{
+    std::list<int> a;
+    std::list<int>::iterator p = a.begin();
+    // cppcheck-suppress eraseIteratorOutOfBounds
+    a.erase(p);
+}
+int eraseIteratorOutOfBounds_std_list2()
+{
+    std::list<int> a;
+    std::list<int>::iterator p = a.begin();
+    std::list<int>::iterator q = p;
+    // cppcheck-suppress eraseIteratorOutOfBounds
+    a.erase(q);
+    return *q;
+}
 
 void containerOutOfBounds_std_string(std::string &var) { // #11403
     std::string s0{"x"};

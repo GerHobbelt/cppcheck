@@ -233,6 +233,7 @@ private:
         TEST_CASE(simplifyTypedefFunction8);
         TEST_CASE(simplifyTypedefFunction9);
         TEST_CASE(simplifyTypedefFunction10); // #5191
+        TEST_CASE(simplifyTypedefFunction11);
 
         TEST_CASE(simplifyTypedefStruct); // #12081 - volatile struct
 
@@ -3382,6 +3383,22 @@ private:
         const char code2[] = "typedef int* T;\n"
                              "void f(T = T()){}\n";
         ASSERT_EQUALS("void f ( int * = ( int * ) 0 ) { }", tok(code2));
+
+        // #11430
+        const char code3[] = "typedef char* T;\n"
+                             "T f() { return T(\"abc\"); }\n";
+        ASSERT_EQUALS("char * f ( ) { return ( char * ) ( \"abc\" ) ; }", tok(code3));
+
+        const char code4[] = "typedef struct _a *A;\n" // #13104
+                             "typedef struct _b* B;\n"
+                             "typedef A(get_t)(B);\n"
+                             "extern get_t* get;\n"
+                             "A f() {\n"
+                             "    return get(0);\n"
+                             "}\n";
+        ASSERT_EQUALS("extern struct _a * ( * get ) ( struct _b * ) ; "
+                      "struct _a * f ( ) { return get ( 0 ) ; }",
+                      tok(code4));
     }
 
     void simplifyTypedef143() { // #11506
@@ -4308,6 +4325,27 @@ private:
                       "Format_E1 ( * * t1 ) ( ) ; "
                       "MySpace :: Format_E2 ( * * t2 ) ( ) ;",
                       tok(code,false));
+    }
+
+    void simplifyTypedefFunction11() {
+        const char code[] = "typedef void (*func_t) (int);\n"
+                            "void g(int);\n"
+                            "void f(void* p) {\n"
+                            "    if (g != func_t(p)) {}\n"
+                            "    if (g != (func_t)p) {}\n"
+                            "}\n";
+        TODO_ASSERT_EQUALS("void g ( int ) ; "
+                           "void f ( void * p ) { "
+                           "if ( g != ( void ( * ) ( int ) ) ( p ) ) { } "
+                           "if ( g != ( void ( * ) ( int ) ) p ) { } "
+                           "}",
+                           "void g ( int ) ; "
+                           "void f ( void * p ) { "
+                           "if ( g != void * ( p ) ) { } "
+                           "if ( g != ( void * ) p ) { } "
+                           "}",
+                           tok(code,false));
+        ignore_errout(); // we are not interested in the output
     }
 
     void simplifyTypedefStruct() {

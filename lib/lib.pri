@@ -80,6 +80,7 @@ HEADERS += $${PWD}/addoninfo.h \
            $${PWD}/valueptr.h \
            $${PWD}/version.h \
            $${PWD}/vf_analyze.h \
+           $${PWD}/vf_analyzers.h \
            $${PWD}/vf_array.h \
            $${PWD}/vf_arraybool.h \
            $${PWD}/vf_arrayelement.h \
@@ -92,6 +93,7 @@ HEADERS += $${PWD}/addoninfo.h \
            $${PWD}/vf_globalconstvar.h \
            $${PWD}/vf_globalstaticvar.h \
            $${PWD}/vf_impossiblevalues.h \
+           $${PWD}/vf_infercondition.h \
            $${PWD}/vf_iteratorinfer.h \
            $${PWD}/vf_iterators.h \
            $${PWD}/vf_number.h \
@@ -167,6 +169,7 @@ SOURCES += $${PWD}/valueflow.cpp \
            $${PWD}/token.cpp \
            $${PWD}/tokenlist.cpp \
            $${PWD}/utils.cpp \
+           $${PWD}/vf_analyzers.cpp \
            $${PWD}/vf_array.cpp \
            $${PWD}/vf_arraybool.cpp \
            $${PWD}/vf_arrayelement.cpp \
@@ -179,6 +182,7 @@ SOURCES += $${PWD}/valueflow.cpp \
            $${PWD}/vf_globalconstvar.cpp \
            $${PWD}/vf_globalstaticvar.cpp \
            $${PWD}/vf_impossiblevalues.cpp \
+           $${PWD}/vf_infercondition.cpp \
            $${PWD}/vf_iteratorinfer.cpp \
            $${PWD}/vf_iterators.cpp \
            $${PWD}/vf_number.cpp \

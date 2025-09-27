@@ -191,7 +191,9 @@ private:
             Token::createMutualLinks(tokenList.front()->next(), tokenList.back()->previous());
             tokenList.createAst();
 
-            ASSERT(!library.isNotLibraryFunction(tokenList.front()));
+            const Library::Function* func = nullptr;
+            ASSERT(!library.isNotLibraryFunction(tokenList.front(), &func));
+            ASSERT(func);
         }
         {
             TokenList tokenList(&settings);
@@ -200,7 +202,9 @@ private:
             Token::createMutualLinks(tokenList.front()->next(), tokenList.back()->previous());
             tokenList.createAst();
 
-            ASSERT(!library.isNotLibraryFunction(tokenList.front()));
+            const Library::Function* func = nullptr;
+            ASSERT(!library.isNotLibraryFunction(tokenList.front(), &func));
+            ASSERT(func);
         }
         {
             TokenList tokenList(&settings);
@@ -1020,8 +1024,8 @@ private:
     void loadLibError(const char (&xmldata)[size], Library::ErrorCode errorcode, const char* file, unsigned line) const {
         Library library;
         Library::Error liberr;
-        (void)assertEquals(file, line, true, LibraryHelper::loadxmldata(library, liberr, xmldata, size-1));
-        (void)assertEquals(file, line, true, errorcode == liberr.errorcode);
+        assertEquals(file, line, true, LibraryHelper::loadxmldata(library, liberr, xmldata, size-1));
+        assertEquals(file, line, true, errorcode == liberr.errorcode);
     }
 
 #define LOADLIB_ERROR_INVALID_RANGE(valid) LOADLIBERROR("<?xml version=\"1.0\"?>\n" \

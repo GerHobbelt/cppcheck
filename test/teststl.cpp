@@ -5132,6 +5132,18 @@ private:
               "    }\n"
               "}\n");
         ASSERT_EQUALS("", errout_str()); // don't crash
+
+        check("void f(int);\n" // #13064
+              "void g() {\n"
+              "    std::vector<int> v{ 0 };\n"
+              "    auto it = std::find(v.begin(), v.end(), 0);\n"
+              "    if (it == v.end()) {\n"
+              "        f({});\n"
+              "        it = v.begin();\n"
+              "    }\n"
+              "    *it;\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
     }
 
     void dereferenceInvalidIterator2() {
@@ -6293,6 +6305,15 @@ private:
               "    std::vector<std::string> args(argv + 1, argv + argc);\n"
               "    args.push_back(\"-h\");\n"
               "    args.front();\n"
+              "}\n",
+              true);
+        ASSERT_EQUALS("", errout_str());
+
+        check("void f(std::vector<int>& v) {\n" // #13108
+              "    auto it = unknown(v);\n"
+              "    auto w = std::vector<int>{ it, v.end() };\n"
+              "    v.erase(it, v.end());\n"
+              "    for (const auto& i : w) {}\n"
               "}\n",
               true);
         ASSERT_EQUALS("", errout_str());

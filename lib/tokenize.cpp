@@ -752,9 +752,10 @@ namespace {
                 return;
 
             mUsed = true;
+            const bool isFunctionPointer = Token::Match(mNameToken, "%name% )");
 
-            // Special handling for T() when T is a pointer
-            if (Token::Match(tok, "%name% ( )")) {
+            // Special handling for T(...) when T is a pointer
+            if (Token::Match(tok, "%name% [({]") && !isFunctionPointer && !Token::simpleMatch(tok->linkAt(1), ") (")) {
                 bool pointerType = false;
                 for (const Token* type = mRangeType.first; type != mRangeType.second; type = type->next()) {
                     if (type->str() == "*" || type->str() == "&") {
@@ -769,16 +770,28 @@ namespace {
                     }
                 }
                 if (pointerType) {
-                    tok->deleteThis();
-                    tok->next()->insertToken("0");
-                    Token* tok2 = insertTokens(tok, mRangeType);
-                    insertTokens(tok2, mRangeTypeQualifiers);
+                    tok->tokAt(1)->str("(");
+                    tok->linkAt(1)->str(")");
+                    if (tok->linkAt(1) == tok->tokAt(2)) { // T() or T{}
+                        tok->deleteThis();
+                        tok->next()->insertToken("0");
+                        Token* tok2 = insertTokens(tok, mRangeType);
+                        insertTokens(tok2, mRangeTypeQualifiers);
+                    }
+                    else { // functional-style cast
+                        tok->originalName(tok->str());
+                        tok->isSimplifiedTypedef(true);
+                        tok->str("(");
+                        Token* tok2 = insertTokens(tok, mRangeType);
+                        tok2 = insertTokens(tok2, mRangeTypeQualifiers);
+                        Token* tok3 = tok2->insertToken(")");
+                        Token::createMutualLinks(tok, tok3);
+                    }
                     return;
                 }
             }
 
             // Special handling of function pointer cast
-            const bool isFunctionPointer = Token::Match(mNameToken, "%name% )");
             if (isFunctionPointer && isCast(tok->previous())) {
                 tok->insertToken("*");
                 Token* const tok_1 = insertTokens(tok, std::pair<Token*, Token*>(mRangeType.first, mNameToken->linkAt(1)));
@@ -3331,13 +3344,27 @@ bool Tokenizer::simplifyUsing()
                         }
                     }
 
-                    // Is this a "T()" expression where T is a pointer type?
-                    if (Token::Match(tok1, "%name% ( )") && !pointers.empty()) {
-                        Token* tok2 = tok1->linkAt(1);
-                        tok1->deleteThis();
-                        TokenList::copyTokens(tok1, start, usingEnd->previous());
-                        tok2->insertToken("0");
-                        after = tok2->next();
+                    // Is this a "T(...)" expression where T is a pointer type?
+                    if (Token::Match(tok1, "%name% [({]") && !pointers.empty() && !Token::simpleMatch(tok1->tokAt(-1), ".")) {
+                        tok1->tokAt(1)->str("(");
+                        tok1->linkAt(1)->str(")");
+                        if (tok1->linkAt(1) == tok1->tokAt(2)) { // T() or T{}
+                            Token* tok2 = tok1->linkAt(1);
+                            tok1->deleteThis();
+                            TokenList::copyTokens(tok1, start, usingEnd->previous());
+                            tok2->insertToken("0");
+                            after = tok2->next();
+                        }
+                        else { // functional-style cast
+                            Token* tok2 = tok1->linkAt(1);
+                            tok1->originalName(tok1->str());
+                            tok1->isSimplifiedTypedef(true);
+                            tok1->str("(");
+                            Token* tok3 = TokenList::copyTokens(tok1, start, usingEnd->previous());
+                            tok3->insertToken(")");
+                            Token::createMutualLinks(tok1, tok3->next());
+                            after = tok2->next();
+                        }
                     }
                     else { // just replace simple type aliases
                         TokenList::copyTokens(tok1, start, usingEnd->previous());
@@ -4353,8 +4380,8 @@ static void setVarIdStructMembers(Token *&tok1,
                 tok = tok->link();
             if (Token::Match(tok->previous(), "[,{] . %name% =|{")) {
                 tok = tok->next();
-                const std::map<std::string, nonneg int>::iterator it = members.find(tok->str());
-                if (it == members.end()) {
+                const std::map<std::string, nonneg int>::const_iterator it = members.find(tok->str());
+                if (it == members.cend()) {
                     members[tok->str()] = ++varId;
                     tok->varId(varId);
                 } else {
@@ -4387,8 +4414,8 @@ static void setVarIdStructMembers(Token *&tok1,
             break;
 
         std::map<std::string, nonneg int>& members = structMembers[struct_varid];
-        const std::map<std::string, nonneg int>::iterator it = members.find(tok->str());
-        if (it == members.end()) {
+        const std::map<std::string, nonneg int>::const_iterator it = members.find(tok->str());
+        if (it == members.cend()) {
             members[tok->str()] = ++varId;
             tok->varId(varId);
         } else {
@@ -4611,7 +4638,7 @@ void Tokenizer::setVarIdPass1()
 
             // parse anonymous namespaces as part of the current scope
             if (!Token::Match(startToken->previous(), "union|struct|enum|namespace {") &&
-                !(initlist && Token::Match(startToken->previous(), "%name%|>|>>|(") && Token::Match(startToken->link(), "} ,|{|)"))) {
+                !(initlist && Token::Match(startToken->previous(), "%name%|>|>>|(") && Token::Match(startToken->link(), "} ,|{|)|..."))) {
 
                 if (tok->str() == "{") {
                     bool isExecutable;
@@ -4628,7 +4655,7 @@ void Tokenizer::setVarIdPass1()
                         if (!(scopeStack.top().isStructInit || tok->strAt(-1) == "="))
                             variableMap.enterScope();
                     }
-                    const bool isStructInit = scopeStack.top().isStructInit || tok->strAt(-1) == "=" || (initlist && !Token::Match(tok->tokAt(-1), "[)}]"));
+                    const bool isStructInit = scopeStack.top().isStructInit || tok->strAt(-1) == "=" || (initlist && !Token::Match(tok->tokAt(-1), ")|}|..."));
                     scopeStack.emplace(isExecutable, isStructInit, isEnumStart(tok), variableMap.getVarId());
                     initlist = false;
                 } else { /* if (tok->str() == "}") */
@@ -5049,8 +5076,8 @@ void Tokenizer::setVarIdPass2()
             }
 
             if (tok->str() == "}") {
-                const std::map<const Token *, std::string>::iterator it = endOfScope.find(tok);
-                if (it != endOfScope.end())
+                const std::map<const Token *, std::string>::const_iterator it = endOfScope.find(tok);
+                if (it != endOfScope.cend())
                     scope.remove(it->second);
             }
 

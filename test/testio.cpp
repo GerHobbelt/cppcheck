@@ -831,13 +831,15 @@ private:
     void testFormatStrNoWarn(const char *filename, unsigned int linenr, const char (&code)[size],
                              bool cpp = false) {
         check(code, dinit(CheckOptions, $.inconclusive = true, $.platform = Platform::Type::Unix32, $.onlyFormatStr = true, $.cpp = cpp));
-        (void)assertEquals(filename, linenr, emptyString, errout_str());
+        assertEquals(filename, linenr, emptyString, errout_str());
         check(code, dinit(CheckOptions, $.inconclusive = true, $.platform = Platform::Type::Unix64, $.onlyFormatStr = true, $.cpp = cpp));
-        (void)assertEquals(filename, linenr, emptyString, errout_str());
+        assertEquals(filename, linenr, emptyString, errout_str());
         check(code, dinit(CheckOptions, $.inconclusive = true, $.platform = Platform::Type::Win32A, $.onlyFormatStr = true, $.cpp = cpp));
-        (void)assertEquals(filename, linenr, emptyString, errout_str());
+        assertEquals(filename, linenr, emptyString, errout_str());
+        check(code, dinit(CheckOptions, $.inconclusive = true, $.platform = Platform::Type::Win32W, $.onlyFormatStr = true, $.cpp = cpp));
+        assertEquals(filename, linenr, emptyString, errout_str());
         check(code, dinit(CheckOptions, $.inconclusive = true, $.platform = Platform::Type::Win64, $.onlyFormatStr = true, $.cpp = cpp));
-        (void)assertEquals(filename, linenr, emptyString, errout_str());
+        assertEquals(filename, linenr, emptyString, errout_str());
     }
 
     template<size_t size>
@@ -845,13 +847,15 @@ private:
                            const char (&code)[size], const char* testScanfErrString,
                            bool cpp = false) {
         check(code, dinit(CheckOptions, $.inconclusive = true, $.platform = Platform::Type::Unix32, $.onlyFormatStr = true, $.cpp = cpp));
-        (void)assertEquals(filename, linenr, testScanfErrString, errout_str());
+        assertEquals(filename, linenr, testScanfErrString, errout_str());
         check(code, dinit(CheckOptions, $.inconclusive = true, $.platform = Platform::Type::Unix64, $.onlyFormatStr = true, $.cpp = cpp));
-        (void)assertEquals(filename, linenr, testScanfErrString, errout_str());
+        assertEquals(filename, linenr, testScanfErrString, errout_str());
         check(code, dinit(CheckOptions, $.inconclusive = true, $.platform = Platform::Type::Win32A, $.onlyFormatStr = true, $.cpp = cpp));
-        (void)assertEquals(filename, linenr, testScanfErrString, errout_str());
+        assertEquals(filename, linenr, testScanfErrString, errout_str());
+        check(code, dinit(CheckOptions, $.inconclusive = true, $.platform = Platform::Type::Win32W, $.onlyFormatStr = true, $.cpp = cpp));
+        assertEquals(filename, linenr, testScanfErrString, errout_str());
         check(code, dinit(CheckOptions, $.inconclusive = true, $.platform = Platform::Type::Win64, $.onlyFormatStr = true, $.cpp = cpp));
-        (void)assertEquals(filename, linenr, testScanfErrString, errout_str());
+        assertEquals(filename, linenr, testScanfErrString, errout_str());
     }
 
     template<size_t size>
@@ -859,13 +863,15 @@ private:
                               const char (&code)[size], const char* testScanfErrAkaString, const char* testScanfErrAkaWin64String,
                               bool cpp = false) {
         check(code, dinit(CheckOptions, $.inconclusive = true, $.portability = true, $.platform = Platform::Type::Unix32, $.onlyFormatStr = true, $.cpp = cpp));
-        (void)assertEquals(filename, linenr, testScanfErrAkaString, errout_str());
+        assertEquals(filename, linenr, testScanfErrAkaString, errout_str());
         check(code, dinit(CheckOptions, $.inconclusive = true, $.portability = true, $.platform = Platform::Type::Unix64, $.onlyFormatStr = true, $.cpp = cpp));
-        (void)assertEquals(filename, linenr, testScanfErrAkaString, errout_str());
+        assertEquals(filename, linenr, testScanfErrAkaString, errout_str());
         check(code, dinit(CheckOptions, $.inconclusive = true, $.portability = true, $.platform = Platform::Type::Win32A, $.onlyFormatStr = true, $.cpp = cpp));
-        (void)assertEquals(filename, linenr, testScanfErrAkaString, errout_str());
+        assertEquals(filename, linenr, testScanfErrAkaString, errout_str());
+        check(code, dinit(CheckOptions, $.inconclusive = true, $.portability = true, $.platform = Platform::Type::Win32W, $.onlyFormatStr = true, $.cpp = cpp));
+        assertEquals(filename, linenr, testScanfErrAkaString, errout_str());
         check(code, dinit(CheckOptions, $.inconclusive = true, $.portability = true, $.platform = Platform::Type::Win64, $.onlyFormatStr = true, $.cpp = cpp));
-        (void)assertEquals(filename, linenr, testScanfErrAkaWin64String, errout_str());
+        assertEquals(filename, linenr, testScanfErrAkaWin64String, errout_str());
     }
 
     template<size_t size>
@@ -873,13 +879,15 @@ private:
                                    const char (&code)[size], const char* testScanfErrAkaWin64String,
                                    bool cpp = false) {
         check(code, dinit(CheckOptions, $.inconclusive = true, $.portability = true, $.platform = Platform::Type::Unix32, $.onlyFormatStr = true, $.cpp = cpp));
-        (void)assertEquals(filename, linenr, emptyString, errout_str());
+        assertEquals(filename, linenr, emptyString, errout_str());
         check(code, dinit(CheckOptions, $.inconclusive = true, $.portability = true, $.platform = Platform::Type::Unix64, $.onlyFormatStr = true, $.cpp = cpp));
-        (void)assertEquals(filename, linenr, emptyString, errout_str());
+        assertEquals(filename, linenr, emptyString, errout_str());
         check(code, dinit(CheckOptions, $.inconclusive = true, $.portability = true, $.platform = Platform::Type::Win32A, $.onlyFormatStr = true, $.cpp = cpp));
-        (void)assertEquals(filename, linenr, emptyString, errout_str());
+        assertEquals(filename, linenr, emptyString, errout_str());
+        check(code, dinit(CheckOptions, $.inconclusive = true, $.portability = true, $.platform = Platform::Type::Win32W, $.onlyFormatStr = true, $.cpp = cpp));
+        assertEquals(filename, linenr, emptyString, errout_str());
         check(code, dinit(CheckOptions, $.inconclusive = true, $.portability = true, $.platform = Platform::Type::Win64, $.onlyFormatStr = true, $.cpp = cpp));
-        (void)assertEquals(filename, linenr, testScanfErrAkaWin64String, errout_str());
+        assertEquals(filename, linenr, testScanfErrAkaWin64String, errout_str());
     }
 
     template<size_t size>
@@ -887,13 +895,15 @@ private:
                                    const char (&code)[size], const char* testScanfErrAkaString,
                                    bool cpp = false) {
         check(code, dinit(CheckOptions, $.inconclusive = true, $.portability = true, $.platform = Platform::Type::Unix32, $.onlyFormatStr = true, $.cpp = cpp));
-        (void)assertEquals(filename, linenr, testScanfErrAkaString, errout_str());
+        assertEquals(filename, linenr, testScanfErrAkaString, errout_str());
         check(code, dinit(CheckOptions, $.inconclusive = true, $.portability = true, $.platform = Platform::Type::Unix64, $.onlyFormatStr = true, $.cpp = cpp));
-        (void)assertEquals(filename, linenr, testScanfErrAkaString, errout_str());
+        assertEquals(filename, linenr, testScanfErrAkaString, errout_str());
         check(code, dinit(CheckOptions, $.inconclusive = true, $.portability = true, $.platform = Platform::Type::Win32A, $.onlyFormatStr = true, $.cpp = cpp));
-        (void)assertEquals(filename, linenr, testScanfErrAkaString, errout_str());
+        assertEquals(filename, linenr, testScanfErrAkaString, errout_str());
+        check(code, dinit(CheckOptions, $.inconclusive = true, $.portability = true, $.platform = Platform::Type::Win32W, $.onlyFormatStr = true, $.cpp = cpp));
+        assertEquals(filename, linenr, testScanfErrAkaString, errout_str());
         check(code, dinit(CheckOptions, $.inconclusive = true, $.portability = true, $.platform = Platform::Type::Win64, $.onlyFormatStr = true, $.cpp = cpp));
-        (void)assertEquals(filename, linenr, emptyString, errout_str());
+        assertEquals(filename, linenr, emptyString, errout_str());
     }
 
 #define TEST_SCANF_NOWARN(FORMAT, FORMATSTR, TYPE) \
@@ -2151,6 +2161,8 @@ private:
             check(code, dinit(CheckOptions, $.portability = true, $.platform = Platform::Type::Unix64));
             ASSERT_EQUALS(result, errout_str());
             check(code, dinit(CheckOptions, $.portability = true, $.platform = Platform::Type::Win32A));
+            ASSERT_EQUALS(result, errout_str());
+            check(code, dinit(CheckOptions, $.portability = true, $.platform = Platform::Type::Win32W));
             ASSERT_EQUALS(result, errout_str());
             check(code, dinit(CheckOptions, $.portability = true, $.platform = Platform::Type::Win64));
             ASSERT_EQUALS(result_win64, errout_str());

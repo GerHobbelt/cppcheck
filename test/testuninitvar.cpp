@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2024 Cppcheck team.
+ * Copyright (C) 2007-2025 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -840,7 +840,7 @@ private:
                                        "<def format=\"1\">"
                                        "  <podtype name=\"_tm\"/>"
                                        "</def>";
-            const Settings s = settingsBuilder(settings).libraryxml(xmldata, sizeof(xmldata)).build();
+            const Settings s = settingsBuilder(settings).libraryxml(xmldata).build();
             checkUninitVar("void f() {\n"
                            "  Fred _tm;\n"
                            "  _tm.dostuff();\n"
@@ -4580,7 +4580,7 @@ private:
                                                         "    <arg nr=\"1\" direction=\"out\"/>\n"
                                                         "  </function>\n"
                                                         "</def>";
-            const Settings s = settingsBuilder(settings).libraryxml(argDirectionsTestXmlData, sizeof(argDirectionsTestXmlData)).build();
+            const Settings s = settingsBuilder(settings).libraryxml(argDirectionsTestXmlData).build();
 
             checkUninitVar("struct AB { int a; };\n"
                            "void f(void) {\n"

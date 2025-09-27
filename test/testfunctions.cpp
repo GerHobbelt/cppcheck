@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2024 Cppcheck team.
+ * Copyright (C) 2007-2025 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 #include "errortypes.h"
 #include "fixture.h"
 #include "helpers.h"
+#include "platform.h"
 #include "settings.h"
 #include "standards.h"
 
@@ -1323,7 +1324,7 @@ private:
                                    "    <arg nr=\"2\"/>\n"
                                    "  </function>\n"
                                    "</def>";
-        const Settings settings2 = settingsBuilder().severity(Severity::warning).libraryxml(xmldata, sizeof(xmldata)).build();
+        const Settings settings2 = settingsBuilder().severity(Severity::warning).libraryxml(xmldata).build();
 
         check("void foo() {\n"
               "  mystrcmp(a, b);\n"
@@ -1484,7 +1485,7 @@ private:
                                "    <arg nr=\"2\"/>\n"
                                "  </function>\n"
                                "</def>";
-        const Settings settings2 = settingsBuilder().severity(Severity::style).libraryxml(xmldata, sizeof(xmldata)).build();
+        const Settings settings2 = settingsBuilder().severity(Severity::style).libraryxml(xmldata).build();
 
         check("void foo() {\n"
               "  mystrcmp(a, b);\n"

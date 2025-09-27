@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2024 Cppcheck team.
+ * Copyright (C) 2007-2025 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -3126,7 +3126,7 @@ private:
                                    "    </arg>\n"
                                    "  </function>\n"
                                    "</def>";
-        const Settings settingsFunctionCall = settingsBuilder(settings).libraryxml(xmldata, sizeof(xmldata)).build();
+        const Settings settingsFunctionCall = settingsBuilder(settings).libraryxml(xmldata).build();
 
         check("void test_func()\n"
               "{\n"
@@ -3159,7 +3159,7 @@ private:
                                    "    <arg nr=\"1\" direction=\"in\"/>\n"
                                    "  </function>\n"
                                    "</def>\n";
-        const Settings settingsLeakIgnore = settingsBuilder().libraryxml(xmldata, sizeof(xmldata)).build();
+        const Settings settingsLeakIgnore = settingsBuilder().libraryxml(xmldata).build();
         check("void f() {\n"
               "    double* a = new double[1024];\n"
               "    SomeClass::someMethod(a);\n"

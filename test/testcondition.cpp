@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2024 Cppcheck team.
+ * Copyright (C) 2007-2025 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -42,7 +42,7 @@ private:
                            "<def>\n"
                            "  <function name=\"bar\"> <pure/> </function>\n"
                            "</def>";
-        settings1 = settingsBuilder(settings1).libraryxml(cfg, sizeof(cfg)).build();
+        settings1 = settingsBuilder(settings1).libraryxml(cfg).build();
 
         TEST_CASE(assignAndCompare);   // assignment and comparison don't match
         TEST_CASE(mismatchingBitAnd);  // overlapping bitmasks
@@ -4966,6 +4966,13 @@ private:
               "    else {\n"
               "        if (c) {}\n"
               "    }\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        check("void f(unsigned x) {\n" // #13522
+              "    unsigned u = x;\n"
+              "    int i = u - 0;\n"
+              "    if (i < 0) {}\n"
               "}\n");
         ASSERT_EQUALS("", errout_str());
     }

@@ -1,6 +1,6 @@
 /* -*- C++ -*-
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2024 Cppcheck team.
+ * Copyright (C) 2007-2025 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,9 +22,6 @@
 
 #include "report.h"
 #include "showtypes.h"
-#include "common.h"
-
-#include <cstdint>
 
 #include <QObject>
 #include <QString>
@@ -40,6 +37,7 @@ class QPrinter;
 class QSettings;
 class CheckStatistics;
 class QPoint;
+enum class ReportType : std::uint8_t;
 namespace Ui {
     class ResultsView;
 }

@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2024 Cppcheck team.
+ * Copyright (C) 2007-2025 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -190,6 +190,7 @@ private:
         TEST_CASE(const95); // #13320 - do not warn about r-value ref method
         TEST_CASE(const96);
         TEST_CASE(const97);
+        TEST_CASE(const98);
 
         TEST_CASE(const_handleDefaultParameters);
         TEST_CASE(const_passThisToMemberOfOtherClass);
@@ -3447,7 +3448,7 @@ private:
                                    "  <podtype name=\"std::uint8_t\" sign=\"u\" size=\"1\"/>\n"
                                    "  <podtype name=\"std::atomic_bool\"/>\n"
                                    "</def>";
-        const Settings settings = settingsBuilder().libraryxml(xmldata, sizeof(xmldata)).build();
+        const Settings settings = settingsBuilder().libraryxml(xmldata).build();
 
         checkNoMemset("class A {\n"
                       "    std::array<int, 10> ints;\n"
@@ -6784,6 +6785,56 @@ private:
                    "};\n");
         ASSERT_EQUALS("[test.cpp:3]: (style, inconclusive) Technically the member function 'D::f' can be const.\n",
                       errout_str());
+    }
+
+    void const98() { // #13642
+        checkConst("enum E {\n"
+                   "    E0,\n"
+                   "    E1\n"
+                   "};\n"
+                   "void set(int* p) {\n"
+                   "    *p = 1;\n"
+                   "}\n"
+                   "struct S {\n"
+                   "    E e;\n"
+                   "    void f() {\n"
+                   "        set(reinterpret_cast<int*>(&e));\n"
+                   "    }\n"
+                   "    void g() {\n"
+                   "        set(reinterpret_cast<int*>(reinterpret_cast<void*>(&e)));\n"
+                   "    }\n"
+                   "    void h() {\n"
+                   "        set((int*)(&e));\n"
+                   "    }\n"
+                   "};\n");
+        ASSERT_EQUALS("", errout_str());
+
+        checkConst("enum E {\n"
+                   "    E0,\n"
+                   "    E1\n"
+                   "};\n"
+                   "void set1(int i, int* p) {\n"
+                   "    *p = i;\n"
+                   "}\n"
+                   "void set2(int* p, int i) {\n"
+                   "    *p = i;\n"
+                   "}\n"
+                   "struct S {\n"
+                   "    E e;\n"
+                   "    void f1() {\n"
+                   "        set1(1, reinterpret_cast<int*>(&e));\n"
+                   "    }\n"
+                   "    void f2() {\n"
+                   "        set2(reinterpret_cast<int*>(&e), 1);\n"
+                   "    }\n"
+                   "    void g1() {\n"
+                   "        set1(1, reinterpret_cast<int*>(reinterpret_cast<void*>(&e)));\n"
+                   "    }\n"
+                   "    void g2() {\n"
+                   "        set2(reinterpret_cast<int*>(reinterpret_cast<void*>(&e)), 1);\n"
+                   "    }\n"
+                   "};\n");
+        ASSERT_EQUALS("", errout_str());
     }
 
     void const_handleDefaultParameters() {

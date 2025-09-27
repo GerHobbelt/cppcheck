@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2024 Cppcheck team.
+ * Copyright (C) 2007-2025 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -391,6 +391,9 @@ private:
         TEST_CASE(astlambda);
         TEST_CASE(astcase);
         TEST_CASE(astrefqualifier);
+        TEST_CASE(astthrowdelete);
+        TEST_CASE(asttrailingdecltype);
+        TEST_CASE(astnoexcept);
         TEST_CASE(astvardecl);
         TEST_CASE(astnewscoped);
 
@@ -464,6 +467,12 @@ private:
         TEST_CASE(funcnameInParenthesis1); // #13554
         TEST_CASE(funcnameInParenthesis2); // #13578
         TEST_CASE(funcnameInParenthesis3); // #13585
+
+        TEST_CASE(genericInIf); // #13561
+
+        TEST_CASE(preincrementInLambda); // #13312
+
+        TEST_CASE(atomicCast); // #12605
     }
 
 #define tokenizeAndStringify(...) tokenizeAndStringify_(__FILE__, __LINE__, __VA_ARGS__)
@@ -6724,7 +6733,7 @@ private:
         ASSERT_EQUALS("", testAst("a::b f();"));
         ASSERT_EQUALS("", testAst("a::b f() {}"));
         ASSERT_EQUALS("", testAst("a::b f() = delete;"));
-        ASSERT_EQUALS("constdelete=", testAst("int f() const = delete;"));
+        ASSERT_EQUALS("", testAst("int f() const = delete;"));
         ASSERT_EQUALS("", testAst("extern unsigned f(const char *);"));
         ASSERT_EQUALS("charformat*...,", testAst("extern void f(const char *format, ...);"));
         ASSERT_EQUALS("int(int(void,", testAst("extern int for_each_commit_graft(int (*)(int*), void *);"));
@@ -7003,12 +7012,30 @@ private:
     }
 
     void astrefqualifier() {
-        ASSERT_EQUALS("b(int.", testAst("class a { auto b() -> int&; };"));
-        ASSERT_EQUALS("b(int.", testAst("class a { auto b() -> int&&; };"));
-        ASSERT_EQUALS("b(", testAst("class a { void b() &&; };"));
-        ASSERT_EQUALS("b(", testAst("class a { void b() &; };"));
-        ASSERT_EQUALS("b(", testAst("class a { void b() && {} };"));
-        ASSERT_EQUALS("b(", testAst("class a { void b() & {} };"));
+        ASSERT_EQUALS("", testAst("class a { auto b() -> int&; };"));
+        ASSERT_EQUALS("", testAst("class a { auto b() -> int&&; };"));
+        ASSERT_EQUALS("", testAst("class a { void b() &&; };"));
+        ASSERT_EQUALS("", testAst("class a { void b() &; };"));
+        ASSERT_EQUALS("", testAst("class a { void b() && = delete; };"));
+        ASSERT_EQUALS("", testAst("class a { void b() & = delete; };"));
+        ASSERT_EQUALS("", testAst("class a { void b() && {} };"));
+        ASSERT_EQUALS("", testAst("class a { void b() & {} };"));
+    }
+
+    void astthrowdelete() {
+        ASSERT_EQUALS("a(", testAst("class a { virtual ~a() throw() = delete; };"));
+    }
+
+    void asttrailingdecltype() {
+        ASSERT_EQUALS("Cc& csize.(", testAst("template<class C> constexpr auto s(const C &c) noexcept -> decltype(c.size()) {}"));
+        ASSERT_EQUALS("Cc& MakeSpancdata.(csize.(,(",
+                      testAst("template <typename C> constexpr auto MakeSpan(C &c) -> decltype(MakeSpan(c.data(), c.size())) {}"));
+        ASSERT_EQUALS("Eqeq&key_typek&, eqkk,(", testAst("auto KeyTypeCanBeEq(const Eq& eq, const key_type& k) -> decltype(eq(k, k));"));
+        ASSERT_EQUALS("h{([= si. {return", testAst("auto h = []() -> decltype(s.i) { return {}; };"));
+    }
+    void astnoexcept() {
+        ASSERT_EQUALS("noexceptaswap.b((", testAst("void f() noexcept(noexcept(a.swap(b))) {}"));
+        ASSERT_EQUALS("{([ noexceptaswap.b((", testAst("[]() noexcept(noexcept(a.swap(b))) {}"));
     }
 
     //Verify that returning a newly constructed object generates the correct AST even when the class name is scoped
@@ -8388,6 +8415,33 @@ private:
         ASSERT(Token::simpleMatch(par, "("));
         ASSERT_EQUALS(par->astOperand1(), f->astParent() /* :: */);
         ASSERT(Token::simpleMatch(par->astOperand2(), ","));
+    }
+
+    void genericInIf() { // #13561
+        const char code[] = "  if (_Generic(s, char * : 1, const float * : (a ? b, c : d), volatile int * : 3, default : 0)) {}";
+        const char ast[] = "(( if (( _Generic (, (, (, (, s 1) (? a (: (, b c) d))) 3) 0)))";
+        ASSERT_EQUALS(ast, testAst(code, AstStyle::Z3));
+    }
+
+    void preincrementInLambda() { // #13312
+        const char code[] =
+            "void f(const std::vector<int>& v, int a) {\n"
+            "    std::for_each(v.begin(), v.end(), [&](int i)  {\n"
+            "        switch (i) {\n"
+            "        default:\n"
+            "            ++a;\n"
+            "        }\n"
+            "    });\n"
+            "}\n";
+        ASSERT_NO_THROW(tokenizeAndStringify(code));
+    }
+
+    void atomicCast() { // #12605
+        const char code[] = "int atomic_add_int(int *ptr, int v)\n"
+                            "{\n"
+                            "    return atomic_fetch_add((_Atomic(unsigned int) *)ptr, v) + v;\n"
+                            "}\n";
+        ASSERT_NO_THROW(tokenizeAndStringify(code, settingsDefault, false));
     }
 };
 

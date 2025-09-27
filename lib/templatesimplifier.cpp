@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2024 Cppcheck team.
+ * Copyright (C) 2007-2025 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -1442,14 +1442,14 @@ bool TemplateSimplifier::getTemplateNamePositionTemplateFunction(const Token *to
         } else if (Token::Match(tok->next(), "%type% <")) {
             const Token *closing = tok->tokAt(2)->findClosingBracket();
             if (closing) {
-                if (closing->strAt(1) == "(" && Tokenizer::isFunctionHead(closing->next(), ";|{|:"))
+                if (closing->strAt(1) == "(" && TokenList::isFunctionHead(closing->next(), ";|{|:"))
                     return true;
                 while (tok->next() && tok->next() != closing) {
                     tok = tok->next();
                     namepos++;
                 }
             }
-        } else if (Token::Match(tok->next(), "%type% (") && Tokenizer::isFunctionHead(tok->tokAt(2), ";|{|:")) {
+        } else if (Token::Match(tok->next(), "%type% (") && TokenList::isFunctionHead(tok->tokAt(2), ";|{|:")) {
             return true;
         }
         tok = tok->next();
@@ -1955,7 +1955,7 @@ void TemplateSimplifier::expandTemplate(
             const Token *tok4 = tok3->next()->findClosingBracket();
             while (tok4 && tok4->str() != "(")
                 tok4 = tok4->next();
-            if (!Tokenizer::isFunctionHead(tok4, ":{"))
+            if (!TokenList::isFunctionHead(tok4, ":{"))
                 continue;
             // find function return type start
             tok5 = tok5->next()->findClosingBracket();
@@ -3836,7 +3836,7 @@ void TemplateSimplifier::simplifyTemplates(const std::time_t maxtime)
 
         if (mSettings.debugtemplate && mSettings.debugnormal) {
             std::string title("Template Simplifier pass " + std::to_string(passCount + 1));
-            mTokenList.front()->printOut(std::cout, title.c_str(), mTokenList.getFiles());
+            mTokenList.front()->printOut(std::cout, false, title.c_str(), mTokenList.getFiles());
         }
 
         // Copy default argument values from forward declaration to declaration

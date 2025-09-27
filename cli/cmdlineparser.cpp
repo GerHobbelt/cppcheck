@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2024 Cppcheck team.
+ * Copyright (C) 2007-2025 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 
 #include "addoninfo.h"
 #include "check.h"
+#include "checkers.h"
 #include "color.h"
 #include "config.h"
 #include "cppcheck.h"
@@ -605,9 +606,9 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
                     mLogger.printError("no path has been specified for --cppcheck-build-dir");
                     return Result::Fail;
                 }
+                if (endsWith(path, '/'))
+                    path.pop_back();
                 mSettings.buildDir = std::move(path);
-                if (endsWith(mSettings.buildDir, '/'))
-                    mSettings.buildDir.pop_back();
             }
 
             else if (std::strcmp(argv[i], "--cpp-header-probe") == 0) {
@@ -991,10 +992,8 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
             }
 
             else if (std::strncmp(argv[i], "--max-template-recursion=", 25) == 0) {
-                int temp = 0;
-                if (!parseNumberArg(argv[i], 25, temp))
+                if (!parseNumberArg(argv[i], 25, mSettings.maxTemplateRecursion))
                     return Result::Fail;
-                mSettings.maxTemplateRecursion = temp;
             }
 
             // undocumented option for usage in Python tests to indicate that no build dir should be injected
@@ -1012,15 +1011,18 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
 
             else if (std::strncmp(argv[i], "--output-format=", 16) == 0) {
                 const std::string format = argv[i] + 16;
-                if (format == "sarif")
+                // plist can not be handled here because it requires additional data
+                if (format == "text")
+                    mSettings.outputFormat = Settings::OutputFormat::text;
+                else if (format == "sarif")
                     mSettings.outputFormat = Settings::OutputFormat::sarif;
                 else if (format == "xml")
                     mSettings.outputFormat = Settings::OutputFormat::xml;
                 else {
-                    mLogger.printError("argument to '--output-format=' must be 'sarif' or 'xml'.");
+                    mLogger.printError("argument to '--output-format=' must be 'text', 'sarif' or 'xml'.");
                     return Result::Fail;
                 }
-                mSettings.xml = (mSettings.outputFormat == Settings::OutputFormat::xml);
+                mSettings.plistOutput = "";
             }
 
 
@@ -1063,12 +1065,11 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
 
             // Write results in results.plist
             else if (std::strncmp(argv[i], "--plist-output=", 15) == 0) {
-                mSettings.outputFormat = Settings::OutputFormat::plist;
-                mSettings.plistOutput = Path::simplifyPath(argv[i] + 15);
-                if (mSettings.plistOutput.empty())
-                    mSettings.plistOutput = ".";
+                std::string path = Path::simplifyPath(argv[i] + 15);
+                if (path.empty())
+                    path = ".";
 
-                const std::string plistOutput = Path::toNativeSeparators(mSettings.plistOutput);
+                const std::string plistOutput = Path::toNativeSeparators(path);
                 if (!Path::isDirectory(plistOutput)) {
                     std::string message("plist folder does not exist: '");
                     message += plistOutput;
@@ -1077,8 +1078,11 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
                     return Result::Fail;
                 }
 
-                if (!endsWith(mSettings.plistOutput,'/'))
-                    mSettings.plistOutput += '/';
+                if (!endsWith(path,'/'))
+                    path += '/';
+
+                mSettings.outputFormat = Settings::OutputFormat::plist;
+                mSettings.plistOutput = std::move(path);
             }
 
             // Special Cppcheck Premium options
@@ -1138,7 +1142,7 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
 
                 mSettings.checkAllConfigurations = false; // Can be overridden with --max-configs or --force
                 std::string projectFile = argv[i]+10;
-                ImportProject::Type projType = project.import(projectFile, &mSettings);
+                ImportProject::Type projType = project.import(projectFile, &mSettings, &mSuppressions);
                 project.projectType = projType;
                 if (projType == ImportProject::Type::CPPCHECK_GUI) {
                     for (const std::string &lib : project.guiProject.libraries)
@@ -1163,7 +1167,11 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
                     if (!projectFileGui.empty()) {
                         // read underlying project
                         projectFile = projectFileGui;
-                        projType = project.import(projectFileGui, &mSettings);
+                        projType = project.import(projectFileGui, &mSettings, &mSuppressions);
+                        if (projType == ImportProject::Type::CPPCHECK_GUI) {
+                            mLogger.printError("nested Cppcheck GUI projects are not supported.");
+                            return Result::Fail;
+                        }
                     }
                 }
                 if (projType == ImportProject::Type::VS_SLN || projType == ImportProject::Type::VS_VCXPROJ) {
@@ -1225,10 +1233,8 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
             }
 
             else if (std::strncmp(argv[i], "--report-progress=", 18) == 0) {
-                int tmp;
-                if (!parseNumberArg(argv[i], 18, tmp, true))
+                if (!parseNumberArg(argv[i], 18, mSettings.reportProgress, true))
                     return Result::Fail;
-                mSettings.reportProgress = tmp;
             }
 
             else if (std::strncmp(argv[i], "--report-type=", 14) == 0) {
@@ -1500,7 +1506,6 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
 
             // Write results in results.xml
             else if (std::strcmp(argv[i], "--xml") == 0) {
-                mSettings.xml = true;
                 mSettings.outputFormat = Settings::OutputFormat::xml;
             }
 
@@ -1517,7 +1522,6 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
 
                 mSettings.xml_version = tmp;
                 // Enable also XML if version is set
-                mSettings.xml = true;
                 mSettings.outputFormat = Settings::OutputFormat::xml;
             }
 
@@ -1597,6 +1601,12 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
             return Result::Fail;
         }
         mFileSettings = project.fileSettings;
+    }
+
+    if (mSettings.debugnormal && mSettings.outputFormat == Settings::OutputFormat::xml && (mPathNames.size() > 1 || mFileSettings.size() > 1))
+    {
+        mLogger.printError("printing debug output in XML format does not support multiple input files.");
+        return Result::Fail;
     }
 
     // Use paths _pathnames if no base paths for relative path output are given
@@ -1772,6 +1782,7 @@ void CmdLineParser::printHelp() const
         "    --output-file=<file> Write results to file, rather than standard error.\n"
         "    --output-format=<format>\n"
         "                        Specify the output format. The available formats are:\n"
+        "                          * text\n"
         "                          * sarif\n"
         "                          * xml\n"
         "    --platform=<type>, --platform=<file>\n"
@@ -1863,6 +1874,9 @@ void CmdLineParser::printHelp() const
         "    --rule=<rule>        Match regular expression.\n"
         "    --rule-file=<file>   Use given rule file. For more information, see:\n"
         "                         http://sourceforge.net/projects/cppcheck/files/Articles/\n"
+        "    --safety             Enable safety-certified checking mode: display checker summary, enforce\n"
+        "                         stricter checks for critical errors, and return a non-zero exit code\n"
+        "                         if such errors occur.\n"
         "    --showtime=<mode>    Show timing information.\n"
         "                         The available modes are:\n"
         "                          * none\n"
@@ -1990,7 +2004,7 @@ std::string CmdLineParser::getVersion() const {
 
 bool CmdLineParser::isCppcheckPremium() const {
     if (mSettings.cppcheckCfgProductName.empty())
-        Settings::loadCppcheckCfg(mSettings, mSettings.supprs, mSettings.debuglookup || mSettings.debuglookupConfig);
+        Settings::loadCppcheckCfg(mSettings, mSuppressions, mSettings.debuglookup || mSettings.debuglookupConfig);
     return startsWith(mSettings.cppcheckCfgProductName, "Cppcheck Premium");
 }
 

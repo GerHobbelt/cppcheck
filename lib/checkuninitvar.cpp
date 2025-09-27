@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2024 Cppcheck team.
+ * Copyright (C) 2007-2025 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,6 +29,8 @@
 #include "symboldatabase.h"
 #include "token.h"
 #include "tokenize.h"
+#include "tokenlist.h"
+#include "utils.h"
 #include "vfvalue.h"
 
 #include "checknullpointer.h"   // CheckNullPointer::isPointerDeref
@@ -1718,6 +1720,10 @@ namespace
             return CTU::toString(unsafeUsage);
         }
     };
+}
+
+static bool isVariableUsage(const Settings &settings, const Token *argtok, CTU::FileInfo::Value *value) {
+    return isVariableUsage(settings, argtok, &value->value);
 }
 
 Check::FileInfo *CheckUninitVar::getFileInfo(const Tokenizer &tokenizer, const Settings &settings) const

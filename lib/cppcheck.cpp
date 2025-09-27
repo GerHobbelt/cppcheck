@@ -506,14 +506,13 @@ unsigned int CppCheck::checkClang(const std::string &path)
     }
 
     try {
-        Preprocessor preprocessor(mSettings, this);
-        Tokenizer tokenizer(mSettings, this, &preprocessor);
+        Tokenizer tokenizer(mSettings, *this);
         tokenizer.list.appendFileIfNew(path);
         std::istringstream ast(output2);
         clangimport::parseClangAstDump(tokenizer, ast);
         ValueFlow::setValues(tokenizer.list,
                              const_cast<SymbolDatabase&>(*tokenizer.getSymbolDatabase()),
-                             this,
+                             *this,
                              mSettings,
                              &s_timerResults);
         if (mSettings.debugnormal)
@@ -656,9 +655,9 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
 
     try {
         if (mSettings.library.markupFile(filename)) {
-            if (mUnusedFunctionsCheck && mSettings.isUnusedFunctionCheckEnabled() && mSettings.buildDir.empty()) {
+            if (mUnusedFunctionsCheck && mSettings.useSingleJob() && mSettings.buildDir.empty()) {
                 // this is not a real source file - we just want to tokenize it. treat it as C anyways as the language needs to be determined.
-                Tokenizer tokenizer(mSettings, this);
+                Tokenizer tokenizer(mSettings, *this);
                 tokenizer.list.setLang(Standards::Language::C);
                 if (fileStream) {
                     tokenizer.list.createTokens(*fileStream, filename);
@@ -698,7 +697,7 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
             return mExitCode;
         }
 
-        Preprocessor preprocessor(mSettings, this);
+        Preprocessor preprocessor(mSettings, *this);
 
         if (!preprocessor.loadFiles(tokens1, files))
             return mExitCode;
@@ -796,7 +795,7 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
         }
 
         // Get directives
-        preprocessor.setDirectives(tokens1);
+        std::list<Directive> directives = preprocessor.createDirectives(tokens1);
         preprocessor.simplifyPragmaAsm(&tokens1);
 
         preprocessor.setPlatformInfo(&tokens1);
@@ -821,7 +820,7 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
         // Run define rules on raw code
         if (hasRule("define")) {
             std::string code;
-            for (const Directive &dir : preprocessor.getDirectives()) {
+            for (const Directive &dir : directives) {
                 if (startsWith(dir.str,"#define ") || startsWith(dir.str,"#include "))
                     code += "#line " + std::to_string(dir.linenr) + " \"" + dir.file + "\"\n" + dir.str + '\n';
             }
@@ -887,9 +886,10 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
                 continue;
             }
 
-            Tokenizer tokenizer(mSettings, this, &preprocessor);
+            Tokenizer tokenizer(mSettings, *this);
             if (mSettings.showtime != SHOWTIME_MODES::SHOWTIME_NONE)
                 tokenizer.setTimerResults(&s_timerResults);
+            tokenizer.setDirectives(directives); // TODO: how to avoid repeated copies?
 
             try {
                 // Create tokens, skip rest of iteration if failed
@@ -1036,7 +1036,7 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
     // In jointSuppressionReport mode, unmatched suppressions are
     // collected after all files are processed
     if (!mSettings.useSingleJob() && (mSettings.severity.isEnabled(Severity::information) || mSettings.checkConfiguration)) {
-        SuppressionList::reportUnmatchedSuppressions(mSettings.supprs.nomsg.getUnmatchedLocalSuppressions(filename, mSettings.isUnusedFunctionCheckEnabled()), *this);
+        SuppressionList::reportUnmatchedSuppressions(mSettings.supprs.nomsg.getUnmatchedLocalSuppressions(filename, (bool)mUnusedFunctionsCheck), *this);
     }
 
     mErrorList.clear();
@@ -1107,7 +1107,7 @@ void CppCheck::checkNormalTokens(const Tokenizer &tokenizer)
     if (mSettings.checks.isEnabled(Checks::unusedFunction) && !mSettings.buildDir.empty()) {
         unusedFunctionsChecker.parseTokens(tokenizer, mSettings);
     }
-    if (mUnusedFunctionsCheck && mSettings.isUnusedFunctionCheckEnabled() && mSettings.buildDir.empty()) {
+    if (mUnusedFunctionsCheck && mSettings.useSingleJob() && mSettings.buildDir.empty()) {
         mUnusedFunctionsCheck->parseTokens(tokenizer, mSettings);
     }
 
@@ -1298,13 +1298,14 @@ void CppCheck::executeRules(const std::string &tokenlist, const TokenList &list)
         return;
 
     // Write all tokens in a string that can be parsed by pcre
-    std::ostringstream ostr;
-    for (const Token *tok = list.front(); tok; tok = tok->next())
-        ostr << " " << tok->str();
-    const std::string str(ostr.str());
+    std::string str;
+    for (const Token *tok = list.front(); tok; tok = tok->next()) {
+        str += " ";
+        str += tok->str();
+    }
 
     for (const Settings::Rule &rule : mSettings.rules) {
-        if (rule.pattern.empty() || rule.id.empty() || rule.severity == Severity::none || rule.tokenlist != tokenlist)
+        if (rule.tokenlist != tokenlist)
             continue;
 
         if (!mSettings.quiet) {
@@ -1379,28 +1380,30 @@ void CppCheck::executeRules(const std::string &tokenlist, const TokenList &list)
             pos = (int)pos2;
 
             // determine location..
-            std::string file = list.getSourceFilePath();
+            int fileIndex = 0;
             int line = 0;
 
             std::size_t len = 0;
             for (const Token *tok = list.front(); tok; tok = tok->next()) {
                 len = len + 1U + tok->str().size();
                 if (len > pos1) {
-                    file = list.getFiles().at(tok->fileIndex());
+                    fileIndex = tok->fileIndex();
                     line = tok->linenr();
                     break;
                 }
             }
 
+            const std::string& file = list.getFiles()[fileIndex];
+
             ErrorMessage::FileLocation loc(file, line, 0);
 
             // Create error message
-            std::string summary;
-            if (rule.summary.empty())
-                summary = "found '" + str.substr(pos1, pos2 - pos1) + "'";
-            else
-                summary = rule.summary;
-            const ErrorMessage errmsg({std::move(loc)}, list.getSourceFilePath(), rule.severity, summary, rule.id, Certainty::normal);
+            const ErrorMessage errmsg({std::move(loc)},
+                                      list.getSourceFilePath(),
+                                      rule.severity,
+                                      !rule.summary.empty() ? rule.summary : "found '" + str.substr(pos1, pos2 - pos1) + "'",
+                                      rule.id,
+                                      Certainty::normal);
 
             // Report error
             reportErr(errmsg);
@@ -1691,7 +1694,7 @@ void CppCheck::getErrorMessages(ErrorLogger &errorlogger)
         (*it)->getErrorMessages(&errorlogger, &s);
 
     CheckUnusedFunctions::getErrorMessages(errorlogger);
-    Preprocessor::getErrorMessages(&errorlogger, s);
+    Preprocessor::getErrorMessages(errorlogger, s);
 }
 
 void CppCheck::analyseClangTidy(const FileSettings &fileSettings)

@@ -18,15 +18,13 @@
 
 #include "checkcondition.h"
 #include "errortypes.h"
+#include "fixture.h"
 #include "helpers.h"
 #include "platform.h"
-#include "preprocessor.h"
 #include "settings.h"
-#include "fixture.h"
 #include "tokenize.h"
 
 #include <limits>
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -128,10 +126,9 @@ private:
 
 #define check(...) check_(__FILE__, __LINE__, __VA_ARGS__)
     void check_(const char* file, int line, const char code[], const Settings &settings, const char* filename = "test.cpp") {
-        Preprocessor preprocessor(settings);
         std::vector<std::string> files(1, filename);
-        Tokenizer tokenizer(settings, this, &preprocessor);
-        PreprocessorHelper::preprocess(preprocessor, code, files, tokenizer);
+        Tokenizer tokenizer(settings, *this);
+        PreprocessorHelper::preprocess(code, files, tokenizer, *this);
 
         // Tokenizer..
         ASSERT_LOC(tokenizer.simplifyTokens1(""), file, line);
@@ -141,7 +138,7 @@ private:
     }
 
     void check_(const char* file, int line, const char code[], const char* filename = "test.cpp", bool inconclusive = false) {
-        const Settings settings = settingsBuilder(settings0).certainty(Certainty::inconclusive, inconclusive).exhaustive().build();
+        const Settings settings = settingsBuilder(settings0).certainty(Certainty::inconclusive, inconclusive).build();
         check_(file, line, code, settings, filename);
     }
 
@@ -543,9 +540,8 @@ private:
 
     void checkPureFunction_(const char code[], const char* file, int line) {
         // Tokenize..
-        Tokenizer tokenizer(settings1, this);
-        std::istringstream istr(code);
-        ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
+        SimpleTokenizer tokenizer(settings1, *this);
+        ASSERT_LOC(tokenizer.tokenize(code), file, line);
 
         runChecks<CheckCondition>(tokenizer, this);
     }
@@ -2787,12 +2783,12 @@ private:
               "}");
         ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:4]: (warning) Identical condition 'x>100', second condition is always false\n", errout_str());
 
-        ASSERT_THROW(check("void f(int x) {\n"  // #8217 - crash for incomplete code
-                           "  if (x > 100) { return; }\n"
-                           "  X(do);\n"
-                           "  if (x > 100) {}\n"
-                           "}"),
-                     InternalError);
+        ASSERT_THROW_INTERNAL(check("void f(int x) {\n"  // #8217 - crash for incomplete code
+                                    "  if (x > 100) { return; }\n"
+                                    "  X(do);\n"
+                                    "  if (x > 100) {}\n"
+                                    "}"),
+                              SYNTAX);
 
         check("void f(const int *i) {\n"
               "  if (!i) return;\n"

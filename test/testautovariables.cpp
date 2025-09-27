@@ -16,14 +16,11 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-
 #include "checkautovariables.h"
 #include "errortypes.h"
-#include "settings.h"
 #include "fixture.h"
-#include "tokenize.h"
-
-#include <sstream>
+#include "helpers.h"
+#include "settings.h"
 
 class TestAutoVariables : public TestFixture {
 public:
@@ -33,13 +30,12 @@ private:
     const Settings settings = settingsBuilder().severity(Severity::warning).severity(Severity::style).library("std.cfg").library("qt.cfg").build();
 
 #define check(...) check_(__FILE__, __LINE__, __VA_ARGS__)
-    void check_(const char* file, int line, const char code[], bool inconclusive = true, const char* filename = "test.cpp") {
+    void check_(const char* file, int line, const char code[], bool inconclusive = true, bool cpp = true) {
         const Settings settings1 = settingsBuilder(settings).certainty(Certainty::inconclusive, inconclusive).build();
 
         // Tokenize..
-        Tokenizer tokenizer(settings1, this);
-        std::istringstream istr(code);
-        ASSERT_LOC(tokenizer.tokenize(istr, filename), file, line);
+        SimpleTokenizer tokenizer(settings1, *this);
+        ASSERT_LOC(tokenizer.tokenize(code, cpp), file, line);
 
         runChecks<CheckAutoVariables>(tokenizer, this);
     }
@@ -119,6 +115,7 @@ private:
         TEST_CASE(returnReference24); // #10098
         TEST_CASE(returnReference25); // #10983
         TEST_CASE(returnReference26);
+        TEST_CASE(returnReference27);
         TEST_CASE(returnReferenceFunction);
         TEST_CASE(returnReferenceContainer);
         TEST_CASE(returnReferenceLiteral);
@@ -443,7 +440,7 @@ private:
     }
 
     void testautovar12() { // Ticket #5024, #5050 - Crash on invalid input
-        ASSERT_THROW(check("void f(int* a) { a = }"), InternalError);
+        ASSERT_THROW_INTERNAL(check("void f(int* a) { a = }"), SYNTAX);
         check("struct custom_type { custom_type(int) {} };\n"
               "void func(int) {}\n"
               "int var;\n"
@@ -916,7 +913,7 @@ private:
         check("void svn_repos_dir_delta2() {\n"
               "  struct context c;\n"
               "      SVN_ERR(delete(&c, root_baton, src_entry, pool));\n"
-              "}\n", false, "test.c");
+              "}\n", false, /* cpp= */ false);
         ASSERT_EQUALS("", errout_str());
     }
 
@@ -1658,6 +1655,18 @@ private:
               "    return s;\n"
               "}\n");
         ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:4]: (error) Reference to local variable returned.\n", errout_str());
+    }
+
+    void returnReference27()
+    {
+        check("struct S {\n" // #12607
+              "    const std::string & f(const std::string& a, const std::string& b) {\n"
+              "        auto status = m.emplace(a, b);\n"
+              "        return status.first->second;\n"
+              "    }\n"
+              "    std::map<std::string, std::string> m;\n"
+              "};\n");
+        ASSERT_EQUALS("", errout_str());
     }
 
     void returnReferenceFunction() {
@@ -2815,6 +2824,16 @@ private:
               "    return ss;\n"
               "}\n");
         ASSERT_EQUALS("", errout_str());
+
+        check("void f() {\n" // #12568
+              "    std::string str;\n"
+              "    {\n"
+              "        std::unique_ptr<char[]> b(new char[1]{});\n"
+              "        str.assign(b.get());\n"
+              "    }\n"
+              "    std::cerr << str;\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
     }
 
     void danglingLifetimeContainerView()
@@ -3053,6 +3072,13 @@ private:
         ASSERT_EQUALS(
             "[test.cpp:4] -> [test.cpp:3] -> [test.cpp:4]: (error) Returning pointer to local variable 'ptr' that will be invalid when returning.\n",
             errout_str());
+
+        // #12600
+        check("struct S { std::unique_ptr<int> p; };\n"
+              "int* f(const S* s) {\n"
+              "    return s[0].p.get();\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
     }
     void danglingLifetime() {
         check("auto f() {\n"

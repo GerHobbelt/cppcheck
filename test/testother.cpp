@@ -18,15 +18,13 @@
 
 #include "checkother.h"
 #include "errortypes.h"
+#include "fixture.h"
 #include "helpers.h"
 #include "platform.h"
-#include "preprocessor.h"
 #include "settings.h"
 #include "standards.h"
-#include "fixture.h"
 #include "tokenize.h"
 
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -294,7 +292,7 @@ private:
     }
 
 #define check(...) check_(__FILE__, __LINE__, __VA_ARGS__)
-    void check_(const char* file, int line, const char code[], const char *filename = nullptr, bool inconclusive = true, bool runSimpleChecks=true, bool verbose=false, Settings* settings = nullptr) {
+    void check_(const char* file, int line, const char code[], bool cpp = true, bool inconclusive = true, bool runSimpleChecks=true, bool verbose=false, Settings* settings = nullptr) {
         if (!settings) {
             settings = &_settings;
         }
@@ -307,12 +305,9 @@ private:
         settings->certainty.setEnabled(Certainty::inconclusive, inconclusive);
         settings->verbose = verbose;
 
-        Preprocessor preprocessor(*settings);
-
         // Tokenize..
-        Tokenizer tokenizer(*settings, this, &preprocessor);
-        std::istringstream istr(code);
-        ASSERT_LOC(tokenizer.tokenize(istr, filename ? filename : "test.cpp"), file, line);
+        SimpleTokenizer tokenizer(*settings, *this);
+        ASSERT_LOC(tokenizer.tokenize(code, cpp), file, line);
 
         // Check..
         runChecks<CheckOther>(tokenizer, this);
@@ -321,7 +316,7 @@ private:
     }
 
     void check_(const char* file, int line, const char code[], Settings *s) {
-        check_(file, line, code, "test.cpp", true, true, false, s);
+        check_(file, line, code, true, true, true, false, s);
     }
 
 #define checkP(...) checkP_(__FILE__, __LINE__, __VA_ARGS__)
@@ -335,10 +330,9 @@ private:
         settings->standards.cpp = Standards::CPPLatest;
         settings->certainty.enable(Certainty::inconclusive);
 
-        Preprocessor preprocessor(*settings);
         std::vector<std::string> files(1, filename);
-        Tokenizer tokenizer(*settings, this, &preprocessor);
-        PreprocessorHelper::preprocess(preprocessor, code, files, tokenizer);
+        Tokenizer tokenizer(*settings, *this);
+        PreprocessorHelper::preprocess(code, files, tokenizer, *this);
 
         // Tokenizer..
         ASSERT_LOC(tokenizer.simplifyTokens1(""), file, line);
@@ -350,7 +344,7 @@ private:
     void checkInterlockedDecrement(const char code[]) {
         /*const*/ Settings settings = settingsBuilder().platform(Platform::Type::Win32A).build();
 
-        check(code, nullptr, false, true, false, &settings);
+        check(code, true, false, true, false, &settings);
     }
 
     void emptyBrackets() {
@@ -1146,7 +1140,7 @@ private:
               "    else if(b);\n"
               "    else if(c);\n"
               "    else;\n"
-              "}", nullptr, false);
+              "}", true, false);
         ASSERT_EQUALS("", errout_str());
     }
 
@@ -1358,7 +1352,7 @@ private:
               "        currtime = time(&dummy);\n"
               "        if (currtime > t) {}\n"
               "    }\n"
-              "}", "test.c");
+              "}", false);
         ASSERT_EQUALS("[test.c:2]: (style) The scope of the variable 'currtime' can be reduced.\n", errout_str());
     }
 
@@ -1411,7 +1405,7 @@ private:
               "        s.i = 0;\n"
               "        g(e, s);\n"
               "    }\n"
-              "}\n", "test.c");
+              "}\n", false);
         ASSERT_EQUALS("[test.c:4]: (style) The scope of the variable 'e' can be reduced.\n"
                       "[test.c:5]: (style) The scope of the variable 's' can be reduced.\n",
                       errout_str());
@@ -1670,7 +1664,7 @@ private:
               "    else{\n"
               "         for( i = 0U; i < 5U; i++ ) {}\n"
               "    }\n"
-              "}\n", nullptr, false);
+              "}\n", true, false);
         ASSERT_EQUALS("[test.cpp:2]: (style) The scope of the variable 'i' can be reduced.\n", errout_str());
     }
 
@@ -1685,7 +1679,7 @@ private:
               "            for( i = 0U; i < 5U; i++ ) {}\n"
               "        }\n"
               "    }\n"
-              "}\n", nullptr, false);
+              "}\n", true, false);
         ASSERT_EQUALS("[test.cpp:2]: (style) The scope of the variable 'i' can be reduced.\n", errout_str());
     }
 
@@ -1705,12 +1699,9 @@ private:
         // #5560 - set c++03
         const Settings settings = settingsBuilder().severity(Severity::style).cpp(Standards::CPP03).build();
 
-        Preprocessor preprocessor(settings);
-
         // Tokenize..
-        Tokenizer tokenizerCpp(settings, this, &preprocessor);
-        std::istringstream istr(code);
-        ASSERT_LOC(tokenizerCpp.tokenize(istr, "test.cpp"), file, line);
+        SimpleTokenizer tokenizerCpp(settings, *this);
+        ASSERT_LOC(tokenizerCpp.tokenize(code), file, line);
 
         CheckOther checkOtherCpp(&tokenizerCpp, &settings, this);
         checkOtherCpp.warningOldStylePointerCast();
@@ -1927,12 +1918,9 @@ private:
         /*const*/ Settings settings = settingsBuilder().severity(Severity::warning).severity(Severity::portability, portability).certainty(Certainty::inconclusive, inconclusive).build();
         settings.platform.defaultSign = 's';
 
-        Preprocessor preprocessor(settings);
-
         // Tokenize..
-        Tokenizer tokenizer(settings, this, &preprocessor);
-        std::istringstream istr(code);
-        ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
+        SimpleTokenizer tokenizer(settings, *this);
+        ASSERT_LOC(tokenizer.tokenize(code), file, line);
 
         CheckOther checkOtherCpp(&tokenizer, &settings, this);
         checkOtherCpp.invalidPointerCast();
@@ -2240,7 +2228,7 @@ private:
               "};\n"
               "void f(S s) {\n"
               "    if (s.x > s.y) {}\n"
-              "}\n", /*filename*/ nullptr, /*inconclusive*/ true, /*runSimpleChecks*/ true, /*verbose*/ false, &settings0);
+              "}\n", /*cpp*/ true, /*inconclusive*/ true, /*runSimpleChecks*/ true, /*verbose*/ false, &settings0);
         ASSERT_EQUALS("", errout_str());
 
         check("struct S { std::list<int> l; };\n" // #12147
@@ -2262,10 +2250,19 @@ private:
         ASSERT_EQUALS("[test.cpp:2]: (performance) Function parameter 's' should be passed by const reference.\n",
                       errout_str());
 
+        check("struct S {\n"
+              "    enum class E : std::uint8_t { E0 };\n"
+              "    static void f(S::E e) {\n"
+              "        if (e == S::E::E0) {}\n"
+              "    }\n"
+              "    char a[20];\n"
+              "};\n");
+        ASSERT_EQUALS("", errout_str());
+
         /*const*/ Settings settings1 = settingsBuilder().platform(Platform::Type::Win64).build();
         check("using ui64 = unsigned __int64;\n"
               "ui64 Test(ui64 one, ui64 two) { return one + two; }\n",
-              /*filename*/ nullptr, /*inconclusive*/ true, /*runSimpleChecks*/ true, /*verbose*/ false, &settings1);
+              /*cpp*/ true, /*inconclusive*/ true, /*runSimpleChecks*/ true, /*verbose*/ false, &settings1);
         ASSERT_EQUALS("", errout_str());
     }
 
@@ -4303,7 +4300,7 @@ private:
               "    case 3:\n"
               "      strcpy(str, \"b'\");\n"
               "    }\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         TODO_ASSERT_EQUALS("[test.cpp:6] -> [test.cpp:8]: (style) Buffer 'str' is being written before its old content has been used. 'break;' missing?\n",
                            "",
                            errout_str());
@@ -4334,7 +4331,7 @@ private:
               "      strcpy(str, \"b'\");\n"
               "      z++;\n"
               "    }\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         TODO_ASSERT_EQUALS("[test.cpp:7] -> [test.cpp:10]: (style) Buffer 'str' is being written before its old content has been used. 'break;' missing?\n",
                            "",
                            errout_str());
@@ -4363,7 +4360,7 @@ private:
               "    case 3:\n"
               "      strcpy(str, \"b'\");\n"
               "    }\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("", errout_str());
 
         // Ticket #5158 "segmentation fault (valid code)"
@@ -4377,17 +4374,17 @@ private:
               "} deflate_state;\n"
               "void f(deflate_state *s) {\n"
               "    s->dyn_ltree[0].fc.freq++;\n"
-              "}\n", nullptr, false, false);
+              "}\n", true, false, false);
         ASSERT_EQUALS("", errout_str());
 
         // Ticket #6132 "crash: daca: kvirc CheckOther::checkRedundantAssignment()"
-        check("void HttpFileTransfer :: transferTerminated ( bool bSuccess@1 ) {\n"
+        check("void HttpFileTransfer :: transferTerminated ( bool bSuccess ) {\n"
               "if ( m_szCompletionCallback . isNull ( ) ) {\n"
               "KVS_TRIGGER_EVENT ( KviEvent_OnHTTPGetTerminated , out ? out : ( g_pApp . activeConsole ( ) ) , & vParams )\n"
               "} else {\n"
               "KviKvsScript :: run ( m_szCompletionCallback , out ? out : ( g_pApp . activeConsole ( ) ) , & vParams ) ;\n"
               "}\n"
-              "}\n", nullptr, false, true);
+              "}\n", true, false, true);
         ASSERT_EQUALS("", errout_str());
 
         check("void f() {\n"
@@ -4548,7 +4545,7 @@ private:
               "        y++;\n"
               "    }\n"
               "    bar(y);\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("", errout_str());
         check("void foo()\n"
               "{\n"
@@ -4602,7 +4599,7 @@ private:
               "        y--;\n"
               "    }\n"
               "    bar(y);\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("", errout_str());
         check("void foo()\n"
               "{\n"
@@ -4958,20 +4955,20 @@ private:
               "            continue;\n"
               "        }\n"
               "    }\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("[test.cpp:5]: (style) Consecutive return, break, continue, goto or throw statements are unnecessary.\n", errout_str());
 
         check("int foo(int a) {\n"
               "    return 0;\n"
               "    return(a-1);\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("[test.cpp:3]: (style) Consecutive return, break, continue, goto or throw statements are unnecessary.\n", errout_str());
 
         check("int foo(int a) {\n"
               "  A:"
               "    return(0);\n"
               "    goto A;\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("[test.cpp:3]: (style) Consecutive return, break, continue, goto or throw statements are unnecessary.\n", errout_str());
 
         constexpr char xmldata[] = "<?xml version=\"1.0\"?>\n"
@@ -4986,7 +4983,7 @@ private:
         check("void foo() {\n"
               "    exit(0);\n"
               "    break;\n"
-              "}", nullptr, false, false, false, &settings);
+              "}", true, false, false, false, &settings);
         ASSERT_EQUALS("[test.cpp:3]: (style) Consecutive return, break, continue, goto or throw statements are unnecessary.\n", errout_str());
 
         check("class NeonSession {\n"
@@ -4995,16 +4992,16 @@ private:
               "void NeonSession::exit()\n"
               "{\n"
               "    SAL_INFO(\"ucb.ucp.webdav\", \"neon commands cannot be aborted\");\n"
-              "}", nullptr, false, false, false, &settings);
+              "}", true, false, false, false, &settings);
         ASSERT_EQUALS("", errout_str());
 
         check("void NeonSession::exit()\n"
               "{\n"
               "    SAL_INFO(\"ucb.ucp.webdav\", \"neon commands cannot be aborted\");\n"
-              "}", nullptr, false, false, false, &settings);
+              "}", true, false, false, false, &settings);
         ASSERT_EQUALS("", errout_str());
 
-        check("void foo() { xResAccess->exit(); }", nullptr, false, false, false, &settings);
+        check("void foo() { xResAccess->exit(); }", true, false, false, false, &settings);
         ASSERT_EQUALS("", errout_str());
 
         check("void foo(int a)\n"
@@ -5018,7 +5015,7 @@ private:
               "            c++;\n"
               "            break;\n"
               "         }\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("[test.cpp:7]: (style) Consecutive return, break, continue, goto or throw statements are unnecessary.\n", errout_str());
 
         check("void foo(int a)\n"
@@ -5042,7 +5039,7 @@ private:
               "            break;\n"
               "          }\n"
               "       }\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("[test.cpp:6]: (style) Consecutive return, break, continue, goto or throw statements are unnecessary.\n", errout_str());
 
         check("void foo(int a)\n"
@@ -5054,7 +5051,7 @@ private:
               "          }\n"
               "          a+=2;\n"
               "       }\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("[test.cpp:6]: (style) Consecutive return, break, continue, goto or throw statements are unnecessary.\n", errout_str());
 
         check("void foo(int a)\n"
@@ -5071,44 +5068,44 @@ private:
         check("int foo() {\n"
               "    throw 0;\n"
               "    return 1;\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("[test.cpp:3]: (style) Consecutive return, break, continue, goto or throw statements are unnecessary.\n", errout_str());
 
         check("void foo() {\n"
               "    throw 0;\n"
               "    return;\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("[test.cpp:3]: (style) Consecutive return, break, continue, goto or throw statements are unnecessary.\n", errout_str());
 
         check("int foo() {\n"
               "    throw = 0;\n"
               "    return 1;\n"
-              "}", "test.c", false, false);
+              "}", false, false, false);
         ASSERT_EQUALS("", errout_str());
 
         check("int foo() {\n"
               "    return 0;\n"
               "    return 1;\n"
-              "}", nullptr, false, false, false);
+              "}", true, false, false, false);
         ASSERT_EQUALS("[test.cpp:3]: (style) Consecutive return, break, continue, goto or throw statements are unnecessary.\n", errout_str());
 
         check("int foo() {\n"
               "    return 0;\n"
               "    foo();\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("[test.cpp:3]: (style) Statements following 'return' will never be executed.\n", errout_str());
 
         check("int foo(int unused) {\n"
               "    return 0;\n"
               "    (void)unused;\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("", errout_str());
 
         check("int foo(int unused1, int unused2) {\n"
               "    return 0;\n"
               "    (void)unused1;\n"
               "    (void)unused2;\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("", errout_str());
 
         check("int foo(int unused1, int unused2) {\n"
@@ -5116,7 +5113,7 @@ private:
               "    (void)unused1;\n"
               "    (void)unused2;\n"
               "    foo();\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("[test.cpp:5]: (style) Statements following 'return' will never be executed.\n", errout_str());
 
         check("int foo() {\n"
@@ -5134,7 +5131,7 @@ private:
               "        return 0;\n"
               "    }\n"
               "    return 124;\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("[test.cpp:4]: (style) Consecutive return, break, continue, goto or throw statements are unnecessary.\n", errout_str());
 
         check("void foo() {\n"
@@ -5142,7 +5139,7 @@ private:
               "        return;\n"
               "        break;\n"
               "    }\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("[test.cpp:4]: (style) Consecutive return, break, continue, goto or throw statements are unnecessary.\n", errout_str());
 
         // #5707
@@ -5153,14 +5150,14 @@ private:
               "    }\n"
               "    return 0;\n"
               "    j=2;\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("[test.cpp:7]: (style) Statements following 'return' will never be executed.\n", errout_str());
 
         check("int foo() {\n"
               "    return 0;\n"
               "  label:\n"
               "    throw 0;\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("[test.cpp:3]: (style) Label 'label' is not used.\n", errout_str());
 
         check("struct A {\n"
@@ -5202,21 +5199,21 @@ private:
               "    return 0;\n"
               "\n" // #endif
               "    return 1;\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("", errout_str());
         check("int foo() {\n"
               "\n" // #ifdef A
               "    return 0;\n"
               "\n" // #endif
               "    return 1;\n"
-              "}", nullptr, true, false);
+              "}", true, true, false);
         ASSERT_EQUALS("[test.cpp:5]: (style, inconclusive) Consecutive return, break, continue, goto or throw statements are unnecessary.\n", errout_str());
 
         // #4711 lambda functions
         check("int f() {\n"
               "    return g([](int x){(void)x+1; return x;});\n"
               "}",
-              nullptr,
+              true,
               false,
               false);
         ASSERT_EQUALS("", errout_str());
@@ -5232,7 +5229,7 @@ private:
               "             __asm__ (\"rorw $8, %w0\" : \"=r\" (__v) : \"0\" (__x) : \"cc\");\n"
               "         (void)__v;\n"
               "     }));\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("", errout_str());
 
         // #6008
@@ -5241,7 +5238,7 @@ private:
               "        int sum = a_ + b_;\n"
               "        return sum;\n"
               "    };\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("", errout_str());
 
         // #5789
@@ -5249,20 +5246,20 @@ private:
               "    uint64_t enter, exit;\n"
               "    uint64_t events;\n"
               "    per_state_info() : enter(0), exit(0), events(0) {}\n"
-              "};", nullptr, false, false);
+              "};", true, false, false);
         ASSERT_EQUALS("", errout_str());
 
         // #6664
         check("void foo() {\n"
               "    (beat < 100) ? (void)0 : exit(0);\n"
               "    bar();\n"
-              "}", nullptr, false, false, false, &settings);
+              "}", true, false, false, false, &settings);
         ASSERT_EQUALS("", errout_str());
 
         check("void foo() {\n"
               "    (beat < 100) ? exit(0) : (void)0;\n"
               "    bar();\n"
-              "}", nullptr, false, false, false, &settings);
+              "}", true, false, false, false, &settings);
         ASSERT_EQUALS("", errout_str());
 
         // #8261
@@ -5270,7 +5267,7 @@ private:
         TODO_ASSERT_THROW(check("void foo() {\n"
                                 "    (beat < 100) ? (void)0 : throw(0);\n"
                                 "    bar();\n"
-                                "}", nullptr, false, false, false, &settings), InternalError);
+                                "}", true, false, false, false, &settings), InternalError);
         //ASSERT_EQUALS("", errout_str());
 
         check("int foo() {\n"
@@ -5709,7 +5706,7 @@ private:
               "    b = 300\n"
               "  };\n"
               "};\n"
-              "const int DFLT_TIMEOUT = A::b % 1000000 ;\n", nullptr, false, false);
+              "const int DFLT_TIMEOUT = A::b % 1000000 ;\n", true, false, false);
         ASSERT_EQUALS("", errout_str());
     }
 
@@ -5834,10 +5831,10 @@ private:
                             "    do_something();\n"
                             "}\n";
 
-        check(code, "test.cpp");
+        check(code, true);
         ASSERT_EQUALS("[test.cpp:7]: (style) Instance of 'cb_watch_bool' object is destroyed immediately.\n", errout_str());
 
-        check(code, "test.c");
+        check(code, false);
         ASSERT_EQUALS("", errout_str());
 
         // Ticket #2639
@@ -5879,7 +5876,7 @@ private:
                             "  do_something();\n"
                             "}\n";
 
-        check(code, "test.cpp");
+        check(code, true);
         ASSERT_EQUALS("", errout_str());
     }
 
@@ -5892,7 +5889,7 @@ private:
                             "  }\n"
                             "  Foo(char x, int y) { }\n"
                             "};\n";
-        check(code, "test.cpp");
+        check(code, true);
         ASSERT_EQUALS("[test.cpp:4]: (style) Instance of 'Foo' object is destroyed immediately.\n", errout_str());
     }
 
@@ -5907,7 +5904,7 @@ private:
               "    int{ i };\n"
               "    int{ g() };\n" // don't warn
               "    g();\n"
-              "}\n", "test.cpp");
+              "}\n", true);
         ASSERT_EQUALS("[test.cpp:3]: (style) Instance of 'int' object is destroyed immediately.\n"
                       "[test.cpp:4]: (style) Instance of 'int' object is destroyed immediately.\n"
                       "[test.cpp:6]: (style) Instance of 'int' object is destroyed immediately.\n"
@@ -5917,19 +5914,19 @@ private:
 
         check("void f(int j) {\n"
               "    for (; bool(j); ) {}\n"
-              "}\n", "test.cpp");
+              "}\n", true);
         ASSERT_EQUALS("", errout_str());
 
         check("void g() {\n"
               "    float (f);\n"
               "    float (*p);\n"
-              "}\n", "test.cpp");
+              "}\n", true);
         ASSERT_EQUALS("", errout_str());
 
         check("int f(int i) {\n"
               "    void();\n"
               "    return i;\n"
-              "}\n", "test.cpp");
+              "}\n", true);
         ASSERT_EQUALS("", errout_str());
     }
 
@@ -5942,7 +5939,7 @@ private:
               "int f() {\n"
               "    M::N::S();\n"
               "    return 0;\n"
-              "}\n", "test.cpp");
+              "}\n", true);
         ASSERT_EQUALS("[test.cpp:7]: (style) Instance of 'M::N::S' object is destroyed immediately.\n", errout_str());
 
         check("void f() {\n" // #10057
@@ -5950,7 +5947,7 @@ private:
               "    std::string{ \"abc\" };\n"
               "    std::pair<int, int>(1, 2);\n"
               "    (void)0;\n"
-              "}\n", "test.cpp");
+              "}\n", true);
         ASSERT_EQUALS("[test.cpp:2]: (style) Instance of 'std::string' object is destroyed immediately.\n"
                       "[test.cpp:3]: (style) Instance of 'std::string' object is destroyed immediately.\n"
                       "[test.cpp:4]: (style) Instance of 'std::pair' object is destroyed immediately.\n",
@@ -5967,7 +5964,7 @@ private:
               "        std::scoped_lock(m);\n"
               "    }\n"
               "    std::mutex m;\n"
-              "}\n", "test.cpp");
+              "}\n", true);
         ASSERT_EQUALS("[test.cpp:3]: (style) Instance of 'std::lock_guard' object is destroyed immediately.\n"
                       "[test.cpp:6]: (style) Instance of 'std::scoped_lock' object is destroyed immediately.\n"
                       "[test.cpp:9]: (style) Instance of 'std::scoped_lock' object is destroyed immediately.\n",
@@ -5976,7 +5973,7 @@ private:
         check("struct S { int i; };\n"
               "namespace {\n"
               "    S s() { return ::S{42}; }\n"
-              "}\n", "test.cpp");
+              "}\n", true);
         ASSERT_EQUALS("", errout_str());
     }
 
@@ -5989,7 +5986,7 @@ private:
               "void t0() { f() = {}; }\n"
               "void t1() { g() = {}; }\n"
               "void t2() { h() = {}; }\n"
-              "void t3() { *i() = {}; }\n", "test.cpp");
+              "void t3() { *i() = {}; }\n", true);
         ASSERT_EQUALS("[test.cpp:6]: (style) Instance of 'S' object is destroyed immediately, assignment has no effect.\n", errout_str());
     }
 
@@ -6033,7 +6030,7 @@ private:
 
         check("void f(char c) {\n"
               "    printf(\"%i\", a + b ? 1 : 2);\n"
-              "}",nullptr,false,false);
+              "}",true,false,false);
         ASSERT_EQUALS("[test.cpp:2]: (style) Clarify calculation precedence for '+' and '?'.\n", errout_str());
 
         check("void f() {\n"
@@ -6227,7 +6224,7 @@ private:
               "    else\n"
               "        ret = (unsigned char)value;\n"
               "    return ret;\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("", errout_str());
 
         check("void f() {\n"
@@ -6536,7 +6533,7 @@ private:
 
         // make sure there are not "same expression" fp when there are different casts
         check("void f(long x) { if ((int32_t)x == (int64_t)x) {} }",
-              nullptr,  // filename
+              true,  // filename
               false, // inconclusive
               false, // runSimpleChecks
               false, // verbose
@@ -6595,7 +6592,7 @@ private:
         check("void f() {\n"
               "    enum { Four = 4 };\n"
               "    if (Four == 4) {}"
-              "}", nullptr, true, false);
+              "}", true, true, false);
         ASSERT_EQUALS("[test.cpp:3]: (style) The comparison 'Four == 4' is always true.\n",
                       errout_str());
 
@@ -6615,7 +6612,7 @@ private:
               "    enum { FourInEnumOne = 4 };\n"
               "    enum { FourInEnumTwo = 4 };\n"
               "    if (FourInEnumOne == FourInEnumTwo) {}\n"
-              "}", nullptr, true, false);
+              "}", true, true, false);
         ASSERT_EQUALS("[test.cpp:4]: (style) The comparison 'FourInEnumOne == FourInEnumTwo' is always true because 'FourInEnumOne' and 'FourInEnumTwo' represent the same value.\n",
                       errout_str());
 
@@ -6654,7 +6651,7 @@ private:
         check("float f(float x) { return x-x; }"); // ticket #4485 (Inf)
         ASSERT_EQUALS("", errout_str());
 
-        check("float f(float x) { return (X double)x == (X double)x; }", nullptr, false, false);
+        check("float f(float x) { return (X double)x == (X double)x; }", true, false, false);
         ASSERT_EQUALS("", errout_str());
 
         check("struct X { float f; };\n"
@@ -6728,7 +6725,7 @@ private:
 
         check("void foo() {\n"
               "    if ((mystrcmp(a, b) == 0) || (mystrcmp(a, b) == 0)) {}\n"
-              "}", "test.cpp", false, true, false, &settings);
+              "}", true, false, true, false, &settings);
         ASSERT_EQUALS("[test.cpp:2]: (style) Same expression on both sides of '||'.\n", errout_str());
 
         check("void GetValue() { return rand(); }\n"
@@ -6769,7 +6766,7 @@ private:
 
         check("void f(A *src) {\n"
               "    if (dynamic_cast<B*>(src) || dynamic_cast<B*>(src)) {}\n"
-              "}\n", "test.cpp", false, false); // don't run simplifications
+              "}\n", true, false, false); // don't run simplifications
         ASSERT_EQUALS("[test.cpp:2]: (style) Same expression on both sides of '||'.\n", errout_str());
 
         // #5819
@@ -8074,9 +8071,9 @@ private:
             const char code[] = "void foo(unsigned int x) {\n"
                                 "  if (x < 0) {}\n"
                                 "}";
-            check(code, nullptr, false, true, false);
+            check(code, true, false, true, false);
             ASSERT_EQUALS("[test.cpp:2]: (style) Checking if unsigned expression 'x' is less than zero.\n", errout_str());
-            check(code, nullptr, false, true, true);
+            check(code, true, false, true, true);
             ASSERT_EQUALS("[test.cpp:2]: (style) Checking if unsigned expression 'x' is less than zero.\n", errout_str());
         }
 
@@ -8095,9 +8092,9 @@ private:
                                 "  int y = 0;\n"
                                 "  if (x < y) {}\n"
                                 "}";
-            check(code, nullptr, false, true, false);
+            check(code, true, false, true, false);
             ASSERT_EQUALS("[test.cpp:3]: (style) Checking if unsigned expression 'x' is less than zero.\n", errout_str());
-            check(code, nullptr, false, true, true);
+            check(code, true, false, true, true);
             ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:3]: (style) Checking if unsigned expression 'x' is less than zero.\n", errout_str());
         }
         check("void foo(unsigned x) {\n"
@@ -8256,9 +8253,9 @@ private:
                                 "  if (x <= n);\n"
                                 "}\n"
                                 "foo<0>();";
-            check(code, nullptr, false);
+            check(code, true, false);
             ASSERT_EQUALS("", errout_str());
-            check(code, nullptr, true);
+            check(code, true, true);
             ASSERT_EQUALS("", errout_str());
         }
 
@@ -8320,9 +8317,9 @@ private:
                                 "  int y = 0;\n"
                                 "  if (x >= y) {}\n"
                                 "}";
-            check(code, nullptr, false, true, false);
+            check(code, true, false, true, false);
             ASSERT_EQUALS("[test.cpp:3]: (style) A pointer can not be negative so it is either pointless or an error to check if it is not.\n", errout_str());
-            check(code, nullptr, false, true, true);
+            check(code, true, false, true, true);
             ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:3]: (style) A pointer can not be negative so it is either pointless or an error to check if it is not.\n", errout_str());
         }
         check("void foo(const int* x) {\n"
@@ -8341,9 +8338,9 @@ private:
                                 "  if (x < y) {}\n"
                                 "}";
 
-            check(code, nullptr, false, true, false);
+            check(code, true, false, true, false);
             ASSERT_EQUALS("[test.cpp:3]: (style) A pointer can not be negative so it is either pointless or an error to check if it is.\n", errout_str());
-            check(code, nullptr, false, true, true);
+            check(code, true, false, true, true);
             ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:3]: (style) A pointer can not be negative so it is either pointless or an error to check if it is.\n", errout_str());
         }
 
@@ -8817,9 +8814,9 @@ private:
                                "        tok->str(tok->strAt(2));\n"
                                "    }\n"
                                "}";
-        check(code5618, nullptr, true);
+        check(code5618, true, true);
         ASSERT_EQUALS("", errout_str());
-        check(code5618, nullptr, false);
+        check(code5618, true, false);
         ASSERT_EQUALS("", errout_str());
 
         // #5890 - crash: wesnoth desktop_util.cpp / unicode.hpp
@@ -8839,7 +8836,7 @@ private:
               " \n"
               "void foo() {\n"
               "  const CD cd(CD::getOne());\n"
-              "}", nullptr, true);
+              "}", true, true);
         ASSERT_EQUALS("", errout_str());
 
         check("struct S {\n" // #10545
@@ -8852,7 +8849,7 @@ private:
               "    if (i != 0)\n"
               "        return old;\n"
               "    return {};\n"
-              "}", nullptr, /*inconclusive*/ true);
+              "}", true, /*inconclusive*/ true);
         ASSERT_EQUALS("", errout_str());
 
         check("struct X { int x; };\n" // #10191
@@ -8870,7 +8867,7 @@ private:
               "        modify();\n"
               "        return x.x;\n"
               "    }\n"
-              "};\n", nullptr, /*inconclusive*/ true);
+              "};\n", true, /*inconclusive*/ true);
         ASSERT_EQUALS("", errout_str());
 
         // #10704
@@ -9586,7 +9583,7 @@ private:
               "   }\n"
               "   catch (const uno::Exception&)  {\n"
               "   }\n"
-              "}", "test.cpp", true);
+              "}", true, true);
         ASSERT_EQUALS("", errout_str());
 
         check("void ConvertBitmapData(sal_uInt16 nDestBits) {\n"
@@ -9595,7 +9592,7 @@ private:
               "    BitmapBuffer aDstBuf;\n"
               "    aSrcBuf.mnBitCount = nDestBits;\n"
               "    bConverted = ::ImplFastBitmapConversion( aDstBuf, aSrcBuf, aTwoRects );\n"
-              "}", "test.c");
+              "}", false);
         ASSERT_EQUALS("[test.c:3] -> [test.c:5]: (style) Variable 'aSrcBuf.mnBitCount' is reassigned a value before the old one has been used.\n", errout_str());
         check("void ConvertBitmapData(sal_uInt16 nDestBits) {\n"
               "    BitmapBuffer aSrcBuf;\n"
@@ -10156,32 +10153,32 @@ private:
               "  if (a < 0)\n"
               "    return a++,\n"
               "  do_something();\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         TODO_ASSERT_EQUALS("[test.cpp:3]: (style) Comma is used in return statement. The comma can easily be misread as a ';'.\n", "", errout_str());
 
         check("int fun(int a) {\n"
               "  if (a < 0)\n"
               "    return a++, do_something();\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("", errout_str());
 
         check("int fun(int a) {\n"
               "  if (a < 0)\n"
               "    return a+5,\n"
               "  do_something();\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         TODO_ASSERT_EQUALS("[test.cpp:3]: (style) Comma is used in return statement. The comma can easily be misread as a ';'.\n", "", errout_str());
 
         check("int fun(int a) {\n"
               "  if (a < 0)\n"
               "    return a+5, do_something();\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("", errout_str());
 
         check("int fun(int a) {\n"
               "  if (a < 0)\n"
               "    return c<int,\nint>::b;\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("", errout_str());
 
         // #4943 take care of C++11 initializer lists
@@ -10192,7 +10189,7 @@ private:
               "        { \"2\" },\n"
               "        { \"3\" }\n"
               "    };\n"
-              "}", nullptr, false, false);
+              "}", true, false, false);
         ASSERT_EQUALS("", errout_str());
     }
 
@@ -10208,7 +10205,7 @@ private:
               "    explicit B(A a) : a(std::move(a)) {}\n"
               "    void Init(A _a) { a = std::move(_a); }\n"
               "    A a;"
-              "};", nullptr, false, true);
+              "};", true, false, true);
         ASSERT_EQUALS("", errout_str());
 
         check("struct A\n"
@@ -10221,7 +10218,7 @@ private:
               "    explicit B(A a) : a{std::move(a)} {}\n"
               "    void Init(A _a) { a = std::move(_a); }\n"
               "    A a;"
-              "};", nullptr, false, true);
+              "};", true, false, true);
         ASSERT_EQUALS("", errout_str());
 
         check("struct A\n"
@@ -10235,7 +10232,7 @@ private:
               "    void Init(A _a) { a = std::move(_a); }\n"
               "    A a;"
               "    A a2;"
-              "};", nullptr, false, true);
+              "};", true, false, true);
         ASSERT_EQUALS("", errout_str());
 
         check("struct A\n"
@@ -10249,7 +10246,7 @@ private:
               "    void Init(A _a) { a = std::move(_a); }\n"
               "    A a;"
               "    A a2;"
-              "};", nullptr, false, true);
+              "};", true, false, true);
         ASSERT_EQUALS("[test.cpp:8]: (performance) Function parameter 'a2' should be passed by const reference.\n", errout_str());
 
         check("struct A\n"
@@ -10263,7 +10260,7 @@ private:
               "    void Init(A _a) { a = std::move(_a); }\n"
               "    A a;"
               "    A a2;"
-              "};", nullptr, false, true);
+              "};", true, false, true);
         ASSERT_EQUALS("[test.cpp:8]: (performance) Function parameter 'a2' should be passed by const reference.\n", errout_str());
 
         check("std::map<int, int> m;\n" // #10817
@@ -10326,12 +10323,12 @@ private:
     void redundantPointerOp() {
         check("int *f(int *x) {\n"
               "    return &*x;\n"
-              "}\n", nullptr, true);
+              "}\n", true, true);
         ASSERT_EQUALS("[test.cpp:2]: (style) Redundant pointer operation on 'x' - it's already a pointer.\n", errout_str());
 
         check("int *f(int *y) {\n"
               "    return &(*y);\n"
-              "}\n", nullptr, true);
+              "}\n", true, true);
         ASSERT_EQUALS("[test.cpp:2]: (style) Redundant pointer operation on 'y' - it's already a pointer.\n", errout_str());
 
         check("int f() {\n" // #10991
@@ -10339,18 +10336,18 @@ private:
               "    int result1 = *(&value);\n"
               "    int result2 = *&value;\n"
               "    return result1 + result2;\n"
-              "}\n", nullptr, true);
+              "}\n", true, true);
         ASSERT_EQUALS("[test.cpp:3]: (style) Redundant pointer operation on 'value' - it's already a variable.\n"
                       "[test.cpp:4]: (style) Redundant pointer operation on 'value' - it's already a variable.\n",
                       errout_str());
 
         check("void f(int& a, int b) {\n"
               "    *(&a) = b;\n"
-              "}\n", nullptr, true);
+              "}\n", true, true);
         ASSERT_EQUALS("[test.cpp:2]: (style) Redundant pointer operation on 'a' - it's already a variable.\n",
                       errout_str());
 
-        check("void f(int**& p) {}\n", nullptr, true);
+        check("void f(int**& p) {}\n", true, true);
         ASSERT_EQUALS("", errout_str());
 
         checkP("#define	RESTORE(ORIG, COPY) { *ORIG = *COPY; }\n"
@@ -10362,38 +10359,38 @@ private:
         // no warning for bitwise AND
         check("void f(const int *b) {\n"
               "    int x = 0x20 & *b;\n"
-              "}\n", nullptr, true);
+              "}\n", true, true);
         ASSERT_EQUALS("", errout_str());
 
         // No message for double pointers to structs
         check("void f(struct foo **my_struct) {\n"
               "    char **pass_to_func = &(*my_struct)->buf;\n"
-              "}\n", nullptr, true);
+              "}\n", true, true);
         ASSERT_EQUALS("", errout_str());
 
         // another double pointer to struct - with an array
         check("void f(struct foo **my_struct) {\n"
               "    char **pass_to_func = &(*my_struct)->buf[10];\n"
-              "}\n", nullptr, true);
+              "}\n", true, true);
         ASSERT_EQUALS("", errout_str());
 
         // double pointer to array
         check("void f(char **ptr) {\n"
               "    int *x = &(*ptr)[10];\n"
-              "}\n", nullptr, true);
+              "}\n", true, true);
         ASSERT_EQUALS("[test.cpp:2]: (style) Variable 'x' can be declared as pointer to const\n", errout_str());
 
         // function calls
         check("void f(Mutex *mut) {\n"
               "    pthread_mutex_lock(&*mut);\n"
-              "}\n", nullptr, false);
+              "}\n", true, false);
         ASSERT_EQUALS("[test.cpp:2]: (style) Redundant pointer operation on 'mut' - it's already a pointer.\n", errout_str());
 
         // make sure we got the AST match for "(" right
         check("void f(char *ptr) {\n"
               "    if (&*ptr == NULL)\n"
               "        return;\n"
-              "}\n", nullptr, true);
+              "}\n", true, true);
         ASSERT_EQUALS("[test.cpp:2]: (style) Redundant pointer operation on 'ptr' - it's already a pointer.\n", errout_str());
 
         // no warning for macros
@@ -10414,7 +10411,7 @@ private:
     void test_isSameExpression() { // see #5738
         check("bool isInUnoIncludeFile(StringRef name) {"
               "   return  name.startswith(SRCDIR \"/com/\") || name.startswith(SRCDIR \"/uno/\");\n"
-              "};", "test.cpp", false);
+              "};", true, false);
         ASSERT_EQUALS("", errout_str());
     }
 
@@ -10733,24 +10730,24 @@ private:
         check("void f() {\n"
               "  int x = dostuff();\n"
               "  return x + x++;\n"
-              "}", "test.c");
+              "}", false);
         ASSERT_EQUALS("[test.c:3]: (error) Expression 'x+x++' depends on order of evaluation of side effects\n", errout_str());
 
         // #7226
         check("long int f1(const char *exp) {\n"
               "  return strtol(++exp, (char **)&exp, 10);\n"
-              "}", "test.c");
+              "}", false);
         ASSERT_EQUALS("", errout_str());
 
         check("long int f1(const char *exp) {\n"
               "  return dostuff(++exp, exp, 10);\n"
-              "}", "test.c");
+              "}", false);
         ASSERT_EQUALS("[test.c:2]: (error) Expression '++exp,exp' depends on order of evaluation of side effects\n", errout_str());
 
         check("void f() {\n"
               "  int a;\n"
               "  while (a=x(), a==123) {}\n"
-              "}", "test.c");
+              "}", false);
         ASSERT_EQUALS("", errout_str());
 
         // # 8717
@@ -10758,19 +10755,19 @@ private:
               "    char **local_argv = safe_malloc(sizeof (*local_argv));\n"
               "    int local_argc = 0;\n"
               "    local_argv[local_argc++] = argv[0];\n"
-              "}\n", "test.c");
+              "}\n", false);
         ASSERT_EQUALS("", errout_str());
 
         check("void f() {\n"
               "  int x = 0;\n"
               "  return 0 + x++;\n"
-              "}\n", "test.c");
+              "}\n", false);
         ASSERT_EQUALS("", errout_str());
 
         check("void f(int x, int y) {\n"
               "  int a[10];\n"
               "  a[x+y] = a[y+x]++;;\n"
-              "}\n", "test.c");
+              "}\n", false);
         ASSERT_EQUALS("[test.c:3]: (error) Expression 'a[x+y]=a[y+x]++' depends on order of evaluation of side effects\n", errout_str());
     }
 
@@ -10778,7 +10775,7 @@ private:
         // self assignment
         check("void f() {\n"
               "  int x = x = y + 1;\n"
-              "}", "test.c");
+              "}", false);
         ASSERT_EQUALS(
             "[test.c:2]: (style) Redundant assignment of 'x' to itself.\n"
             "[test.c:2]: (style) Redundant assignment of 'x' to itself.\n",   // duplicate
@@ -10798,13 +10795,13 @@ private:
         // FP
         check("void f(int id) {\n"
               "  id = dostuff(id += 42);\n"
-              "}", "test.c");
+              "}", false);
         ASSERT_EQUALS("", errout_str());
 
         // FN
         check("void f(int id) {\n"
               "  id = id + dostuff(id += 42);\n"
-              "}", "test.c");
+              "}", false);
         TODO_ASSERT_EQUALS("error", "", errout_str());
     }
 
@@ -10812,19 +10809,19 @@ private:
         check("int f(void) {\n"
               "  int t;\n"
               "  return (unsigned char)(t=1,t^c);\n"
-              "}", "test.c");
+              "}", false);
         ASSERT_EQUALS("", errout_str());
 
         check("void f(void) {\n"
               "  int t;\n"
               "  dostuff(t=1,t^c);\n"
-              "}", "test.c");
+              "}", false);
         ASSERT_EQUALS("[test.c:3]: (error) Expression 't=1,t^c' depends on order of evaluation of side effects\n", errout_str());
 
         check("void f(void) {\n"
               "  int t;\n"
               "  dostuff((t=1,t),2);\n"
-              "}", "test.c");
+              "}", false);
         ASSERT_EQUALS("", errout_str());
 
         // #8230
@@ -10832,28 +10829,28 @@ private:
               "    do\n"
               "        ;\n"
               "    while (++fp, (*fp) <= 0177);\n"
-              "}\n", "test.c");
+              "}\n", false);
         ASSERT_EQUALS("", errout_str());
 
         check("void hprf(const char* fp) {\n"
               "    do\n"
               "        ;\n"
               "    while (i++, ++fp, (*fp) <= 0177);\n"
-              "}\n", "test.c");
+              "}\n", false);
         ASSERT_EQUALS("", errout_str());
 
         check("void f(const char* fp) {\n"
               "    do\n"
               "        ;\n"
               "    while (f(++fp, (*fp) <= 7));\n"
-              "}\n", "test.c");
+              "}\n", false);
         ASSERT_EQUALS("[test.c:4]: (error) Expression '++fp,(*fp)<=7' depends on order of evaluation of side effects\n", errout_str());
     }
 
     void testEvaluationOrderSizeof() {
         check("void f(char *buf) {\n"
               "  dostuff(buf++, sizeof(*buf));"
-              "}", "test.c");
+              "}", false);
         ASSERT_EQUALS("", errout_str());
     }
 
@@ -10872,7 +10869,7 @@ private:
               "  if (0 > d.n) {\n"
               "    return;\n"
               "  }\n"
-              "}", "test.c");
+              "}", false);
         ASSERT_EQUALS("[test.c:8]: (style) Checking if unsigned expression 'd.n' is less than zero.\n"
                       "[test.c:12]: (style) Checking if unsigned expression 'd.n' is less than zero.\n",
                       errout_str());
@@ -11269,7 +11266,7 @@ private:
               "void Fred::func2(int c, int b, int a) { }\n"
               "void Fred::func3(int c, int b, int a) { }\n"
               "void Fred::func4(int c, int b, int a) { }\n",
-              nullptr, false);
+              true, false);
         ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:4]: (warning) Function 'func2' argument order different: declaration 'a, b, c' definition 'c, b, a'\n"
                       "[test.cpp:5] -> [test.cpp:6]: (warning) Function 'func3' argument order different: declaration ', b, c' definition 'c, b, a'\n"
                       "[test.cpp:9] -> [test.cpp:14]: (warning) Function 'func2' argument order different: declaration 'a, b, c' definition 'c, b, a'\n"
@@ -11373,8 +11370,15 @@ private:
               "static int f(void) {\n"
               "    int a;\n"
               "    return 0;\n"
-              "}\n", "test.c");
+              "}\n", false);
         ASSERT_EQUALS("[test.c:1] -> [test.c:4]: (style) Local variable 'a' shadows outer variable\n", errout_str());
+
+        check("int f() {\n" // #12591
+              "    int g = 0;\n"
+              "    return g;\n"
+              "}\n"
+              "int g() { return 1; }\n");
+        ASSERT_EQUALS("", errout_str());
     }
 
     void knownArgument() {

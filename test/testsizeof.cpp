@@ -18,12 +18,11 @@
 
 #include "checksizeof.h"
 #include "errortypes.h"
+#include "fixture.h"
 #include "helpers.h"
 #include "settings.h"
-#include "fixture.h"
 #include "tokenize.h"
 
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -51,9 +50,8 @@ private:
 #define check(code) check_(code, __FILE__, __LINE__)
     void check_(const char code[], const char* file, int line) {
         // Tokenize..
-        Tokenizer tokenizer(settings, this);
-        std::istringstream istr(code);
-        ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
+        SimpleTokenizer tokenizer(settings, *this);
+        ASSERT_LOC(tokenizer.tokenize(code), file, line);
 
         // Check...
         runChecks<CheckSizeof>(tokenizer, this);
@@ -62,8 +60,8 @@ private:
 #define checkP(...) checkP_(__FILE__, __LINE__, __VA_ARGS__)
     void checkP_(const char* file, int line, const char code[]) {
         std::vector<std::string> files(1, "test.cpp");
-        Tokenizer tokenizer(settings, this);
-        PreprocessorHelper::preprocess(code, files, tokenizer);
+        Tokenizer tokenizer(settings, *this);
+        PreprocessorHelper::preprocess(code, files, tokenizer, *this);
 
         // Tokenize..
         ASSERT_LOC(tokenizer.simplifyTokens1(""), file, line);

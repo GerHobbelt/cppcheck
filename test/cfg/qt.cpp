@@ -32,8 +32,29 @@
 #include <QPoint>
 #include <QPointF>
 #include <QRegion>
+#include <QTransform>
 
 #include <cstdio>
+
+int ignoredReturnValue_QSize_height(const QSize &s)
+{
+    // cppcheck-suppress ignoredReturnValue
+    s.height();
+    return s.height();
+}
+
+int ignoredReturnValue_QSize_width(const QSize &s)
+{
+    // cppcheck-suppress ignoredReturnValue
+    s.width();
+    return s.width();
+}
+
+void unusedVariable_QTransform()
+{
+    // cppcheck-suppress unusedVariable
+    QTransform a;
+}
 
 void unreadVariable_QRegion(const int x, const QRegion::RegionType type, const QPolygon &polygon, const QBitmap &bm, const QRegion &region, const Qt::FillRule fillRule)
 {

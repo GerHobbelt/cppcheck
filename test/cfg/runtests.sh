@@ -27,13 +27,25 @@ CFG="$DIR"../../cfg/
 # TODO: remove missingInclude disabling when it no longer is implied by --enable=information
 # Cppcheck options
 # need to suppress unmatchedSuppression in case valueFlowBailout is not reported
-CPPCHECK_OPT='--check-library --platform=unix64 --enable=style,information --inconclusive --force --check-level=exhaustive --error-exitcode=-1 --disable=missingInclude --inline-suppr --template="{file}:{line}:{severity}:{id}:{message}" --debug-warnings --suppress=checkersReport'
+CPPCHECK_OPT=(
+    "--check-library"
+    "--platform=unix64"
+    "--enable=style,information"
+    "--inconclusive"
+    "--force"
+    "--check-level=exhaustive"
+    "--error-exitcode=-1"
+    "--disable=missingInclude"
+    "--inline-suppr"
+    "--template=\"{file}:{line}:{severity}:{id}:{message}\""
+    "--debug-warnings"
+    "--suppress=checkersReport")
 
 # Compiler settings
 CXX=g++
-CXX_OPT='-fsyntax-only -w -std=c++2a'
+CXX_OPT=("-fsyntax-only" "-w" "-std=c++2a")
 CC=gcc
-CC_OPT='-fsyntax-only -w -std=c11'
+CC_OPT=("-fsyntax-only" "-w" "-std=c11")
 
 function get_pkg_config_cflags {
     # TODO: get rid of the error enabling/disabling?
@@ -54,12 +66,12 @@ function get_pkg_config_cflags {
 
 # posix.c
 function posix_fn {
-    ${CC} ${CC_OPT} ${DIR}posix.c
+    ${CC} "${CC_OPT[@]}" ${DIR}posix.c
 }
 
 # gnu.c
 function gnu_fn {
-    ${CC} ${CC_OPT} -D_GNU_SOURCE ${DIR}gnu.c
+    ${CC} "${CC_OPT[@]}" -D_GNU_SOURCE ${DIR}gnu.c
 }
 
 # qt.cpp
@@ -71,7 +83,7 @@ function qt_fn {
             [[ $QTBUILDCONFIG =~ (^|[[:space:]])reduce_relocations($|[[:space:]]) ]] && QTCONFIG="${QTCONFIG} -fPIC"
             # TODO: get rid of the error enabling/disabling?
             set +e
-            echo -e "#include <QString>" | ${CXX} ${CXX_OPT} ${QTCONFIG} -x c++ -
+            echo -e "#include <QString>" | ${CXX} "${CXX_OPT[@]}" ${QTCONFIG} -x c++ -
             QTCHECK_RETURNCODE=$?
             set -e
             if [ $QTCHECK_RETURNCODE -ne 0 ]; then
@@ -79,7 +91,7 @@ function qt_fn {
                 exit_if_strict
             else
                 echo "Qt found and working, checking syntax with ${CXX} now."
-                ${CXX} ${CXX_OPT} ${QTCONFIG} ${DIR}qt.cpp
+                ${CXX} "${CXX_OPT[@]}" ${QTCONFIG} ${DIR}qt.cpp
             fi
         else
             echo "Qt not present, skipping syntax check with ${CXX}."
@@ -95,18 +107,18 @@ function bsd_fn {
 
 # std.c
 function std_c_fn {
-    ${CC} ${CC_OPT} ${DIR}std.c
+    ${CC} "${CC_OPT[@]}" "${DIR}"std.c
 }
 
 # std.cpp
 function std_cpp_fn {
-    ${CXX} ${CXX_OPT} ${DIR}std.cpp
+    ${CXX} "${CXX_OPT[@]}" "${DIR}"std.cpp
 }
 
 # windows.cpp
 function windows_fn {
     # TODO: Syntax check via g++ does not work because it can not find a valid windows.h
-    #${CXX} ${CXX_OPT} ${DIR}windows.cpp
+    #${CXX} "${CXX_OPT[@]}"  ${DIR}windows.cpp
     true
 }
 
@@ -129,7 +141,7 @@ function wxwidgets_fn {
     else
         # TODO: get rid of the error enabling/disabling?
         set +e
-        echo -e "#include <wx/filefn.h>\n#include <wx/app.h>\n#include <wx/artprov.h>\n#include <wx/version.h>\n#if wxVERSION_NUMBER<2950\n#error \"Old version\"\n#endif" | ${CXX} ${CXX_OPT} ${WXCONFIG} -x c++ -
+        echo -e "#include <wx/filefn.h>\n#include <wx/app.h>\n#include <wx/artprov.h>\n#include <wx/version.h>\n#if wxVERSION_NUMBER<2950\n#error \"Old version\"\n#endif" | ${CXX} "${CXX_OPT[@]}"  ${WXCONFIG} -x c++ -
         WXCHECK_RETURNCODE=$?
         set -e
         if [ $WXCHECK_RETURNCODE -ne 0 ]; then
@@ -137,7 +149,7 @@ function wxwidgets_fn {
             exit_if_strict
         else
             echo "wxWidgets found, checking syntax with ${CXX} now."
-            ${CXX} ${CXX_OPT} ${WXCONFIG} -Wno-deprecated-declarations ${DIR}wxwidgets.cpp
+            ${CXX} "${CXX_OPT[@]}" ${WXCONFIG} -Wno-deprecated-declarations "${DIR}"wxwidgets.cpp
         fi
     fi
 }
@@ -152,7 +164,7 @@ function gtk_fn {
         if [ -n "$GTKCONFIG" ]; then
             # TODO: get rid of the error enabling/disabling?
             set +e
-            echo -e "#include <gtk/gtk.h>" | ${CC} ${CC_OPT} ${GTKCONFIG} -x c -
+            echo -e "#include <gtk/gtk.h>" | ${CC} "${CC_OPT[@]}" ${GTKCONFIG} -x c -
             GTKCHECK_RETURNCODE=$?
             set -e
             if [ $GTKCHECK_RETURNCODE -ne 0 ]; then
@@ -160,7 +172,7 @@ function gtk_fn {
                 exit_if_strict
             else
                 echo "GTK+ found and working, checking syntax with ${CXX} now."
-                ${CC} ${CC_OPT} ${GTKCONFIG} ${DIR}gtk.c
+                ${CC} "${CC_OPT[@]}" ${GTKCONFIG} "${DIR}"gtk.c
             fi
         else
             echo "GTK+ not present, skipping syntax check with ${CXX}."
@@ -173,7 +185,7 @@ function gtk_fn {
 function boost_fn {
     # TODO: get rid of the error enabling/disabling?
     set +e
-    echo -e "#include <boost/config.hpp>" | ${CXX} ${CXX_OPT} -x c++ -
+    echo -e "#include <boost/config.hpp>" | ${CXX} "${CXX_OPT[@]}"  -x c++ -
     BOOSTCHECK_RETURNCODE=$?
     set -e
     if [ ${BOOSTCHECK_RETURNCODE} -ne 0 ]; then
@@ -181,7 +193,7 @@ function boost_fn {
         exit_if_strict
     else
         echo "Boost found and working, checking syntax with ${CXX} now."
-        ${CXX} ${CXX_OPT} ${DIR}boost.cpp
+        ${CXX} "${CXX_OPT[@]}" "${DIR}"boost.cpp
     fi
 }
 
@@ -192,7 +204,7 @@ function sqlite3_fn {
         if [ -n "$SQLITE3CONFIG" ]; then
             # TODO: get rid of the error enabling/disabling?
             set +e
-            echo -e "#include <sqlite3.h>" | ${CC} ${CC_OPT} ${SQLITE3CONFIG} -x c -
+            echo -e "#include <sqlite3.h>" | ${CC} "${CC_OPT[@]}" ${SQLITE3CONFIG} -x c -
             SQLITE3CHECK_RETURNCODE=$?
             set -e
             if [ $SQLITE3CHECK_RETURNCODE -ne 0 ]; then
@@ -200,7 +212,7 @@ function sqlite3_fn {
                 exit_if_strict
             else
                 echo "SQLite3 found and working, checking syntax with ${CC} now."
-                ${CC} ${CC_OPT} ${SQLITE3CONFIG} ${DIR}sqlite3.c
+                ${CC} "${CC_OPT[@]}" ${SQLITE3CONFIG} "${DIR}"sqlite3.c
             fi
         else
             echo "SQLite3 not present, skipping syntax check with ${CC}."
@@ -213,7 +225,7 @@ function sqlite3_fn {
 function openmp_fn {
     # MacOS compiler has no OpenMP by default
     if ! command -v sw_vers; then
-      ${CC} ${CC_OPT} -fopenmp ${DIR}openmp.c
+      ${CC} "${CC_OPT[@]}" -fopenmp ${DIR}openmp.c
     fi
 }
 
@@ -224,7 +236,7 @@ function python_fn {
         if [ -n "$PYTHON3CONFIG" ]; then
             # TODO: get rid of the error enabling/disabling?
             set +e
-            echo -e "#include <Python.h>" | ${CC} ${CC_OPT} ${PYTHON3CONFIG} -x c -
+            echo -e "#include <Python.h>" | ${CC} "${CC_OPT[@]}" ${PYTHON3CONFIG} -x c -
             PYTHON3CONFIG_RETURNCODE=$?
             set -e
             if [ $PYTHON3CONFIG_RETURNCODE -ne 0 ]; then
@@ -232,7 +244,7 @@ function python_fn {
                 exit_if_strict
             else
                 echo "Python 3 found and working, checking syntax with ${CC} now."
-                ${CC} ${CC_OPT} ${PYTHON3CONFIG} ${DIR}python.c
+                ${CC} "${CC_OPT[@]}" ${PYTHON3CONFIG} "${DIR}"python.c
             fi
         else
             echo "Python 3 not present, skipping syntax check with ${CC}."
@@ -248,7 +260,7 @@ function lua_fn {
         if [ -n "$LUACONFIG" ]; then
             # TODO: get rid of the error enabling/disabling?
             set +e
-            echo -e "#include <lua.h>" | ${CC} ${CC_OPT} ${LUACONFIG} -x c -
+            echo -e "#include <lua.h>" | ${CC} "${CC_OPT[@]}" ${LUACONFIG} -x c -
             LUACONFIG_RETURNCODE=$?
             set -e
             if [ $LUACONFIG_RETURNCODE -ne 0 ]; then
@@ -256,7 +268,7 @@ function lua_fn {
                 exit_if_strict
             else
                 echo "Lua found and working, checking syntax with ${CC} now."
-                ${CC} ${CC_OPT} ${LUACONFIG} ${DIR}lua.c
+                ${CC} "${CC_OPT[@]}" ${LUACONFIG} "${DIR}"lua.c
             fi
         else
             echo "Lua not present, skipping syntax check with ${CC}."
@@ -272,7 +284,7 @@ function libcurl_fn {
         if [ -n "$LIBCURLCONFIG" ]; then
             # TODO: get rid of the error enabling/disabling?
             set +e
-            echo -e "#include <curl/curl.h>" | ${CC} ${CC_OPT} ${LIBCURLCONFIG} -x c -
+            echo -e "#include <curl/curl.h>" | ${CC} "${CC_OPT[@]}" ${LIBCURLCONFIG} -x c -
             LIBCURLCONFIG_RETURNCODE=$?
             set -e
             if [ $LIBCURLCONFIG_RETURNCODE -ne 0 ]; then
@@ -280,7 +292,7 @@ function libcurl_fn {
                 exit_if_strict
             else
                 echo "libcurl found and working, checking syntax with ${CC} now."
-                ${CC} ${CC_OPT} ${LIBCURLCONFIG} ${DIR}libcurl.c
+                ${CC} "${CC_OPT[@]}" ${LIBCURLCONFIG} "${DIR}"libcurl.c
             fi
         else
             echo "libcurl not present, skipping syntax check with ${CC}."
@@ -296,7 +308,7 @@ function cairo_fn {
         if [ -n "$CAIROCONFIG" ]; then
             # TODO: get rid of the error enabling/disabling?
             set +e
-            echo -e "#include <cairo.h>" | ${CC} ${CC_OPT} ${CAIROCONFIG} -x c -
+            echo -e "#include <cairo.h>" | ${CC} "${CC_OPT[@]}" ${CAIROCONFIG} -x c -
             CAIROCONFIG_RETURNCODE=$?
             set -e
             if [ $CAIROCONFIG_RETURNCODE -ne 0 ]; then
@@ -304,7 +316,7 @@ function cairo_fn {
                 exit_if_strict
             else
                 echo "cairo found and working, checking syntax with ${CC} now."
-                ${CC} ${CC_OPT} ${CAIROCONFIG} ${DIR}cairo.c
+                ${CC} "${CC_OPT[@]}" ${CAIROCONFIG} "${DIR}"cairo.c
             fi
         else
             echo "cairo not present, skipping syntax check with ${CC}."
@@ -336,7 +348,7 @@ function kde_fn {
         else
             # TODO: get rid of the error enabling/disabling?
             set +e
-            echo -e "#include <KDE/KGlobal>\n" | ${CXX} ${CXX_OPT} -I${KDECONFIG} ${KDEQTCONFIG} -x c++ -
+            echo -e "#include <KDE/KGlobal>\n" | ${CXX} "${CXX_OPT[@]}" -I${KDECONFIG} ${KDEQTCONFIG} -x c++ -
             KDECHECK_RETURNCODE=$?
             set -e
             if [ $KDECHECK_RETURNCODE -ne 0 ]; then
@@ -344,7 +356,7 @@ function kde_fn {
                 exit_if_strict
             else
                 echo "KDE found, checking syntax with ${CXX} now."
-                ${CXX} ${CXX_OPT} -I${KDECONFIG} ${KDEQTCONFIG} ${DIR}kde.cpp
+                ${CXX} "${CXX_OPT[@]}" -I${KDECONFIG} ${KDEQTCONFIG} "${DIR}"kde.cpp
             fi
         fi
     fi
@@ -357,7 +369,7 @@ function libsigcpp_fn {
         if [ -n "$LIBSIGCPPCONFIG" ]; then
             # TODO: get rid of the error enabling/disabling?
             set +e
-            echo -e "#include <sigc++/sigc++.h>\n" | ${CXX} ${CXX_OPT} ${LIBSIGCPPCONFIG} -x c++ -
+            echo -e "#include <sigc++/sigc++.h>\n" | ${CXX} "${CXX_OPT[@]}" ${LIBSIGCPPCONFIG} -x c++ -
             LIBSIGCPPCONFIG_RETURNCODE=$?
             set -e
             if [ $LIBSIGCPPCONFIG_RETURNCODE -ne 0 ]; then
@@ -365,7 +377,7 @@ function libsigcpp_fn {
                 exit_if_strict
             else
                 echo "libsigc++ found and working, checking syntax with ${CXX} now."
-                ${CXX} ${CXX_OPT} ${LIBSIGCPPCONFIG} ${DIR}libsigc++.cpp
+                ${CXX} "${CXX_OPT[@]}" ${LIBSIGCPPCONFIG} "${DIR}"libsigc++.cpp
             fi
         else
             echo "libsigc++ not present, skipping syntax check with ${CXX}."
@@ -381,7 +393,7 @@ function openssl_fn {
         if [ -n "$OPENSSLCONFIG" ]; then
             # TODO: get rid of the error enabling/disabling?
             set +e
-            echo -e "#include <openssl/ssl.h>" | ${CC} ${CC_OPT} ${OPENSSLCONFIG} -x c -
+            echo -e "#include <openssl/ssl.h>" | ${CC} "${CC_OPT[@]}" ${OPENSSLCONFIG} -x c -
             OPENSSLCONFIG_RETURNCODE=$?
             set -e
             if [ $OPENSSLCONFIG_RETURNCODE -ne 0 ]; then
@@ -389,7 +401,7 @@ function openssl_fn {
                 exit_if_strict
             else
                 echo "OpenSSL found and working, checking syntax with ${CC} now."
-                ${CC} ${CC_OPT} ${OPENSSLCONFIG} ${DIR}openssl.c
+                ${CC} "${CC_OPT[@]}" ${OPENSSLCONFIG} "${DIR}"openssl.c
             fi
         else
             echo "OpenSSL not present, skipping syntax check with ${CC}."
@@ -405,7 +417,7 @@ function opencv2_fn {
         if [ -n "$OPENCVCONFIG" ]; then
             # TODO: get rid of the error enabling/disabling?
             set +e
-            echo -e "#include <opencv2/opencv.hpp>\n" | ${CXX} ${CXX_OPT} ${OPENCVCONFIG} -x c++ -
+            echo -e "#include <opencv2/opencv.hpp>\n" | ${CXX} "${CXX_OPT[@]}"  ${OPENCVCONFIG} -x c++ -
             OPENCVCONFIG_RETURNCODE=$?
             set -e
             if [ $OPENCVCONFIG_RETURNCODE -ne 0 ]; then
@@ -413,7 +425,7 @@ function opencv2_fn {
                 exit_if_strict
             else
                 echo "OpenCV found and working, checking syntax with ${CXX} now."
-                ${CXX} ${CXX_OPT} ${OPENCVCONFIG} ${DIR}opencv2.cpp
+                ${CXX} "${CXX_OPT[@]}" ${OPENCVCONFIG} "${DIR}"opencv2.cpp
             fi
         else
             echo "OpenCV not present, skipping syntax check with ${CXX}."
@@ -430,112 +442,112 @@ function cppunit_fn {
             exit_if_strict
         else
             echo "cppunit found, checking syntax with ${CXX} now."
-            ${CXX} ${CXX_OPT} -Wno-deprecated-declarations ${DIR}cppunit.cpp
+            ${CXX} "${CXX_OPT[@]}" -Wno-deprecated-declarations "${DIR}"cppunit.cpp
         fi
     fi
 }
 
 function check_file {
-    f=$(basename $1)
+    f=$(basename "$1")
     lib="${f%%.*}"
     case $f in
         boost.cpp)
             boost_fn
-            ${CPPCHECK} ${CPPCHECK_OPT} --library=$lib ${DIR}$f
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" --library="$lib" "${DIR}""$f"
             ;;
         bsd.c)
             bsd_fn
-            ${CPPCHECK} ${CPPCHECK_OPT} --library=$lib ${DIR}$f
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" --library="$lib" "${DIR}""$f"
             ;;
         cairo.c)
             cairo_fn
-            ${CPPCHECK} ${CPPCHECK_OPT} --library=$lib ${DIR}$f
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" --library="$lib" "${DIR}""$f"
             ;;
         cppunit.cpp)
             cppunit_fn
-            ${CPPCHECK} ${CPPCHECK_OPT} --library=$lib ${DIR}$f
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" --library="$lib" "${DIR}""$f"
             ;;
         gnu.c)
             gnu_fn
             # TODO: posix needs to specified first or it has a different mmap() config
             # TODO: get rid of posix dependency
-            ${CPPCHECK} ${CPPCHECK_OPT} --library=posix,$lib ${DIR}gnu.c
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" --library=posix,"$lib" "${DIR}"gnu.c
             ;;
         googletest.cpp)
             googletest_fn
-            ${CPPCHECK} ${CPPCHECK_OPT} --library=$lib ${DIR}$f
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" --library="$lib" "${DIR}""$f"
             ;;
         gtk.c)
             gtk_fn
-            ${CPPCHECK} ${CPPCHECK_OPT} --library=$lib ${DIR}$f
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" --library="$lib" "${DIR}""$f"
             ;;
         kde.cpp)
             # TODO: "kde-4config" is no longer commonly available in recent distros
             #kde_fn
-            ${CPPCHECK} ${CPPCHECK_OPT} --library=$lib ${DIR}$f
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" --library="$lib" "${DIR}""$f"
             ;;
         libcurl.c)
             libcurl_fn
-            ${CPPCHECK} ${CPPCHECK_OPT} --library=$lib ${DIR}$f
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" --library="$lib" "${DIR}""$f"
             ;;
         libsigc++.cpp)
             libsigcpp_fn
-            ${CPPCHECK} ${CPPCHECK_OPT} --library=$lib ${DIR}$f
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" --library="$lib" "${DIR}""$f"
             ;;
         lua.c)
             lua_fn
-            ${CPPCHECK} ${CPPCHECK_OPT} --library=$lib ${DIR}$f
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" --library="$lib" "${DIR}""$f"
             ;;
         mfc.cpp)
             mfc_fn
-            ${CPPCHECK} ${CPPCHECK_OPT} --platform=win64  --library=$lib ${DIR}$f
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" --platform=win64 --library="$lib" "${DIR}""$f"
             ;;
         opencv2.cpp)
             # TODO: "opencv.pc" is not commonly available in distros
             #opencv2_fn
-            ${CPPCHECK} ${CPPCHECK_OPT} --library=$lib ${DIR}$f
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" --library="$lib" "${DIR}""$f"
             ;;
         openmp.c)
             openmp_fn
-            ${CPPCHECK} ${CPPCHECK_OPT} --library=$lib ${DIR}$f
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" --library="$lib" "${DIR}""$f"
             ;;
         openssl.c)
             openssl_fn
-            ${CPPCHECK} ${CPPCHECK_OPT} --library=$lib ${DIR}$f
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" --library="$lib" "${DIR}""$f"
             ;;
         posix.c)
             posix_fn
-            ${CPPCHECK} ${CPPCHECK_OPT} --library=$lib ${DIR}$f
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" --library="$lib" "${DIR}""$f"
             ;;
         python.c)
             python_fn
-            ${CPPCHECK} ${CPPCHECK_OPT} --library=$lib ${DIR}$f
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" --library="$lib" "${DIR}""$f"
             ;;
         qt.cpp)
             qt_fn
-            ${CPPCHECK} ${CPPCHECK_OPT} --library=$lib ${DIR}$f
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" --library="$lib" "${DIR}""$f"
             ;;
         sqlite3.c)
             sqlite3_fn
-            ${CPPCHECK} ${CPPCHECK_OPT} --library=$lib ${DIR}$f
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" --library="$lib" "${DIR}""$f"
             ;;
         std.c)
             std_c_fn
-            ${CPPCHECK} ${CPPCHECK_OPT} ${DIR}$f
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" "${DIR}""$f"
             ;;
         std.cpp)
             std_cpp_fn
-            ${CPPCHECK} ${CPPCHECK_OPT} ${DIR}$f
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" "${DIR}""$f"
             ;;
         windows.cpp)
             windows_fn
-            ${CPPCHECK} ${CPPCHECK_OPT} --platform=win32A --library=$lib ${DIR}$f
-            ${CPPCHECK} ${CPPCHECK_OPT} --platform=win32W --library=$lib ${DIR}$f
-            ${CPPCHECK} ${CPPCHECK_OPT} --platform=win64  --library=$lib ${DIR}$f
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" --platform=win32A --library="$lib" "${DIR}""$f"
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" --platform=win32W --library="$lib" "${DIR}""$f"
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" --platform=win64  --library="$lib" "${DIR}""$f"
             ;;
         wxwidgets.cpp)
             wxwidgets_fn
-            ${CPPCHECK} ${CPPCHECK_OPT} --library=$lib ${DIR}$f
+            "${CPPCHECK}" "${CPPCHECK_OPT[@]}" --library="$lib" "${DIR}""$f"
             ;;
         *)
           echo "Unhandled file $f"
@@ -547,7 +559,7 @@ function check_files
 {
 for f in "$@"
 do
-    check_file $f
+    check_file "$f"
 done
 }
 
@@ -558,12 +570,12 @@ function check_defines_syntax
         echo "xmlstarlet needed to extract defines, skipping defines check."
         exit_if_strict
     else
-        for configfile in ${CFG}*.cfg; do
+        for configfile in "${CFG}"*.cfg; do
             echo "Checking defines in $configfile"
             # Disable debugging output temporarily since there could be many defines
             set +x
             # XMLStarlet returns 1 if no elements were found which is no problem here
-            EXTRACTED_DEFINES=$(xmlstarlet sel -t -m '//define' -c . -n <$configfile || true)
+            EXTRACTED_DEFINES=$(xmlstarlet sel -t -m '//define' -c . -n <"$configfile" || true)
             EXTRACTED_DEFINES=$(echo "$EXTRACTED_DEFINES" | sed 's/<define name="/#define /g' | sed 's/" value="/ /g' | sed 's/"\/>//g')
             echo "$EXTRACTED_DEFINES" | gcc -fsyntax-only -xc -Werror -
         done

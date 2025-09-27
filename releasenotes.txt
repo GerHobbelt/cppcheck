@@ -2,6 +2,7 @@ Release Notes for Cppcheck 2.14
 
 New checks:
 eraseIteratorOutOfBounds: warns when erase() is called on an iterator that is out of bounds
+returnByReference: warns when a large class member is returned by value from a getter function
 
 Improved checking:
 -
@@ -27,3 +28,4 @@ Other:
 - Removed CMake option 'USE_THREADS' in favor of 'DISALLOW_THREAD_EXECUTOR'.
 - Fixed crash with '--rule-file=' if some data was missing.
 - '--rule-file' will now bail out if a rule could not be added or a file contains unexpected data.
+- Add option '--check-version', you can use it to pin the cppcheck version in a script.

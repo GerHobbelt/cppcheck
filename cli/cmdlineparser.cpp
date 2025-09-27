@@ -311,6 +311,9 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
 {
     mSettings.exename = Path::getCurrentExecutablePath(argv[0]);
 
+    // default to --check-level=normal from CLI for now
+    mSettings.setCheckLevel(Settings::CheckLevel::normal);
+
     if (argc <= 1) {
         printHelp();
         return Result::Exit;
@@ -356,15 +359,8 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
         if (std::strcmp(argv[i], "--version") == 0) {
             if (!loadCppcheckCfg())
                 return Result::Fail;
-            if (!mSettings.cppcheckCfgProductName.empty()) {
-                mLogger.printRaw(mSettings.cppcheckCfgProductName);
-            } else {
-                const char * const extraVersion = CppCheck::extraVersion();
-                if (*extraVersion != '\0')
-                    mLogger.printRaw(std::string("Cppcheck ") + CppCheck::version() + " ("+ extraVersion + ')');
-                else
-                    mLogger.printRaw(std::string("Cppcheck ") + CppCheck::version());
-            }
+            const std::string version = getVersion();
+            mLogger.printRaw(version);
             return Result::Exit;
         }
     }
@@ -475,17 +471,36 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
             else if (std::strcmp(argv[i], "--check-config") == 0)
                 mSettings.checkConfiguration = true;
 
-            // Check code exhaustively
-            else if (std::strcmp(argv[i], "--check-level=exhaustive") == 0)
-                mSettings.setCheckLevelExhaustive();
+            // Check level
+            else if (std::strncmp(argv[i], "--check-level=", 14) == 0) {
+                Settings::CheckLevel level = Settings::CheckLevel::normal;
+                const std::string level_s(argv[i] + 14);
+                if (level_s == "normal")
+                    level = Settings::CheckLevel::normal;
+                else if (level_s == "exhaustive")
+                    level = Settings::CheckLevel::exhaustive;
+                else {
+                    mLogger.printError("unknown '--check-level' value '" + level_s + "'.");
+                    return Result::Fail;
+                }
 
-            // Check code with normal analysis
-            else if (std::strcmp(argv[i], "--check-level=normal") == 0)
-                mSettings.setCheckLevelNormal();
+                mSettings.setCheckLevel(level);
+            }
 
             // Check library definitions
             else if (std::strcmp(argv[i], "--check-library") == 0) {
                 mSettings.checkLibrary = true;
+            }
+
+            else if (std::strncmp(argv[i], "--check-version=", 16) == 0) {
+                if (!loadCppcheckCfg())
+                    return Result::Fail;
+                const std::string actualVersion = getVersion();
+                const std::string wantedVersion = argv[i] + 16;
+                if (actualVersion != wantedVersion) {
+                    mLogger.printError("--check-version check failed. Aborting.");
+                    return Result::Fail;
+                }
             }
 
             else if (std::strncmp(argv[i], "--checkers-report=", 18) == 0)
@@ -663,8 +678,17 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
             }
 
             // use a file filter
-            else if (std::strncmp(argv[i], "--file-filter=", 14) == 0)
-                mSettings.fileFilters.emplace_back(argv[i] + 14);
+            else if (std::strncmp(argv[i], "--file-filter=", 14) == 0) {
+                const char *filter = argv[i] + 14;
+                if (std::strcmp(filter, "-") == 0) {
+                    if (!addFilesToList(filter, mSettings.fileFilters)) {
+                        mLogger.printError("Failed: --file-filter=-");
+                        return Result::Fail;
+                    }
+                } else {
+                    mSettings.fileFilters.emplace_back(filter);
+                }
+            }
 
             // file list specified
             else if (std::strncmp(argv[i], "--file-list=", 12) == 0) {
@@ -1061,6 +1085,12 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
 #ifdef HAVE_RULES
                 Settings::Rule rule;
                 rule.pattern = 7 + argv[i];
+
+                if (rule.pattern.empty()) {
+                    mLogger.printError("no rule pattern provided.");
+                    return Result::Fail;
+                }
+
                 mSettings.rules.emplace_back(std::move(rule));
 #else
                 mLogger.printError("Option --rule cannot be used as Cppcheck has not been built with rules support.");
@@ -1121,6 +1151,11 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
                             return Result::Fail;
                         }
 
+                        if (rule.id.empty()) {
+                            mLogger.printError("unable to load rule-file '" + ruleFile + "' - a rule is lacking an id.");
+                            return Result::Fail;
+                        }
+
                         if (rule.tokenlist.empty()) {
                             mLogger.printError("unable to load rule-file '" + ruleFile + "' - a rule is lacking a tokenlist.");
                             return Result::Fail;
@@ -1128,6 +1163,11 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
 
                         if (rule.tokenlist != "normal" && rule.tokenlist != "define" && rule.tokenlist != "raw") {
                             mLogger.printError("unable to load rule-file '" + ruleFile + "' - a rule is using the unsupported tokenlist '" + rule.tokenlist + "'.");
+                            return Result::Fail;
+                        }
+
+                        if (rule.severity == Severity::none) {
+                            mLogger.printError("unable to load rule-file '" + ruleFile + "' - a rule has an invalid severity.");
                             return Result::Fail;
                         }
 
@@ -1744,6 +1784,15 @@ void CmdLineParser::printHelp() const
         " * qt -- used in GUI\n";
 
     mLogger.printRaw(oss.str());
+}
+
+std::string CmdLineParser::getVersion() const {
+    if (!mSettings.cppcheckCfgProductName.empty())
+        return mSettings.cppcheckCfgProductName;
+    const char * const extraVersion = CppCheck::extraVersion();
+    if (*extraVersion != '\0')
+        return std::string("Cppcheck ") + CppCheck::version() + " ("+ extraVersion + ')';
+    return std::string("Cppcheck ") + CppCheck::version();
 }
 
 bool CmdLineParser::isCppcheckPremium() const {

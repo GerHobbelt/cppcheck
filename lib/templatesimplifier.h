@@ -49,7 +49,7 @@ class CPPCHECKLIB TemplateSimplifier {
 public:
     explicit TemplateSimplifier(Tokenizer &tokenizer);
 
-    std::string dump() const {
+    const std::string& dump() const {
         return mDump;
     }
 
@@ -494,7 +494,7 @@ private:
     Tokenizer &mTokenizer;
     TokenList &mTokenList;
     const Settings &mSettings;
-    ErrorLogger *mErrorLogger;
+    ErrorLogger &mErrorLogger;
     bool mChanged{};
 
     std::list<TokenAndName> mTemplateDeclarations;

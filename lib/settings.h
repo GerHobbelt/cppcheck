@@ -259,10 +259,10 @@ public:
     int performanceValueFlowMaxTime = -1;
 
     /** @brief --performance-valueflow-max-if-count=C */
-    int performanceValueFlowMaxIfCount;
+    int performanceValueFlowMaxIfCount = -1;
 
     /** @brief max number of sets of arguments to pass to subfuncions in valueflow */
-    int performanceValueFlowMaxSubFunctionArgs;
+    int performanceValueFlowMaxSubFunctionArgs = 256;
 
     /** @brief plist output (--plist-output=&lt;dir&gt;) */
     std::string plistOutput;
@@ -456,21 +456,13 @@ public:
         return jobs == 1;
     }
 
-    /** Check if the user wants to check for unused functions
-     * and if it's possible at all */
-    bool isUnusedFunctionCheckEnabled() const
-    {
-        return useSingleJob() && checks.isEnabled(Checks::unusedFunction);
-    }
-
-    void setCheckLevelExhaustive();
-    void setCheckLevelNormal();
-
     enum class CheckLevel {
-        exhaustive,
-        normal
+        normal,
+        exhaustive
     };
-    CheckLevel checkLevel = CheckLevel::normal;
+    CheckLevel checkLevel = CheckLevel::exhaustive;
+
+    void setCheckLevel(CheckLevel level);
 
     using ExecuteCmdFn = std::function<int (std::string,std::vector<std::string>,std::string,std::string&)>;
     void setMisraRuleTexts(const ExecuteCmdFn& executeCommand);

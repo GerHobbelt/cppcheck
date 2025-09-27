@@ -152,12 +152,11 @@ static bool isClassStructUnionEnumStart(const Token * tok)
 
 //---------------------------------------------------------------------------
 
-Tokenizer::Tokenizer(const Settings &settings, ErrorLogger *errorLogger, const Preprocessor *preprocessor) :
+Tokenizer::Tokenizer(const Settings &settings, ErrorLogger &errorLogger) :
     list(&settings),
     mSettings(settings),
     mErrorLogger(errorLogger),
-    mTemplateSimplifier(new TemplateSimplifier(*this)),
-    mPreprocessor(preprocessor)
+    mTemplateSimplifier(new TemplateSimplifier(*this))
 {}
 
 Tokenizer::~Tokenizer()
@@ -1142,8 +1141,8 @@ void Tokenizer::simplifyTypedefCpp()
     const std::time_t maxTime = mSettings.typedefMaxTime > 0 ? std::time(nullptr) + mSettings.typedefMaxTime: 0;
 
     for (Token *tok = list.front(); tok; tok = tok->next()) {
-        if (mErrorLogger && !list.getFiles().empty())
-            mErrorLogger->reportProgress(list.getFiles()[0], "Tokenize (typedef)", tok->progressValue());
+        if (!list.getFiles().empty())
+            mErrorLogger.reportProgress(list.getFiles()[0], "Tokenize (typedef)", tok->progressValue());
 
         if (Settings::terminated())
             return;
@@ -1157,7 +1156,7 @@ void Tokenizer::simplifyTypedefCpp()
                                     "Typedef simplification instantiation maximum time exceeded",
                                     "typedefMaxTime",
                                     Certainty::normal);
-                mErrorLogger->reportErr(errmsg);
+                mErrorLogger.reportErr(errmsg);
             }
             return;
         }
@@ -2877,8 +2876,8 @@ bool Tokenizer::simplifyUsing()
     std::list<Using> usingList;
 
     for (Token *tok = list.front(); tok; tok = tok->next()) {
-        if (mErrorLogger && !list.getFiles().empty())
-            mErrorLogger->reportProgress(list.getFiles()[0], "Tokenize (using)", tok->progressValue());
+        if (!list.getFiles().empty())
+            mErrorLogger.reportProgress(list.getFiles()[0], "Tokenize (using)", tok->progressValue());
 
         if (Settings::terminated())
             return substitute;
@@ -3343,7 +3342,7 @@ bool Tokenizer::simplifyUsing()
 
 void Tokenizer::simplifyUsingError(const Token* usingStart, const Token* usingEnd)
 {
-    if (mSettings.debugwarnings && mErrorLogger) {
+    if (mSettings.debugwarnings) {
         std::string str;
         for (const Token *tok = usingStart; tok && tok != usingEnd; tok = tok->next()) {
             if (!str.empty())
@@ -3352,8 +3351,8 @@ void Tokenizer::simplifyUsingError(const Token* usingStart, const Token* usingEn
         }
         str += " ;";
         std::list<const Token *> callstack(1, usingStart);
-        mErrorLogger->reportErr(ErrorMessage(callstack, &list, Severity::debug, "simplifyUsing",
-                                             "Failed to parse \'" + str + "\'. The checking continues anyway.", Certainty::normal));
+        mErrorLogger.reportErr(ErrorMessage(callstack, &list, Severity::debug, "simplifyUsing",
+                                            "Failed to parse \'" + str + "\'. The checking continues anyway.", Certainty::normal));
     }
 }
 
@@ -3438,15 +3437,6 @@ bool Tokenizer::simplifyTokens1(const std::string &configuration)
     return true;
 }
 
-bool Tokenizer::tokenize(std::istream &code,
-                         const char FileName[],
-                         const std::string &configuration)
-{
-    if (!list.createTokens(code, FileName))
-        return false;
-
-    return simplifyTokens1(configuration);
-}
 //---------------------------------------------------------------------------
 
 void Tokenizer::findComplicatedSyntaxErrorsInTemplates()
@@ -5412,6 +5402,21 @@ void Tokenizer::createLinks2()
     }
 }
 
+void Tokenizer::markCppCasts()
+{
+    if (isC())
+        return;
+    for (Token* tok = list.front(); tok; tok = tok->next()) {
+        if (Token::Match(tok, "const_cast|dynamic_cast|reinterpret_cast|static_cast")) {
+            if (!Token::simpleMatch(tok->next(), "<") || !Token::simpleMatch(tok->linkAt(1), "> ("))
+                syntaxError(tok);
+            tok = tok->linkAt(1)->next();
+            tok->isCast(true);
+        }
+    }
+
+}
+
 void Tokenizer::sizeofAddParentheses()
 {
     for (Token *tok = list.front(); tok; tok = tok->next()) {
@@ -5491,6 +5496,9 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
     removeExtraTemplateKeywords();
 
     simplifySpaceshipOperator();
+
+    // @..
+    simplifyAt();
 
     // Bail out if code is garbage
     if (mTimerResults) {
@@ -5703,9 +5711,6 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
     // Put ^{} statements in asm()
     simplifyAsm2();
 
-    // @..
-    simplifyAt();
-
     // When the assembly code has been cleaned up, no @ is allowed
     for (const Token *tok = list.front(); tok; tok = tok->next()) {
         if (tok->str() == "(") {
@@ -5805,12 +5810,7 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
     createLinks2();
 
     // Mark C++ casts
-    for (Token *tok = list.front(); tok; tok = tok->next()) {
-        if (Token::Match(tok, "const_cast|dynamic_cast|reinterpret_cast|static_cast <") && Token::simpleMatch(tok->linkAt(1), "> (")) {
-            tok = tok->linkAt(1)->next();
-            tok->isCast(true);
-        }
-    }
+    markCppCasts();
 
     // specify array size
     arraySize();
@@ -5910,6 +5910,26 @@ void Tokenizer::dump(std::ostream &out) const
     std::string outs;
 
     std::set<const Library::Container*> containers;
+
+    outs += "  <directivelist>";
+    outs += '\n';
+    for (const Directive &dir : mDirectives) {
+        outs += "    <directive ";
+        outs += "file=\"";
+        outs += ErrorLogger::toxml(dir.file);
+        outs += "\" ";
+        outs += "linenr=\"";
+        outs += std::to_string(dir.linenr);
+        outs += "\" ";
+        // str might contain characters such as '"', '<' or '>' which
+        // could result in invalid XML, so run it through toxml().
+        outs += "str=\"";
+        outs += ErrorLogger::toxml(dir.str);
+        outs +="\"/>";
+        outs += '\n';
+    }
+    outs += "  </directivelist>";
+    outs += '\n';
 
     // tokens..
     outs += "  <tokenlist>";
@@ -6069,7 +6089,8 @@ void Tokenizer::dump(std::ostream &out) const
     out << outs;
     outs.clear();
 
-    mSymbolDatabase->printXml(out);
+    if (mSymbolDatabase)
+        mSymbolDatabase->printXml(out);
 
     containers.erase(nullptr);
     if (!containers.empty()) {
@@ -8412,6 +8433,9 @@ void Tokenizer::findGarbageCode() const
         else if (Token::Match(tok, "[({<] %assign%"))
             syntaxError(tok);
 
+        else if (Token::Match(tok, "[`\\@]"))
+            syntaxError(tok);
+
         // UNKNOWN_MACRO(return)
         if (tok->isKeyword() && Token::Match(tok, "throw|return )") && Token::Match(tok->linkAt(1)->previous(), "%name% ("))
             unknownMacroError(tok->linkAt(1)->previous());
@@ -8610,9 +8634,11 @@ void Tokenizer::findGarbageCode() const
             syntaxError(tok);
         if (Token::Match(tok, "%assign% typename|class %assign%"))
             syntaxError(tok);
+        if (Token::Match(tok, "%assign% [;)}]") && (!isCPP() || !Token::Match(tok->previous(), "operator %assign% ;")))
+            syntaxError(tok);
         if (Token::Match(tok, "%cop%|=|,|[ %or%|%oror%|/|%"))
             syntaxError(tok);
-        if (Token::Match(tok, ";|(|[ %comp%"))
+        if (Token::Match(tok, "[;([{] %comp%|&&|%oror%|%or%|%|/"))
             syntaxError(tok);
         if (Token::Match(tok, "%cop%|= ]") && !(isCPP() && Token::Match(tok->previous(), "%type%|[|,|%num% &|=|> ]")))
             syntaxError(tok);
@@ -8802,6 +8828,20 @@ void Tokenizer::simplifyFunctionTryCatch()
     }
 }
 
+static bool isAnonymousEnum(const Token* tok)
+{
+    if (!Token::Match(tok, "enum {|:"))
+        return false;
+    if (tok->index() > 2 && Token::Match(tok->tokAt(-3), "using %name% ="))
+        return false;
+    const Token* end = tok->next();
+    if (end->str() == ":") {
+        end = end->next();
+        while (Token::Match(end, "%name%|::"))
+            end = end->next();
+    }
+    return end && Token::Match(end->link(), "} (| %type%| )| [,;[({=]");
+}
 
 void Tokenizer::simplifyStructDecl()
 {
@@ -8828,10 +8868,7 @@ void Tokenizer::simplifyStructDecl()
             }
         }
         // check for anonymous enum
-        else if ((Token::simpleMatch(tok, "enum {") &&
-                  !Token::Match(tok->tokAt(-3), "using %name% =") &&
-                  Token::Match(tok->next()->link(), "} (| %type%| )| ,|;|[|(|{")) ||
-                 (Token::Match(tok, "enum : %type% {") && Token::Match(tok->linkAt(3), "} (| %type%| )| ,|;|[|(|{"))) {
+        else if (isAnonymousEnum(tok)) {
             Token *start = tok->strAt(1) == ":" ? tok->linkAt(3) : tok->linkAt(1);
             if (start && Token::Match(start->next(), "( %type% )")) {
                 start->next()->link()->deleteThis();
@@ -8870,9 +8907,9 @@ void Tokenizer::simplifyStructDecl()
             const Token * const type = tok->next();
             Token *next = tok->tokAt(2);
 
-            while (next && next->str() != "{")
+            while (next && !Token::Match(next, "[{;]"))
                 next = next->next();
-            if (!next)
+            if (!next || next->str() == ";")
                 continue;
             Token* after = next->link();
             if (!after)
@@ -9583,9 +9620,9 @@ void Tokenizer::simplifyAt()
     std::set<std::string> var;
 
     for (Token *tok = list.front(); tok; tok = tok->next()) {
-        if (Token::Match(tok, "%name%|] @ %num%|%name%|(")) {
+        if (Token::Match(tok, "%name%|] @ %num%|%name%|%str%|(")) {
             const Token *end = tok->tokAt(2);
-            if (end->isNumber())
+            if (end->isLiteral())
                 end = end->next();
             else if (end->str() == "(") {
                 int par = 0;
@@ -9606,7 +9643,7 @@ void Tokenizer::simplifyAt()
             if (Token::Match(end, ": %num% ;"))
                 end = end->tokAt(2);
 
-            if (end && end->str() == ";") {
+            if (Token::Match(end, "[;=]")) {
                 if (tok->isName())
                     var.insert(tok->str());
                 tok->isAtAddress(true);
@@ -10390,10 +10427,7 @@ void Tokenizer::reportError(const Token* tok, const Severity severity, const std
 void Tokenizer::reportError(const std::list<const Token*>& callstack, Severity severity, const std::string& id, const std::string& msg, bool inconclusive) const
 {
     const ErrorMessage errmsg(callstack, &list, severity, id, msg, inconclusive ? Certainty::inconclusive : Certainty::normal);
-    if (mErrorLogger)
-        mErrorLogger->reportErr(errmsg);
-    else
-        Check::writeToErrorList(errmsg);
+    mErrorLogger.reportErr(errmsg);
 }
 
 void Tokenizer::setPodTypes()
@@ -10602,6 +10636,8 @@ void Tokenizer::simplifyNamespaceAliases()
                     }
 
                     if (tok2->strAt(1) == "::" && !alreadyHasNamespace(tokNameStart, tokNameEnd, tok2)) {
+                        if (Token::simpleMatch(tok2->tokAt(-1), "::") && tokNameStart->str() == "::")
+                            tok2->deletePrevious();
                         tok2->str(tokNameStart->str());
                         Token * tok3 = tokNameStart;
                         while (tok3 != tokNameEnd) {
@@ -10631,11 +10667,15 @@ void Tokenizer::simplifyNamespaceAliases()
     }
 }
 
+void Tokenizer::setDirectives(std::list<Directive> directives)
+{
+    mDirectives = std::move(directives);
+}
+
 bool Tokenizer::hasIfdef(const Token *start, const Token *end) const
 {
-    assert(mPreprocessor);
-
-    return std::any_of(mPreprocessor->getDirectives().cbegin(), mPreprocessor->getDirectives().cend(), [&](const Directive& d) {
+    const auto& directives = mDirectives;
+    return std::any_of(directives.cbegin(), directives.cend(), [&](const Directive& d) {
         return startsWith(d.str, "#if") &&
         d.linenr >= start->linenr() &&
         d.linenr <= end->linenr() &&
@@ -10646,9 +10686,7 @@ bool Tokenizer::hasIfdef(const Token *start, const Token *end) const
 
 bool Tokenizer::isPacked(const Token * bodyStart) const
 {
-    assert(mPreprocessor);
-
-    const auto& directives = mPreprocessor->getDirectives();
+    const auto& directives = mDirectives;
     // TODO: should this return true if the #pragma exists in any line before the start token?
     return std::any_of(directives.cbegin(), directives.cend(), [&](const Directive& d) {
         return d.linenr < bodyStart->linenr() && d.str == "#pragma pack(1)" && d.file == list.getFiles().front();

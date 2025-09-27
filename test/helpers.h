@@ -19,6 +19,7 @@
 #ifndef helpersH
 #define helpersH
 
+#include "preprocessor.h"
 #include "settings.h"
 #include "standards.h"
 #include "tokenize.h"
@@ -31,34 +32,57 @@
 #include <vector>
 
 class Token;
-class Preprocessor;
 class SuppressionList;
 class ErrorLogger;
 namespace simplecpp {
     struct DUI;
 }
 
-class SimpleTokenizer {
+// TODO: make Tokenizer private
+class SimpleTokenizer : public Tokenizer {
 public:
-    SimpleTokenizer(ErrorLogger& errorlogger, const char sample[], bool cpp = true)
-        : tokenizer{settings, &errorlogger}
+    SimpleTokenizer(ErrorLogger& errorlogger, const char code[], bool cpp = true)
+        : Tokenizer{s_settings, errorlogger}
     {
-        std::istringstream iss(sample);
-        if (!tokenizer.tokenize(iss, cpp ? "test.cpp" : "test.c"))
+        if (!tokenize(code, cpp))
             throw std::runtime_error("creating tokens failed");
     }
 
-    Token* tokens() {
-        return tokenizer.tokens();
-    }
+    SimpleTokenizer(const Settings& settings, ErrorLogger& errorlogger)
+        : Tokenizer{settings, errorlogger}
+    {}
 
-    const Token* tokens() const {
-        return tokenizer.tokens();
+    /*
+        Token* tokens() {
+        return Tokenizer::tokens();
+        }
+
+        const Token* tokens() const {
+        return Tokenizer::tokens();
+        }
+     */
+
+    /**
+     * Tokenize code
+     * @param code The code
+     * @param cpp Indicates if the code is C++
+     * @param configuration E.g. "A" for code where "#ifdef A" is true
+     * @return false if source code contains syntax errors
+     */
+    bool tokenize(const char code[],
+                  bool cpp = true,
+                  const std::string &configuration = emptyString)
+    {
+        std::istringstream istr(code);
+        if (!list.createTokens(istr, cpp ? "test.cpp" : "test.c"))
+            return false;
+
+        return simplifyTokens1(configuration);
     }
 
 private:
-    const Settings settings;
-    Tokenizer tokenizer;
+    // TODO. find a better solution
+    static const Settings s_settings;
 };
 
 class SimpleTokenList
@@ -126,9 +150,8 @@ public:
      */
     static std::string getcode(Preprocessor &preprocessor, const std::string &filedata, const std::string &cfg, const std::string &filename, SuppressionList *inlineSuppression = nullptr);
 
-    static void preprocess(const char code[], std::vector<std::string> &files, Tokenizer& tokenizer);
-    static void preprocess(Preprocessor &preprocessor, const char code[], std::vector<std::string> &files, Tokenizer& tokenizer);
-    static void preprocess(Preprocessor &preprocessor, const char code[], std::vector<std::string> &files, Tokenizer& tokenizer, const simplecpp::DUI& dui);
+    static void preprocess(const char code[], std::vector<std::string> &files, Tokenizer& tokenizer, ErrorLogger& errorlogger);
+    static void preprocess(const char code[], std::vector<std::string> &files, Tokenizer& tokenizer, ErrorLogger& errorlogger, const simplecpp::DUI& dui);
 };
 
 namespace cppcheck {
@@ -169,5 +192,24 @@ struct make_default_obj
         return T{};
     }
 };
+
+inline std::string filter_valueflow(const std::string& s) {
+    bool filtered = false;
+    std::istringstream istr(s);
+    std::string ostr;
+    std::string errline;
+    while (std::getline(istr, errline)) {
+        if (errline.find("valueflow.cpp") != std::string::npos)
+        {
+            filtered = true;
+            continue;
+        }
+        ostr += errline;
+        ostr += '\n'; // TODO: last line might not contain a newline
+    }
+    if (!filtered)
+        throw std::runtime_error("no valueflow.cpp messages were filtered");
+    return ostr;
+}
 
 #endif // helpersH

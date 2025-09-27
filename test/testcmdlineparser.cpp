@@ -119,6 +119,8 @@ private:
         TEST_CASE(versionWithCfg);
         TEST_CASE(versionExclusive);
         TEST_CASE(versionWithInvalidCfg);
+        TEST_CASE(checkVersionCorrect);
+        TEST_CASE(checkVersionIncorrect);
         TEST_CASE(onefile);
         TEST_CASE(onepath);
         TEST_CASE(optionwithoutfile);
@@ -190,9 +192,10 @@ private:
         TEST_CASE(exitcodeSuppressionsOld);
         TEST_CASE(exitcodeSuppressions);
         TEST_CASE(exitcodeSuppressionsNoFile);
+        TEST_CASE(fileFilterStdin);
         TEST_CASE(fileList);
         TEST_CASE(fileListNoFile);
-        // TEST_CASE(fileListStdin);  // Disabled since hangs the test run
+        TEST_CASE(fileListStdin);
         TEST_CASE(fileListInvalid);
         TEST_CASE(inlineSuppr);
         TEST_CASE(jobs);
@@ -330,6 +333,7 @@ private:
         TEST_CASE(addonMissing);
 #ifdef HAVE_RULES
         TEST_CASE(rule);
+        TEST_CASE(ruleMissingPattern);
 #else
         TEST_CASE(ruleNotSupported);
 #endif
@@ -346,6 +350,9 @@ private:
         TEST_CASE(ruleFileUnknownElement2);
         TEST_CASE(ruleFileMissingTokenList);
         TEST_CASE(ruleFileUnknownTokenList);
+        TEST_CASE(ruleFileMissingId);
+        TEST_CASE(ruleFileInvalidSeverity1);
+        TEST_CASE(ruleFileInvalidSeverity2);
 #else
         TEST_CASE(ruleFileNotSupported);
 #endif
@@ -376,6 +383,10 @@ private:
 #else
         TEST_CASE(executorProcessNotSupported);
 #endif
+        TEST_CASE(checkLevelDefault);
+        TEST_CASE(checkLevelNormal);
+        TEST_CASE(checkLevelExhaustive);
+        TEST_CASE(checkLevelUnknown);
 
         TEST_CASE(ignorepaths1);
         TEST_CASE(ignorepaths2);
@@ -471,6 +482,21 @@ private:
         const char * const argv[] = {"cppcheck", "--version"};
         ASSERT_EQUALS_ENUM(CmdLineParser::Result::Fail, parser->parseFromArgs(2, argv));
         ASSERT_EQUALS("cppcheck: error: could not load cppcheck.cfg - not a valid JSON - syntax error at line 2 near: \n", logger->str());
+    }
+
+    void checkVersionCorrect() {
+        REDIRECT;
+        const std::string currentVersion = parser->getVersion();
+        const std::string checkVersion = "--check-version=" + currentVersion;
+        const char * const argv[] = {"cppcheck", checkVersion.c_str(), "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(3, argv));
+    }
+
+    void checkVersionIncorrect() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--check-version=Cppcheck 2.0", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Fail, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS("cppcheck: error: --check-version check failed. Aborting.\n", logger->str());
     }
 
     void onefile() {
@@ -1066,6 +1092,17 @@ private:
         ASSERT_EQUALS("cppcheck: error: unrecognized command line option: \"--exitcode-suppressions\".\n", logger->str());
     }
 
+    void fileFilterStdin() {
+        REDIRECT;
+        RedirectInput input("file1.c\nfile2.cpp\n");
+        const char * const argv[] = {"cppcheck", "--file-filter=-"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Fail, parser->parseFromArgs(2, argv));
+        ASSERT_EQUALS("cppcheck: error: no C or C++ source files found.\n", logger->str());
+        ASSERT_EQUALS(2U, settings->fileFilters.size());
+        ASSERT_EQUALS("file1.c", settings->fileFilters[0]);
+        ASSERT_EQUALS("file2.cpp", settings->fileFilters[1]);
+    }
+
     void fileList() {
         REDIRECT;
         ScopedFile file("files.txt",
@@ -1087,13 +1124,17 @@ private:
         ASSERT_EQUALS("cppcheck: error: couldn't open the file: \"files.txt\".\n", logger->str());
     }
 
-    /*    void fileListStdin() {
-            // TODO: Give it some stdin to read from, fails because the list of
-            // files in stdin (_pathnames) is empty
-            REDIRECT;
-            const char * const argv[] = {"cppcheck", "--file-list=-", "file.cpp"};
-            TODO_ASSERT_EQUALS(true, false, parser->parseFromArgs(3, argv));
-        } */
+    void fileListStdin() {
+        REDIRECT;
+        RedirectInput input("file1.c\nfile2.cpp\n");
+        const char * const argv[] = {"cppcheck", "--file-list=-", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS(3, parser->getPathNames().size());
+        auto it = parser->getPathNames().cbegin();
+        ASSERT_EQUALS("file1.c", *it++);
+        ASSERT_EQUALS("file2.cpp", *it++);
+        ASSERT_EQUALS("file.cpp", *it);
+    }
 
     void fileListInvalid() {
         REDIRECT;
@@ -2144,6 +2185,13 @@ private:
         auto it = settings->rules.cbegin();
         ASSERT_EQUALS(".+", it->pattern);
     }
+
+    void ruleMissingPattern() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--rule=", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Fail, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS("cppcheck: error: no rule pattern provided.\n", logger->str());
+    }
 #else
     void ruleNotSupported() {
         REDIRECT;
@@ -2326,6 +2374,48 @@ private:
         ASSERT_EQUALS_ENUM(CmdLineParser::Result::Fail, parser->parseFromArgs(3, argv));
         ASSERT_EQUALS("cppcheck: error: unable to load rule-file 'rule.xml' - a rule is using the unsupported tokenlist 'simple'.\n", logger->str());
     }
+
+    void ruleFileMissingId() {
+        REDIRECT;
+        ScopedFile file("rule.xml",
+                        "<rule>\n"
+                        "<pattern>.+</pattern>\n"
+                        "<message>\n"
+                        "<id/>"
+                        "</message>\n"
+                        "</rule>\n");
+        const char * const argv[] = {"cppcheck", "--rule-file=rule.xml", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Fail, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS("cppcheck: error: unable to load rule-file 'rule.xml' - a rule is lacking an id.\n", logger->str());
+    }
+
+    void ruleFileInvalidSeverity1() {
+        REDIRECT;
+        ScopedFile file("rule.xml",
+                        "<rule>\n"
+                        "<pattern>.+</pattern>\n"
+                        "<message>\n"
+                        "<severity/>"
+                        "</message>\n"
+                        "</rule>\n");
+        const char * const argv[] = {"cppcheck", "--rule-file=rule.xml", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Fail, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS("cppcheck: error: unable to load rule-file 'rule.xml' - a rule has an invalid severity.\n", logger->str());
+    }
+
+    void ruleFileInvalidSeverity2() {
+        REDIRECT;
+        ScopedFile file("rule.xml",
+                        "<rule>\n"
+                        "<pattern>.+</pattern>\n"
+                        "<message>\n"
+                        "<severity>none</severity>"
+                        "</message>\n"
+                        "</rule>\n");
+        const char * const argv[] = {"cppcheck", "--rule-file=rule.xml", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Fail, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS("cppcheck: error: unable to load rule-file 'rule.xml' - a rule has an invalid severity.\n", logger->str());
+    }
 #else
     void ruleFileNotSupported() {
         REDIRECT;
@@ -2478,6 +2568,40 @@ private:
         ASSERT_EQUALS("cppcheck: error: executor type 'process' cannot be used as Cppcheck has not been built with a respective threading model.\n", logger->str());
     }
 #endif
+
+    void checkLevelDefault() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(2, argv));
+        ASSERT_EQUALS_ENUM(Settings::CheckLevel::normal, settings->checkLevel);
+        ASSERT_EQUALS(100, settings->performanceValueFlowMaxIfCount);
+        ASSERT_EQUALS(8, settings->performanceValueFlowMaxSubFunctionArgs);
+    }
+
+    void checkLevelNormal() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--check-level=normal", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS_ENUM(Settings::CheckLevel::normal, settings->checkLevel);
+        ASSERT_EQUALS(100, settings->performanceValueFlowMaxIfCount);
+        ASSERT_EQUALS(8, settings->performanceValueFlowMaxSubFunctionArgs);
+    }
+
+    void checkLevelExhaustive() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--check-level=exhaustive", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS_ENUM(Settings::CheckLevel::exhaustive, settings->checkLevel);
+        ASSERT_EQUALS(-1, settings->performanceValueFlowMaxIfCount);
+        ASSERT_EQUALS(256, settings->performanceValueFlowMaxSubFunctionArgs);
+    }
+
+    void checkLevelUnknown() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--check-level=default", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Fail, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS("cppcheck: error: unknown '--check-level' value 'default'.\n", logger->str());
+    }
 
     void ignorepaths1() {
         REDIRECT;

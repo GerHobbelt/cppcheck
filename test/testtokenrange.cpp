@@ -97,19 +97,19 @@ private:
         ASSERT_EQUALS("", testTokenRange(ConstTokenRange{ start, end }, start, end));
     }
 
-    void scopeExample() const {
-        Tokenizer tokenizer(settingsDefault);
-        std::istringstream sample("void a(){} void main(){ if(true){a();} }");
-        ASSERT(tokenizer.tokenize(sample, "test.cpp"));
+    void scopeExample() {
+        SimpleTokenizer tokenizer(settingsDefault, *this);
+        const char code[] = "void a(){} void main(){ if(true){a();} }";
+        ASSERT(tokenizer.tokenize(code));
 
         const SymbolDatabase* sd = tokenizer.getSymbolDatabase();
         const Scope& scope = *std::next(sd->scopeList.cbegin(), 3); //The scope of the if block
 
-        std::ostringstream contents;
+        std::string contents;
         for (const Token* t : ConstTokenRange{ scope.bodyStart->next(), scope.bodyEnd }) {
-            contents << t->str();
+            contents += t->str();
         }
-        ASSERT_EQUALS("a();", contents.str());
+        ASSERT_EQUALS("a();", contents);
     }
 
     void exampleAlgorithms() const {

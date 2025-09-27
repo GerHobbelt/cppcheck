@@ -594,7 +594,7 @@ void MainWindow::doAnalyzeFiles(const QStringList &files, const bool checkLibrar
     mThread->setFiles(fileNames);
     if (mProjectFile && !checkConfiguration)
         mThread->setAddonsAndTools(mProjectFile->getAddonsAndTools());
-    mThread->setSuppressions(mProjectFile ? mProjectFile->getSuppressions() : QList<SuppressionList::Suppression>());
+    mThread->setSuppressions(mProjectFile ? mProjectFile->getCheckingSuppressions() : QList<SuppressionList::Suppression>());
     QDir inf(mCurrentDirectory);
     const QString checkPath = inf.canonicalPath();
     setPath(SETTINGS_LAST_CHECK_PATH, checkPath);
@@ -969,6 +969,9 @@ QPair<bool,Settings> MainWindow::getCppcheckSettings()
 
     result.exename = QCoreApplication::applicationFilePath().toStdString();
 
+    // default to --check-level=normal for GUI for now
+    result.setCheckLevel(Settings::CheckLevel::normal);
+
     const bool std = tryLoadLibrary(&result.library, "std.cfg");
     if (!std) {
         QMessageBox::critical(this, tr("Error"), tr("Failed to load %1. Your Cppcheck installation is broken. You can use --data-dir=<directory> at the command line to specify where this file is located. Please note that --data-dir is supposed to be used by installation scripts and therefore the GUI does not start when it is used, all that happens is that the setting is configured.\n\nAnalysis is aborted.").arg("std.cfg"));
@@ -1022,7 +1025,7 @@ QPair<bool,Settings> MainWindow::getCppcheckSettings()
             tryLoadLibrary(&result.library, filename);
         }
 
-        for (const SuppressionList::Suppression &suppression : mProjectFile->getSuppressions()) {
+        for (const SuppressionList::Suppression &suppression : mProjectFile->getCheckingSuppressions()) {
             result.supprs.nomsg.addSuppression(suppression);
         }
 
@@ -1061,9 +1064,9 @@ QPair<bool,Settings> MainWindow::getCppcheckSettings()
         result.maxCtuDepth = mProjectFile->getMaxCtuDepth();
         result.maxTemplateRecursion = mProjectFile->getMaxTemplateRecursion();
         if (mProjectFile->isCheckLevelExhaustive())
-            result.setCheckLevelExhaustive();
+            result.setCheckLevel(Settings::CheckLevel::exhaustive);
         else
-            result.setCheckLevelNormal();
+            result.setCheckLevel(Settings::CheckLevel::normal);
         result.checkHeaders = mProjectFile->getCheckHeaders();
         result.checkUnusedTemplates = mProjectFile->getCheckUnusedTemplates();
         result.safeChecks.classes = mProjectFile->safeChecks.classes;
@@ -1751,7 +1754,7 @@ void MainWindow::analyzeProject(const ProjectFile *projectFile, const bool check
     Settings::terminate(false);
 
     QFileInfo inf(projectFile->getFilename());
-    const QString rootpath = projectFile->getRootPath();
+    const QString& rootpath = projectFile->getRootPath();
 
     QDir::setCurrent(inf.absolutePath());
 

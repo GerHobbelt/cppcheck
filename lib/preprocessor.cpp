@@ -32,7 +32,6 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
-#include <iterator> // back_inserter
 #include <sstream>
 #include <utility>
 
@@ -65,7 +64,7 @@ Directive::Directive(std::string _file, const int _linenr, const std::string &_s
 
 char Preprocessor::macroChar = char(1);
 
-Preprocessor::Preprocessor(const Settings& settings, ErrorLogger *errorLogger) : mSettings(settings), mErrorLogger(errorLogger)
+Preprocessor::Preprocessor(const Settings& settings, ErrorLogger &errorLogger) : mSettings(settings), mErrorLogger(errorLogger)
 {}
 
 Preprocessor::~Preprocessor()
@@ -309,10 +308,10 @@ void Preprocessor::inlineSuppressions(const simplecpp::TokenList &tokens, Suppre
     }
 }
 
-void Preprocessor::setDirectives(const simplecpp::TokenList &tokens)
+std::list<Directive> Preprocessor::createDirectives(const simplecpp::TokenList &tokens) const
 {
     // directive list..
-    mDirectives.clear();
+    std::list<Directive> directives;
 
     std::vector<const simplecpp::TokenList *> list;
     list.reserve(1U + mTokenLists.size());
@@ -338,9 +337,11 @@ void Preprocessor::setDirectives(const simplecpp::TokenList &tokens)
                 else
                     directive.str += tok2->str();
             }
-            mDirectives.push_back(std::move(directive));
+            directives.push_back(std::move(directive));
         }
     }
+
+    return directives;
 }
 
 static std::string readcondition(const simplecpp::Token *iftok, const std::set<std::string> &defined, const std::set<std::string> &undefined)
@@ -653,41 +654,6 @@ std::set<std::string> Preprocessor::getConfigs(const simplecpp::TokenList &token
     return ret;
 }
 
-
-void Preprocessor::preprocess(std::istream &istr, std::map<std::string, std::string> &result, const std::string &filename, const std::list<std::string> &includePaths)
-{
-    (void)includePaths;
-
-    simplecpp::OutputList outputList;
-    std::vector<std::string> files;
-    const simplecpp::TokenList tokens1(istr, files, filename, &outputList);
-
-    const std::set<std::string> configs = getConfigs(tokens1);
-
-    for (const std::string &c : configs) {
-        if (mSettings.userUndefs.find(c) == mSettings.userUndefs.end()) {
-            result[c] = getcode(tokens1, c, files, false);
-        }
-    }
-}
-
-void Preprocessor::preprocess(std::istream &srcCodeStream, std::string &processedFile, std::list<std::string> &resultConfigurations, const std::string &filename, const std::list<std::string> &includePaths)
-{
-    (void)includePaths;
-
-    if (mFile0.empty())
-        mFile0 = filename;
-
-    simplecpp::OutputList outputList;
-    std::vector<std::string> files;
-    const simplecpp::TokenList tokens1(srcCodeStream, files, filename, &outputList);
-
-    const std::set<std::string> configs = getConfigs(tokens1);
-    std::copy(configs.cbegin(), configs.cend(), std::back_inserter(resultConfigurations));
-
-    processedFile = tokens1.stringify();
-}
-
 static void splitcfg(const std::string &cfg, std::list<std::string> &defines, const std::string &defaultValue)
 {
     for (std::string::size_type defineStartPos = 0U; defineStartPos < cfg.size();) {
@@ -909,18 +875,18 @@ void Preprocessor::error(const std::string &filename, unsigned int linenr, const
 
         locationList.emplace_back(file, linenr, 0);
     }
-    mErrorLogger->reportErr(ErrorMessage(std::move(locationList),
-                                         mFile0,
-                                         Severity::error,
-                                         msg,
-                                         "preprocessorErrorDirective",
-                                         Certainty::normal));
+    mErrorLogger.reportErr(ErrorMessage(std::move(locationList),
+                                        mFile0,
+                                        Severity::error,
+                                        msg,
+                                        "preprocessorErrorDirective",
+                                        Certainty::normal));
 }
 
 // Report that include is missing
 void Preprocessor::missingInclude(const std::string &filename, unsigned int linenr, const std::string &header, HeaderTypes headerType)
 {
-    if (!mSettings.checks.isEnabled(Checks::missingInclude) || !mErrorLogger)
+    if (!mSettings.checks.isEnabled(Checks::missingInclude))
         return;
 
     std::list<ErrorMessage::FileLocation> locationList;
@@ -933,10 +899,10 @@ void Preprocessor::missingInclude(const std::string &filename, unsigned int line
                         "Include file: \"" + header + "\" not found.",
                         (headerType==SystemHeader) ? "missingIncludeSystem" : "missingInclude",
                         Certainty::normal);
-    mErrorLogger->reportErr(errmsg);
+    mErrorLogger.reportErr(errmsg);
 }
 
-void Preprocessor::getErrorMessages(ErrorLogger *errorLogger, const Settings &settings)
+void Preprocessor::getErrorMessages(ErrorLogger &errorLogger, const Settings &settings)
 {
     Preprocessor preprocessor(settings, errorLogger);
     preprocessor.missingInclude(emptyString, 1, emptyString, UserHeader);
@@ -947,17 +913,6 @@ void Preprocessor::getErrorMessages(ErrorLogger *errorLogger, const Settings &se
 void Preprocessor::dump(std::ostream &out) const
 {
     // Create a xml dump.
-
-    out << "  <directivelist>" << std::endl;
-    for (const Directive &dir : mDirectives) {
-        out << "    <directive "
-            << "file=\"" << ErrorLogger::toxml(dir.file) << "\" "
-            << "linenr=\"" << dir.linenr << "\" "
-            // str might contain characters such as '"', '<' or '>' which
-            // could result in invalid XML, so run it through toxml().
-            << "str=\"" << ErrorLogger::toxml(dir.str) << "\"/>" << std::endl;
-    }
-    out << "  </directivelist>" << std::endl;
 
     if (!mMacroUsage.empty()) {
         out << "  <macro-usage>" << std::endl;

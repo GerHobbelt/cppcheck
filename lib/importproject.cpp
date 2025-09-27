@@ -553,6 +553,8 @@ namespace {
             }
         }
 
+        // see https://learn.microsoft.com/en-us/visualstudio/msbuild/msbuild-conditions
+        // properties are .NET String objects and you can call any of its members on them
         bool conditionIsTrue(const ProjectConfiguration &p) const {
             if (condition.empty())
                 return true;
@@ -560,13 +562,14 @@ namespace {
             replaceAll(c, "$(Configuration)", p.configuration);
             replaceAll(c, "$(Platform)", p.platformStr);
 
-            // TODO: evaluate without using the Tokenizer
+            // TODO: improve evaluation
             const Settings s;
-            Tokenizer tokenizer(s);
+            TokenList tokenlist(&s);
             std::istringstream istr(c);
-            tokenizer.tokenize(istr,"vcxproj.c");
-            for (const Token *tok = tokenizer.tokens(); tok; tok = tok->next()) {
+            tokenlist.createTokens(istr, Standards::Language::C); // TODO: check result
+            for (const Token *tok = tokenlist.front(); tok; tok = tok->next()) {
                 if (tok->str() == "(" && tok->astOperand1() && tok->astOperand2()) {
+                    // TODO: this is wrong - it is Contains() not Equals()
                     if (tok->astOperand1()->expressionString() == "Configuration.Contains")
                         return ('\'' + p.configuration + '\'') == tok->astOperand2()->str();
                 }
@@ -1122,6 +1125,9 @@ bool ImportProject::importCppcheckGuiProject(std::istream &istr, Settings *setti
     std::list<SuppressionList::Suppression> suppressions;
     Settings temp;
 
+    // default to --check-level=normal for import for now
+    temp.setCheckLevel(Settings::CheckLevel::normal);
+
     guiProject.analyzeAllVsConfigs.clear();
 
     bool checkLevelExhaustive = false;
@@ -1265,9 +1271,9 @@ bool ImportProject::importCppcheckGuiProject(std::istream &istr, Settings *setti
     settings->safeChecks = temp.safeChecks;
 
     if (checkLevelExhaustive)
-        settings->setCheckLevelExhaustive();
+        settings->setCheckLevel(Settings::CheckLevel::exhaustive);
     else
-        settings->setCheckLevelNormal();
+        settings->setCheckLevel(Settings::CheckLevel::normal);
 
     return true;
 }

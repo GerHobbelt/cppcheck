@@ -46,8 +46,7 @@ class SuppressionList;
  *
  */
 
-class CPPCHECKLIB Directive {
-public:
+struct CPPCHECKLIB Directive {
     /** name of (possibly included) file where directive is defined */
     std::string file;
 
@@ -69,7 +68,7 @@ public:
  * The preprocessor has special functionality for extracting the various ifdef
  * configurations that exist in a source file.
  */
-class CPPCHECKLIB Preprocessor {
+class CPPCHECKLIB WARN_UNUSED Preprocessor {
     // TODO: get rid of this
     friend class PreprocessorHelper;
     friend class TestPreprocessor;
@@ -88,17 +87,12 @@ public:
     /** character that is inserted in expanded macros */
     static char macroChar;
 
-    explicit Preprocessor(const Settings& settings, ErrorLogger *errorLogger = nullptr);
+    explicit Preprocessor(const Settings& settings, ErrorLogger &errorLogger);
     virtual ~Preprocessor();
 
     void inlineSuppressions(const simplecpp::TokenList &tokens, SuppressionList &suppressions);
 
-    void setDirectives(const simplecpp::TokenList &tokens);
-
-    /** list of all directives met while preprocessing file */
-    const std::list<Directive> &getDirectives() const {
-        return mDirectives;
-    }
+    std::list<Directive> createDirectives(const simplecpp::TokenList &tokens) const;
 
     std::set<std::string> getConfigs(const simplecpp::TokenList &tokens) const;
 
@@ -109,38 +103,6 @@ public:
     void removeComments();
 
     void setPlatformInfo(simplecpp::TokenList *tokens) const;
-
-    /**
-     * Extract the code for each configuration
-     * @param istr The (file/string) stream to read from.
-     * @param result The map that will get the results
-     * @param filename The name of the file to check e.g. "src/main.cpp"
-     * @param includePaths List of paths where include files should be searched from,
-     * single path can be e.g. in format "include/".
-     * There must be a path separator at the end. Default parameter is empty list.
-     * Note that if path from given filename is also extracted and that is used as
-     * a last include path if include file was not found from earlier paths.
-     */
-    void preprocess(std::istream &istr, std::map<std::string, std::string> &result, const std::string &filename, const std::list<std::string> &includePaths = std::list<std::string>());
-
-    /**
-     * Extract the code for each configuration. Use this with getcode() to get the
-     * file data for each individual configuration.
-     *
-     * @param srcCodeStream The (file/string) stream to read from.
-     * @param processedFile Give reference to empty string as a parameter,
-     * function will fill processed file here. Use this also as a filedata parameter
-     * to getcode() if you received more than once configurations.
-     * @param resultConfigurations List of configurations. Pass these one by one
-     * to getcode() with processedFile.
-     * @param filename The name of the file to check e.g. "src/main.cpp"
-     * @param includePaths List of paths where include files should be searched from,
-     * single path can be e.g. in format "include/".
-     * There must be a path separator at the end. Default parameter is empty list.
-     * Note that if path from given filename is also extracted and that is used as
-     * a last include path if include file was not found from earlier paths.
-     */
-    void preprocess(std::istream &srcCodeStream, std::string &processedFile, std::list<std::string> &resultConfigurations, const std::string &filename, const std::list<std::string> &includePaths);
 
     simplecpp::TokenList preprocess(const simplecpp::TokenList &tokens1, const std::string &cfg, std::vector<std::string> &files, bool throwError = false);
 
@@ -157,14 +119,7 @@ public:
 
     void simplifyPragmaAsm(simplecpp::TokenList *tokenList) const;
 
-private:
-
-    static void simplifyPragmaAsmPrivate(simplecpp::TokenList *tokenList);
-
-public:
-
-
-    static void getErrorMessages(ErrorLogger *errorLogger, const Settings &settings);
+    static void getErrorMessages(ErrorLogger &errorLogger, const Settings &settings);
 
     /**
      * dump all directives present in source file
@@ -176,20 +131,17 @@ public:
     static bool hasErrors(const simplecpp::Output &output);
 
 private:
+    static void simplifyPragmaAsmPrivate(simplecpp::TokenList *tokenList);
+
     void missingInclude(const std::string &filename, unsigned int linenr, const std::string &header, HeaderTypes headerType);
     void error(const std::string &filename, unsigned int linenr, const std::string &msg);
 
     static bool hasErrors(const simplecpp::OutputList &outputList);
 
-    void setDirectives(const std::list<Directive> &directives) {
-        mDirectives = directives;
-    }
-
     const Settings& mSettings;
-    ErrorLogger *mErrorLogger;
+    ErrorLogger &mErrorLogger;
 
     /** list of all directives met while preprocessing file */
-    std::list<Directive> mDirectives;
 
     std::map<std::string, simplecpp::TokenList *> mTokenLists;
 

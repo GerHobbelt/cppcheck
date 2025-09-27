@@ -16,12 +16,11 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-
 #include "errortypes.h"
+#include "fixture.h"
 #include "helpers.h"
 #include "platform.h"
 #include "settings.h"
-#include "fixture.h"
 #include "token.h"
 #include "tokenize.h"
 #include "utils.h"
@@ -98,15 +97,18 @@ private:
     std::string tok_(const char* file, int line, const char code[], Platform::Type type = Platform::Type::Native, bool debugwarnings = true, bool preprocess = false) {
         const Settings settings = settingsBuilder(settings0).certainty(Certainty::inconclusive).debugwarnings(debugwarnings).platform(type).build();
 
-        Tokenizer tokenizer(settings, this);
-
         if (preprocess) {
+            Tokenizer tokenizer(settings, *this);
             std::vector<std::string> files(1, "test.cpp");
-            PreprocessorHelper::preprocess(code, files, tokenizer);
+            PreprocessorHelper::preprocess(code, files, tokenizer, *this);
+            std::istringstream istr(code);
+            ASSERT_LOC(tokenizer.list.createTokens(istr, "test.cpp"), file, line); // TODO: this creates the tokens a second time
+            ASSERT_LOC(tokenizer.simplifyTokens1(""), file, line);
+            return tokenizer.tokens()->stringifyList(nullptr);
         }
 
-        std::istringstream istr(code);
-        ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
+        SimpleTokenizer tokenizer(settings, *this);
+        ASSERT_LOC(tokenizer.tokenize(code), file, line);
 
         return tokenizer.tokens()->stringifyList(nullptr);
     }
@@ -485,7 +487,7 @@ private:
                             "}\n"
                             "}";
         tok(code); // don't hang
-        (void)errout_str(); // we are not interested in the output
+        ignore_errout(); // we are not interested in the output
     }
 
     void simplifyUsing20() {
@@ -530,7 +532,7 @@ private:
                             "}\n"
                             "}}}}}}}";
         tok(code); // don't hang
-        (void)errout_str(); // we do not care about the output
+        ignore_errout(); // we do not care about the output
     }
 
     void simplifyUsing21() {
@@ -562,7 +564,7 @@ private:
                                 "} "
                                 "} } } } }";
         ASSERT_EQUALS(expected, tok(code)); // don't hang
-        (void)errout_str(); // we do not care about the output
+        ignore_errout(); // we do not care about the output
     }
 
     void simplifyUsing23() {
@@ -735,7 +737,7 @@ private:
                                     "cout << std :: string ( c ) << \"abc\" ; "
                                     "}";
             ASSERT_EQUALS(expected, tok(code, Platform::Type::Native, /*debugwarnings*/ true));
-            ASSERT_EQUALS("", errout_str());
+            ASSERT_EQUALS("[test.cpp:3]: (debug) valueFlowConditionExpressions bailout: Skipping function due to incomplete variable cout\n", errout_str());
         }
         {
             const char code[] = "class T : private std::vector<std::pair<std::string, const int*>> {\n" // #12521
@@ -851,6 +853,9 @@ private:
                            "}";
 
         ASSERT_EQUALS(exp, tok(code));
+        ASSERT_EQUALS("[test.cpp:7]: (debug) valueFlowConditionExpressions bailout: Skipping function due to incomplete variable NS1\n"
+                      "[test.cpp:11]: (debug) valueFlowConditionExpressions bailout: Skipping function due to incomplete variable NS2\n",
+                      errout_str());
     }
 
     void simplifyUsing9381() {
@@ -1294,7 +1299,7 @@ private:
                                 "   return ret;\n"
                                 "}";
             tok(code); // don't crash
-            (void)errout_str(); // we do not care about the output
+            ignore_errout(); // we do not care about the output
         }
     }
 
@@ -1440,7 +1445,7 @@ private:
                                 "} "
                                 "}";
             ASSERT_EQUALS(exp, tok(code));
-            (void)errout_str(); // we do not care about the output
+            ignore_errout(); // we do not care about the output
         }
     }
 

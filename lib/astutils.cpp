@@ -245,6 +245,12 @@ bool astIsContainer(const Token* tok) {
     return getLibraryContainer(tok) != nullptr && !astIsIterator(tok);
 }
 
+bool astIsNonStringContainer(const Token* tok)
+{
+    const Library::Container* container = getLibraryContainer(tok);
+    return container && !container->stdStringLike && !astIsIterator(tok);
+}
+
 bool astIsContainerView(const Token* tok)
 {
     const Library::Container* container = getLibraryContainer(tok);
@@ -634,27 +640,36 @@ const Token* getParentLifetime(const Token* tok, const Library* library)
     std::vector<const Token*> members = getParentMembers(tok);
     if (members.size() < 2)
         return tok;
-    // Find the first local variable or temporary
+    // Find the first local variable, temporary, or array
     auto it = std::find_if(members.crbegin(), members.crend(), [&](const Token* tok2) {
         const Variable* var = tok2->variable();
         if (var)
             return var->isLocal() || var->isArgument();
+        if (Token::simpleMatch(tok2, "["))
+            return true;
         return isTemporary(tok2, library);
     });
     if (it == members.rend())
         return tok;
     // If any of the submembers are borrowed types then stop
     if (std::any_of(it.base() - 1, members.cend() - 1, [&](const Token* tok2) {
-        if (astIsPointer(tok2) || astIsContainerView(tok2) || astIsIterator(tok2))
+        const Token* obj = tok2;
+        if (Token::simpleMatch(obj, "["))
+            obj = tok2->astOperand1();
+        const Variable* var = obj->variable();
+        // Check for arrays first since astIsPointer will return true, but an array is not a borrowed type
+        if (var && var->isArray())
+            return false;
+        if (astIsPointer(obj) || astIsContainerView(obj) || astIsIterator(obj))
             return true;
-        if (!astIsUniqueSmartPointer(tok2)) {
-            if (astIsSmartPointer(tok2))
+        if (!astIsUniqueSmartPointer(obj)) {
+            if (astIsSmartPointer(obj))
                 return true;
-            const Token* dotTok = tok2->next();
+            const Token* dotTok = obj->next();
             if (!Token::simpleMatch(dotTok, ".")) {
-                const Token* endTok = nextAfterAstRightmostLeaf(tok2);
+                const Token* endTok = nextAfterAstRightmostLeaf(obj);
                 if (!endTok)
-                    dotTok = tok2->next();
+                    dotTok = obj->next();
                 else if (Token::simpleMatch(endTok, "."))
                     dotTok = endTok;
                 else if (Token::simpleMatch(endTok->next(), "."))
@@ -664,11 +679,13 @@ const Token* getParentLifetime(const Token* tok, const Library* library)
             if (Token::simpleMatch(dotTok, ".") && dotTok->originalName() == "->")
                 return true;
         }
-        const Variable* var = tok2->variable();
         return var && var->isReference();
     }))
         return nullptr;
-    return *it;
+    const Token* result = *it;
+    if (Token::simpleMatch(result, "[") && result->astOperand1())
+        return getParentLifetime(result->astOperand1());
+    return result;
 }
 
 static bool isInConstructorList(const Token* tok)
@@ -3294,6 +3311,7 @@ static ExprUsage getFunctionUsage(const Token* tok, int indirect, const Settings
                         return ExprUsage::PassedByReference;
                     }
                 }
+                return ExprUsage::NotUsed;
             }
         }
         if (!args.empty() && indirect == 0 && !addressOf)
@@ -3347,6 +3365,8 @@ ExprUsage getExprUsage(const Token* tok, int indirect, const Settings* settings)
             return ExprUsage::NotUsed;
         if (Token::simpleMatch(parent, ":") && Token::simpleMatch(parent->astParent(), "?"))
             return getExprUsage(parent->astParent(), indirect, settings);
+        if (isUsedAsBool(tok, settings))
+            return ExprUsage::NotUsed;
     }
     if (indirect == 0) {
         if (Token::Match(parent, "%cop%|%assign%|++|--") && parent->str() != "=" &&

@@ -59,7 +59,7 @@ public:
 
             if (errorLogger) {
                 const Settings settings;
-                Preprocessor p(settings, errorLogger);
+                Preprocessor p(settings, *errorLogger);
                 p.reportOutput(outputList, true);
             }
 
@@ -69,7 +69,7 @@ public:
 
 private:
     const Settings settings0 = settingsBuilder().severity(Severity::information).build();
-    Preprocessor preprocessor0{settings0, this};
+    Preprocessor preprocessor0{settings0, *this};
 
     void run() override {
 
@@ -245,10 +245,6 @@ private:
 
         TEST_CASE(wrongPathOnErrorDirective);
 
-        TEST_CASE(testDirectiveIncludeTypes);
-        TEST_CASE(testDirectiveIncludeLocations);
-        TEST_CASE(testDirectiveIncludeComments);
-
         TEST_CASE(testMissingInclude);
         TEST_CASE(testMissingInclude2);
         TEST_CASE(testMissingInclude3);
@@ -275,7 +271,6 @@ private:
         tokens.removeComments();
         preprocessor0.simplifyPragmaAsm(&tokens);
         preprocessor0.removeComments();
-        preprocessor0.setDirectives(tokens);
 
         preprocessor0.reportOutput(outputList, true);
 
@@ -303,7 +298,7 @@ private:
             settings.userDefines = arg + 2;
         if (arg && std::strncmp(arg,"-U",2)==0)
             settings.userUndefs.insert(arg+2);
-        Preprocessor preprocessor(settings, this);
+        Preprocessor preprocessor(settings, *this);
         std::vector<std::string> files;
         std::istringstream istr(filedata);
         simplecpp::TokenList tokens(istr,files);
@@ -367,7 +362,7 @@ private:
 
     void error3() {
         const auto settings = dinit(Settings, $.userDefines = "__cplusplus");
-        Preprocessor preprocessor(settings, this);
+        Preprocessor preprocessor(settings, *this);
         const std::string code("#error hello world!\n");
         PreprocessorHelper::getcode(preprocessor, code, "X", "test.c");
         ASSERT_EQUALS("[test.c:1]: (error) #error hello world!\n", errout_str());
@@ -378,7 +373,7 @@ private:
         // In included file
         {
             const auto settings = dinit(Settings, $.userDefines = "TEST");
-            Preprocessor preprocessor(settings, this);
+            Preprocessor preprocessor(settings, *this);
             const std::string code("#file \"ab.h\"\n#error hello world!\n#endfile");
             PreprocessorHelper::getcode(preprocessor, code, "TEST", "test.c");
             ASSERT_EQUALS("[ab.h:1]: (error) #error hello world!\n", errout_str());
@@ -387,7 +382,7 @@ private:
         // After including a file
         {
             const auto settings = dinit(Settings, $.userDefines = "TEST");
-            Preprocessor preprocessor(settings, this);
+            Preprocessor preprocessor(settings, *this);
             const std::string code("#file \"ab.h\"\n\n#endfile\n#error aaa");
             PreprocessorHelper::getcode(preprocessor, code, "TEST", "test.c");
             ASSERT_EQUALS("[test.c:2]: (error) #error aaa\n", errout_str());
@@ -399,7 +394,7 @@ private:
         const auto settings = dinit(Settings,
                                     $.userDefines = "TEST",
                                         $.force = true);
-        Preprocessor preprocessor(settings, this);
+        Preprocessor preprocessor(settings, *this);
         const std::string code("#error hello world!\n");
         PreprocessorHelper::getcode(preprocessor, code, "X", "test.c");
         ASSERT_EQUALS("", errout_str());
@@ -476,7 +471,7 @@ private:
         // preprocess code with unix32 platform..
         {
             const Settings settings = settingsBuilder().platform(Platform::Type::Unix32).build();
-            Preprocessor preprocessor(settings, this);
+            Preprocessor preprocessor(settings, *this);
             preprocessor.setPlatformInfo(&tokens);
             ASSERT_EQUALS("\n1", preprocessor.getcode(tokens, "", files, false));
         }
@@ -484,7 +479,7 @@ private:
         // preprocess code with unix64 platform..
         {
             const Settings settings = settingsBuilder().platform(Platform::Type::Unix64).build();
-            Preprocessor preprocessor(settings, this);
+            Preprocessor preprocessor(settings, *this);
             preprocessor.setPlatformInfo(&tokens);
             ASSERT_EQUALS("\n\n\n2", preprocessor.getcode(tokens, "", files, false));
         }
@@ -1949,7 +1944,7 @@ private:
         /*const*/ Settings settings;
         settings.inlineSuppressions = true;
         settings.checks.enable(Checks::missingInclude);
-        Preprocessor preprocessor(settings, this);
+        Preprocessor preprocessor(settings, *this);
 
         const std::string code("// cppcheck-suppress missingInclude\n"
                                "#include \"missing.h\"\n"
@@ -1977,7 +1972,7 @@ private:
         ASSERT_EQUALS(false, suppr.checked);
         ASSERT_EQUALS(false, suppr.matched);
 
-        (void)errout_str(); // we are not interested in the output
+        ignore_errout(); // we are not interested in the output
     }
 
     void predefine1() {
@@ -2307,92 +2302,10 @@ private:
 
     void wrongPathOnErrorDirective() {
         const auto settings = dinit(Settings, $.userDefines = "foo");
-        Preprocessor preprocessor(settings, this);
+        Preprocessor preprocessor(settings, *this);
         const std::string code("#error hello world!\n");
         PreprocessorHelper::getcode(preprocessor, code, "X", "./././test.c");
         ASSERT_EQUALS("[test.c:1]: (error) #error hello world!\n", errout_str());
-    }
-
-    void testDirectiveIncludeTypes() {
-        const char filedata[] = "#define macro some definition\n"
-                                "#undef macro\n"
-                                "#ifdef macro\n"
-                                "#elif some (complex) condition\n"
-                                "#else\n"
-                                "#endif\n"
-                                "#if some other condition\n"
-                                "#pragma some proprietary content\n"
-                                "#\n" /* may appear in old C code */
-                                "#ident some text\n" /* may appear in old C code */
-                                "#unknownmacro some unpredictable text\n"
-                                "#warning some warning message\n"
-                                "#error some error message\n";
-        const char dumpdata[] = "  <directivelist>\n"
-
-                                "    <directive file=\"test.c\" linenr=\"1\" str=\"#define macro some definition\"/>\n"
-                                "    <directive file=\"test.c\" linenr=\"2\" str=\"#undef macro\"/>\n"
-                                "    <directive file=\"test.c\" linenr=\"3\" str=\"#ifdef macro\"/>\n"
-                                "    <directive file=\"test.c\" linenr=\"4\" str=\"#elif some (complex) condition\"/>\n"
-                                "    <directive file=\"test.c\" linenr=\"5\" str=\"#else\"/>\n"
-                                "    <directive file=\"test.c\" linenr=\"6\" str=\"#endif\"/>\n"
-                                "    <directive file=\"test.c\" linenr=\"7\" str=\"#if some other condition\"/>\n"
-                                "    <directive file=\"test.c\" linenr=\"8\" str=\"#pragma some proprietary content\"/>\n"
-                                "    <directive file=\"test.c\" linenr=\"9\" str=\"#\"/>\n"
-                                "    <directive file=\"test.c\" linenr=\"10\" str=\"#ident some text\"/>\n"
-                                "    <directive file=\"test.c\" linenr=\"11\" str=\"#unknownmacro some unpredictable text\"/>\n"
-                                "    <directive file=\"test.c\" linenr=\"12\" str=\"#warning some warning message\"/>\n"
-                                "    <directive file=\"test.c\" linenr=\"13\" str=\"#error some error message\"/>\n"
-                                "  </directivelist>\n";
-
-        std::ostringstream ostr;
-        Preprocessor preprocessor(settings0, this);
-        PreprocessorHelper::getcode(preprocessor, filedata, "", "test.c");
-        preprocessor.dump(ostr);
-        ASSERT_EQUALS(dumpdata, ostr.str());
-    }
-
-    void testDirectiveIncludeLocations() {
-        const char filedata[] = "#define macro1 val\n"
-                                "#file \"inc1.h\"\n"
-                                "#define macro2 val\n"
-                                "#file \"inc2.h\"\n"
-                                "#define macro3 val\n"
-                                "#endfile\n"
-                                "#define macro4 val\n"
-                                "#endfile\n"
-                                "#define macro5 val\n";
-        const char dumpdata[] = "  <directivelist>\n"
-                                "    <directive file=\"test.c\" linenr=\"1\" str=\"#define macro1 val\"/>\n"
-                                "    <directive file=\"test.c\" linenr=\"2\" str=\"#include &quot;inc1.h&quot;\"/>\n"
-                                "    <directive file=\"inc1.h\" linenr=\"1\" str=\"#define macro2 val\"/>\n"
-                                "    <directive file=\"inc1.h\" linenr=\"2\" str=\"#include &quot;inc2.h&quot;\"/>\n"
-                                "    <directive file=\"inc2.h\" linenr=\"1\" str=\"#define macro3 val\"/>\n"
-                                "    <directive file=\"inc1.h\" linenr=\"3\" str=\"#define macro4 val\"/>\n"
-                                "    <directive file=\"test.c\" linenr=\"3\" str=\"#define macro5 val\"/>\n"
-                                "  </directivelist>\n";
-
-        std::ostringstream ostr;
-        Preprocessor preprocessor(settings0, this);
-        PreprocessorHelper::getcode(preprocessor, filedata, "", "test.c");
-        preprocessor.dump(ostr);
-        ASSERT_EQUALS(dumpdata, ostr.str());
-    }
-
-    void testDirectiveIncludeComments() {
-        const char filedata[] = "#ifdef macro2 /* this will be removed */\n"
-                                "#else /* this will be removed too */\n"
-                                "#endif /* this will also be removed */\n";
-        const char dumpdata[] = "  <directivelist>\n"
-                                "    <directive file=\"test.c\" linenr=\"1\" str=\"#ifdef macro2\"/>\n"
-                                "    <directive file=\"test.c\" linenr=\"2\" str=\"#else\"/>\n"
-                                "    <directive file=\"test.c\" linenr=\"3\" str=\"#endif\"/>\n"
-                                "  </directivelist>\n";
-
-        std::ostringstream ostr;
-        Preprocessor preprocessor(settings0, this);
-        PreprocessorHelper::getcode(preprocessor, filedata, "", "test.c");
-        preprocessor.dump(ostr);
-        ASSERT_EQUALS(dumpdata, ostr.str());
     }
 
     // test for existing local include
@@ -2402,7 +2315,7 @@ private:
         settings.checks.enable(Checks::missingInclude);
         settings.templateFormat = "simple"; // has no effect
         setTemplateFormat("simple");
-        Preprocessor preprocessor(settings, this);
+        Preprocessor preprocessor(settings, *this);
 
         ScopedFile header("header.h", "");
 
@@ -2419,7 +2332,7 @@ private:
         settings.checks.enable(Checks::missingInclude);
         settings.templateFormat = "simple"; // has no effect
         setTemplateFormat("simple");
-        Preprocessor preprocessor(settings, this);
+        Preprocessor preprocessor(settings, *this);
 
         std::string code("#include \"header.h\"");
         PreprocessorHelper::getcode(preprocessor, code, "", "test.c");
@@ -2434,7 +2347,7 @@ private:
         settings.checks.enable(Checks::missingInclude);
         settings.templateFormat = "simple"; // has no effect
         setTemplateFormat("simple");
-        Preprocessor preprocessor(settings, this);
+        Preprocessor preprocessor(settings, *this);
 
         ScopedFile header("header.h", "", "inc");
 
@@ -2452,7 +2365,7 @@ private:
         settings.includePaths.emplace_back("inc");
         settings.templateFormat = "simple"; // has no effect
         setTemplateFormat("simple");
-        Preprocessor preprocessor(settings, this);
+        Preprocessor preprocessor(settings, *this);
 
         ScopedFile header("header.h", "", "inc");
 
@@ -2470,7 +2383,7 @@ private:
         settings.includePaths.emplace_back("inc");
         settings.templateFormat = "simple"; // has no effect
         setTemplateFormat("simple");
-        Preprocessor preprocessor(settings, this);
+        Preprocessor preprocessor(settings, *this);
 
         ScopedFile header("header.h", "", Path::getCurrentPath());
 
@@ -2487,7 +2400,7 @@ private:
         settings.checks.enable(Checks::missingInclude);
         settings.templateFormat = "simple"; // has no effect
         setTemplateFormat("simple");
-        Preprocessor preprocessor(settings, this);
+        Preprocessor preprocessor(settings, *this);
 
         const std::string header = Path::join(Path::getCurrentPath(), "header.h");
 
@@ -2504,7 +2417,7 @@ private:
         settings.checks.enable(Checks::missingInclude);
         settings.templateFormat = "simple"; // has no effect
         setTemplateFormat("simple");
-        Preprocessor preprocessor(settings, this);
+        Preprocessor preprocessor(settings, *this);
 
         ScopedFile header("header.h", "");
 
@@ -2521,7 +2434,7 @@ private:
         settings.checks.enable(Checks::missingInclude);
         settings.templateFormat = "simple"; // has no effect
         setTemplateFormat("simple");
-        Preprocessor preprocessor(settings, this);
+        Preprocessor preprocessor(settings, *this);
 
         std::string code("#include <header.h>");
         PreprocessorHelper::getcode(preprocessor, code, "", "test.c");
@@ -2538,7 +2451,7 @@ private:
         setTemplateFormat("simple");
         settings.includePaths.emplace_back("system");
 
-        Preprocessor preprocessor(settings, this);
+        Preprocessor preprocessor(settings, *this);
 
         ScopedFile header("header.h", "", "system");
 
@@ -2556,7 +2469,7 @@ private:
         settings.includePaths.emplace_back("inc");
         settings.templateFormat = "simple"; // has no effect
         setTemplateFormat("simple");
-        Preprocessor preprocessor(settings, this);
+        Preprocessor preprocessor(settings, *this);
 
         ScopedFile header("header.h", "", Path::getCurrentPath());
 
@@ -2573,7 +2486,7 @@ private:
         settings.checks.enable(Checks::missingInclude);
         settings.templateFormat = "simple"; // has no effect
         setTemplateFormat("simple");
-        Preprocessor preprocessor(settings, this);
+        Preprocessor preprocessor(settings, *this);
 
         const std::string header = Path::join(Path::getCurrentPath(), "header.h");
 
@@ -2590,7 +2503,7 @@ private:
         settings.checks.enable(Checks::missingInclude);
         settings.templateFormat = "simple"; // has no effect
         setTemplateFormat("simple");
-        Preprocessor preprocessor(settings, this);
+        Preprocessor preprocessor(settings, *this);
 
         ScopedFile header("header.h", "");
         ScopedFile header2("header2.h", "");
@@ -2614,7 +2527,7 @@ private:
         settings.templateFormat = "simple"; // has no effect
         setTemplateFormat("simple");
 
-        Preprocessor preprocessor(settings, this);
+        Preprocessor preprocessor(settings, *this);
 
         ScopedFile header("header.h", "");
         ScopedFile header2("header2.h", "");

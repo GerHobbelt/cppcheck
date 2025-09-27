@@ -18,15 +18,14 @@
 
 #include "checkunusedvar.h"
 #include "errortypes.h"
+#include "fixture.h"
 #include "helpers.h"
 #include "preprocessor.h"
 #include "settings.h"
-#include "fixture.h"
 #include "standards.h"
 #include "tokenize.h"
 
 #include <list>
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -261,16 +260,13 @@ private:
 #define functionVariableUsage(...) functionVariableUsage_(__FILE__, __LINE__, __VA_ARGS__)
 #define checkStructMemberUsage(...) checkStructMemberUsage_(__FILE__, __LINE__, __VA_ARGS__)
     void checkStructMemberUsage_(const char* file, int line, const char code[], const std::list<Directive>* directives = nullptr, const Settings *s = nullptr) {
-        Preprocessor preprocessor(settings);
-        if (directives)
-            preprocessor.setDirectives(*directives);
-
         const Settings *settings1 = s ? s : &settings;
 
         // Tokenize..
-        Tokenizer tokenizer(*settings1, this, &preprocessor);
-        std::istringstream istr(code);
-        ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
+        SimpleTokenizer tokenizer(*settings1, *this);
+        if (directives)
+            tokenizer.setDirectives(*directives);
+        ASSERT_LOC(tokenizer.tokenize(code), file, line);
 
         // Check for unused variables..
         CheckUnusedVar checkUnusedVar(&tokenizer, settings1, this);
@@ -280,9 +276,8 @@ private:
 #define checkStructMemberUsageP(...) checkStructMemberUsageP_(__FILE__, __LINE__, __VA_ARGS__)
     void checkStructMemberUsageP_(const char* file, int line, const char code[]) {
         std::vector<std::string> files(1, "test.cpp");
-        Preprocessor preprocessor(settings);
-        Tokenizer tokenizer(settings, this, &preprocessor);
-        PreprocessorHelper::preprocess(preprocessor, code, files, tokenizer);
+        Tokenizer tokenizer(settings, *this);
+        PreprocessorHelper::preprocess(code, files, tokenizer, *this);
 
         // Tokenizer..
         ASSERT_LOC(tokenizer.simplifyTokens1(""), file, line);
@@ -294,10 +289,9 @@ private:
 
 #define checkFunctionVariableUsageP(...) checkFunctionVariableUsageP_(__FILE__, __LINE__, __VA_ARGS__)
     void checkFunctionVariableUsageP_(const char* file, int line, const char code[], const char* filename = "test.cpp") {
-        Preprocessor preprocessor(settings);
         std::vector<std::string> files(1, filename);
-        Tokenizer tokenizer(settings, this, &preprocessor);
-        PreprocessorHelper::preprocess(preprocessor, code, files, tokenizer);
+        Tokenizer tokenizer(settings, *this);
+        PreprocessorHelper::preprocess(code, files, tokenizer, *this);
 
         // Tokenizer..
         ASSERT_LOC(tokenizer.simplifyTokens1(""), file, line);
@@ -2008,11 +2002,10 @@ private:
         ASSERT_EQUALS("", errout_str());
     }
 
-    void functionVariableUsage_(const char* file, int line, const char code[], const char filename[] = "test.cpp") {
+    void functionVariableUsage_(const char* file, int line, const char code[], bool cpp = true) {
         // Tokenize..
-        Tokenizer tokenizer(settings, this);
-        std::istringstream istr(code);
-        ASSERT_LOC(tokenizer.tokenize(istr, filename), file, line);
+        SimpleTokenizer tokenizer(settings, *this);
+        ASSERT_LOC(tokenizer.tokenize(code, cpp), file, line);
 
         // Check for unused variables..
         CheckUnusedVar checkUnusedVar(&tokenizer, &settings, this);
@@ -2134,7 +2127,7 @@ private:
                               "{\n"
                               "    undefined i = 0;\n"
                               "}\n",
-                              "test.c");
+                              false);
         ASSERT_EQUALS(
             "[test.c:3]: (style) Variable 'i' is assigned a value that is never used.\n"
             "[test.c:3]: (style) Variable 'i' is assigned a value that is never used.\n", // duplicate
@@ -2530,7 +2523,7 @@ private:
                               "    undefined i;\n"
                               "    return i;\n"
                               "}\n",
-                              "test.c");
+                              false);
         ASSERT_EQUALS("[test.c:3]: (style) Variable 'i' is not assigned a value.\n", errout_str());
 
         functionVariableUsage("undefined *foo()\n"
@@ -3297,7 +3290,7 @@ private:
         functionVariableUsage("void f(int x) {\n"
                               "    C c;\n"
                               "    if (c >>= x) {}\n"
-                              "}", "test.c");
+                              "}", false);
         ASSERT_EQUALS("[test.c:3]: (style) Variable 'c' is assigned a value that is never used.\n", errout_str());
 
         functionVariableUsage("void f() {\n"
@@ -5078,7 +5071,7 @@ private:
                               "  int x;\n"
                               "  unknown_type p = &x;\n"
                               "  *p = 9;\n"
-                              "}", "test.c");
+                              "}", false);
         ASSERT_EQUALS("", errout_str());
     }
 
@@ -5233,7 +5226,7 @@ private:
                               "    A a;\n"
                               "    return 0;\n"
                               "}\n",
-                              "test.c");
+                              false);
         ASSERT_EQUALS("[test.c:2]: (style) Unused variable: a\n", errout_str());
         // extracttests.enable
 
@@ -7042,7 +7035,7 @@ private:
                 "void fun(Date result) {"
                 "  result.x = 12;\n"
                 "}",
-                "test.c"
+                false
                 );
             ASSERT_EQUALS("[test.c:1]: (style) Variable 'result.x' is assigned a value that is never used.\n", errout_str());
 

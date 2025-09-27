@@ -52,7 +52,7 @@
 #include <unordered_set>
 //---------------------------------------------------------------------------
 
-SymbolDatabase::SymbolDatabase(Tokenizer& tokenizer, const Settings& settings, ErrorLogger* errorLogger)
+SymbolDatabase::SymbolDatabase(Tokenizer& tokenizer, const Settings& settings, ErrorLogger& errorLogger)
     : mTokenizer(tokenizer), mSettings(settings), mErrorLogger(errorLogger)
 {
     if (!mTokenizer.tokens())
@@ -123,6 +123,20 @@ static bool isExecutableScope(const Token* tok)
     return false;
 }
 
+static bool isEnumDefinition(const Token* tok)
+{
+    if (!Token::Match(tok, "enum class| %name% {|:"))
+        return false;
+    while (!Token::Match(tok, "[{:]"))
+        tok = tok->next();
+    if (tok->str() == "{")
+        return true;
+    tok = tok->next(); // skip ':'
+    while (Token::Match(tok, "%name%|::"))
+        tok = tok->next();
+    return Token::simpleMatch(tok, "{");
+}
+
 void SymbolDatabase::createSymbolDatabaseFindAllScopes()
 {
     // create global scope
@@ -155,16 +169,14 @@ void SymbolDatabase::createSymbolDatabaseFindAllScopes()
     // find all scopes
     for (const Token *tok = mTokenizer.tokens(); tok; tok = tok ? tok->next() : nullptr) {
         // #5593 suggested to add here:
-        if (mErrorLogger)
-            mErrorLogger->reportProgress(mTokenizer.list.getSourceFilePath(),
-                                         "SymbolDatabase",
-                                         tok->progressValue());
+        mErrorLogger.reportProgress(mTokenizer.list.getSourceFilePath(),
+                                    "SymbolDatabase",
+                                    tok->progressValue());
         // Locate next class
         if ((tok->isCpp() && tok->isKeyword() &&
              ((Token::Match(tok, "class|struct|union|namespace ::| %name% final| {|:|::|<") &&
                !Token::Match(tok->previous(), "new|friend|const|enum|typedef|mutable|volatile|using|)|(|<")) ||
-              (Token::Match(tok, "enum class| %name% {") ||
-               Token::Match(tok, "enum class| %name% : %name% {"))))
+              isEnumDefinition(tok)))
             || (tok->isC() && tok->isKeyword() && Token::Match(tok, "struct|union|enum %name% {"))) {
             const Token *tok2 = tok->tokAt(2);
 
@@ -301,8 +313,11 @@ void SymbolDatabase::createSymbolDatabaseFindAllScopes()
                         mTokenizer.syntaxError(tok);
                     }
                 } else if (new_scope->type == Scope::eEnum) {
-                    if (tok2->str() == ":")
+                    if (tok2->str() == ":") {
                         tok2 = tok2->tokAt(2);
+                        while (Token::Match(tok2, "%name%|::"))
+                            tok2 = tok2->next();
+                    }
                 }
 
                 new_scope->setBodyStartEnd(tok2);
@@ -1435,67 +1450,6 @@ void SymbolDatabase::createSymbolDatabaseEnums()
 
 void SymbolDatabase::createSymbolDatabaseIncompleteVars()
 {
-    // TODO: replace with Keywords::getX()
-    static const std::unordered_set<std::string> cpp20keywords = {
-        "alignas",
-        "alignof",
-        "axiom",
-        "co_await",
-        "co_return",
-        "co_yield",
-        "concept",
-        "synchronized",
-        "consteval",
-        "reflexpr",
-        "requires",
-    };
-    static const std::unordered_set<std::string> cppkeywords = {
-        "asm",
-        "auto",
-        "catch",
-        "char",
-        "class",
-        "const",
-        "constexpr",
-        "decltype",
-        "default",
-        "do",
-        "enum",
-        "explicit",
-        "export",
-        "extern",
-        "final",
-        "friend",
-        "inline",
-        "mutable",
-        "namespace",
-        "new",
-        "noexcept",
-        "nullptr",
-        "override",
-        "private",
-        "protected",
-        "public",
-        "register",
-        "sizeof",
-        "static",
-        "static_assert",
-        "struct",
-        "template",
-        "this",
-        "thread_local",
-        "throw",
-        "try",
-        "typedef",
-        "typeid",
-        "typename",
-        "union",
-        "using",
-        "virtual",
-        "void",
-        "volatile",
-        "NULL",
-    };
     for (Token* tok = mTokenizer.list.front(); tok != mTokenizer.list.back(); tok = tok->next()) {
         const Scope * scope = tok->scope();
         if (!scope)
@@ -1508,11 +1462,14 @@ void SymbolDatabase::createSymbolDatabaseIncompleteVars()
             tok = tok->link();
             continue;
         }
-        if (Token::Match(tok, "catch|typeid (")) {
+        if (tok->isCpp() && (Token::Match(tok, "catch|typeid (") ||
+                             Token::Match(tok, "static_cast|dynamic_cast|const_cast|reinterpret_cast"))) {
             tok = tok->linkAt(1);
             continue;
         }
-        if (!(tok->isNameOnly() || tok->isKeyword()))
+        if (tok->str() == "NULL")
+            continue;
+        if (tok->isKeyword() || !tok->isNameOnly())
             continue;
         if (tok->type())
             continue;
@@ -1528,15 +1485,8 @@ void SymbolDatabase::createSymbolDatabaseIncompleteVars()
             tok = tok->linkAt(1);
             continue;
         }
-        if (tok->isKeyword())
-            continue;
         // Skip goto labels
         if (Token::simpleMatch(tok->previous(), "goto"))
-            continue;
-        // TODO: handle all C/C++ standards
-        if (cppkeywords.count(tok->str()) > 0)
-            continue;
-        if (tok->isCpp() && (mSettings.standards.cpp >= Standards::CPP20) && cpp20keywords.count(tok->str()) > 0)
             continue;
         std::string fstr = tok->str();
         const Token* ftok = tok->previous();
@@ -2143,7 +2093,7 @@ void SymbolDatabase::validateExecutableScopes() const
                                       "symbolDatabaseWarning",
                                       msg,
                                       Certainty::normal);
-            mErrorLogger->reportErr(errmsg);
+            mErrorLogger.reportErr(errmsg);
         }
     }
 }
@@ -2213,7 +2163,7 @@ void SymbolDatabase::debugSymbolDatabase() const
                 msg += "missing";
             }
             errorPath.emplace_back(tok, "");
-            mErrorLogger->reportErr(
+            mErrorLogger.reportErr(
                 {errorPath, &mTokenizer.list, Severity::debug, "valueType", msg, CWE{0}, Certainty::normal});
         }
     }
@@ -3633,27 +3583,27 @@ std::string Type::name() const
 
 void SymbolDatabase::debugMessage(const Token *tok, const std::string &type, const std::string &msg) const
 {
-    if (tok && mSettings.debugwarnings && mErrorLogger) {
+    if (tok && mSettings.debugwarnings) {
         const std::list<const Token*> locationList(1, tok);
         const ErrorMessage errmsg(locationList, &mTokenizer.list,
                                   Severity::debug,
                                   type,
                                   msg,
                                   Certainty::normal);
-        mErrorLogger->reportErr(errmsg);
+        mErrorLogger.reportErr(errmsg);
     }
 }
 
 void SymbolDatabase::returnImplicitIntError(const Token *tok) const
 {
-    if (tok && mSettings.severity.isEnabled(Severity::portability) && (tok->isC() && mSettings.standards.c != Standards::C89) && mErrorLogger) {
+    if (tok && mSettings.severity.isEnabled(Severity::portability) && (tok->isC() && mSettings.standards.c != Standards::C89)) {
         const std::list<const Token*> locationList(1, tok);
         const ErrorMessage errmsg(locationList, &mTokenizer.list,
                                   Severity::portability,
                                   "returnImplicitInt",
                                   "Omitted return type of function '" + tok->str() + "' defaults to int, this is not supported by ISO C99 and later standards.",
                                   Certainty::normal);
-        mErrorLogger->reportErr(errmsg);
+        mErrorLogger.reportErr(errmsg);
     }
 }
 
@@ -5152,7 +5102,8 @@ const Token * Scope::addEnum(const Token * tok)
         tok2 = tok2->next();
 
         enumType = tok2;
-        tok2 = tok2->next();
+        while (Token::Match(tok2, "%name%|::"))
+            tok2 = tok2->next();
     }
 
     // add enumerators
@@ -5233,10 +5184,6 @@ const Enumerator * SymbolDatabase::findEnumerator(const Token * tok, std::set<st
         return nullptr;
 
     const std::string& tokStr = tok->str();
-
-    if (tokensThatAreNotEnumeratorValues.find(tokStr) != tokensThatAreNotEnumeratorValues.end())
-        return nullptr;
-
     const Scope* scope = tok->scope();
 
     // check for qualified name
@@ -5296,6 +5243,9 @@ const Enumerator * SymbolDatabase::findEnumerator(const Token * tok, std::set<st
             }
         }
     } else { // unqualified name
+
+        if (tokensThatAreNotEnumeratorValues.find(tokStr) != tokensThatAreNotEnumeratorValues.end())
+            return nullptr;
 
         if (tok->scope()->type == Scope::eGlobal) {
             const Token* astTop = tok->astTop();
@@ -6377,7 +6327,7 @@ const Type* SymbolDatabase::findTypeInNested(const Token *startTok, const Scope 
         startTok = startTok->next();
 
     // type same as scope
-    if (startTok->str() == startScope->className && startScope->isClassOrStruct())
+    if (startScope->isClassOrStruct() && startTok->str() == startScope->className && !Token::simpleMatch(startTok->next(), "::"))
         return startScope->definedType;
 
     bool hasPath = false;

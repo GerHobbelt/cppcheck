@@ -301,6 +301,9 @@ private:
 
         TEST_CASE(knownPointerToBool);
         TEST_CASE(iterateByValue);
+
+        TEST_CASE(knownConditionFloating);
+        TEST_CASE(knownConditionPrefixed);
     }
 
 #define check(...) check_(__FILE__, __LINE__, __VA_ARGS__)
@@ -5714,6 +5717,20 @@ private:
               "    switch (i) {\n"
               "    case 0:\n"
               "        return 0;\n"
+              "        int a[1];\n"
+              "    case 1:\n"
+              "    case 2:\n"
+              "        a[0] = 5;\n"
+              "        return a[0] + i;\n"
+              "    }\n"
+              "    return 3;\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        check("int f(int i) {\n"
+              "    switch (i) {\n"
+              "    case 0:\n"
+              "        return 0;\n"
               "        int j;\n"
               "        dostuff();\n"
               "    case 1:\n"
@@ -5780,6 +5797,18 @@ private:
               "    return x;\n"
               "}\n");
         ASSERT_EQUALS("", errout_str());
+
+        check("bool f(int x, int y) {\n" // #13544
+              "    switch (x) {\n"
+              "    case 1: {\n"
+              "        return y != 0;\n"
+              "        int z = y + 5;\n"
+              "        return z != 7;\n"
+              "    }\n"
+              "    }\n"
+              "    return false;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:5]: (style) Statements following 'return' will never be executed.\n", errout_str());
     }
 
 
@@ -10813,7 +10842,7 @@ private:
               "unsigned char c;\n"
               "do {\n"
               "  c = getc (pFile);\n"
-              "} while (c != EOF)"
+              "} while (c != EOF);"
               "}");
         ASSERT_EQUALS("[test.cpp:5]: (warning) Storing getc() return value in char variable and then comparing with EOF.\n", errout_str());
 
@@ -10821,7 +10850,7 @@ private:
               "unsigned char c;\n"
               "do {\n"
               "  c = getc (pFile);\n"
-              "} while (EOF != c)"
+              "} while (EOF != c);"
               "}");
         ASSERT_EQUALS("[test.cpp:5]: (warning) Storing getc() return value in char variable and then comparing with EOF.\n", errout_str());
 
@@ -10829,7 +10858,7 @@ private:
               "int i;\n"
               "do {\n"
               "  i = getc (pFile);\n"
-              "} while (i != EOF)"
+              "} while (i != EOF);"
               "}");
         ASSERT_EQUALS("", errout_str());
 
@@ -10837,7 +10866,7 @@ private:
               "int i;\n"
               "do {\n"
               "  i = getc (pFile);\n"
-              "} while (EOF != i)"
+              "} while (EOF != i);"
               "}");
         ASSERT_EQUALS("", errout_str());
 
@@ -10847,7 +10876,7 @@ private:
               "unsigned char c;\n"
               "do {\n"
               "  c = fgetc (pFile);\n"
-              "} while (c != EOF)"
+              "} while (c != EOF);"
               "}");
         ASSERT_EQUALS("[test.cpp:5]: (warning) Storing fgetc() return value in char variable and then comparing with EOF.\n", errout_str());
 
@@ -10855,7 +10884,7 @@ private:
               "char c;\n"
               "do {\n"
               "  c = fgetc (pFile);\n"
-              "} while (EOF != c)"
+              "} while (EOF != c);"
               "}");
         ASSERT_EQUALS("[test.cpp:5]: (warning) Storing fgetc() return value in char variable and then comparing with EOF.\n", errout_str());
 
@@ -10863,7 +10892,7 @@ private:
               "signed char c;\n"
               "do {\n"
               "  c = fgetc (pFile);\n"
-              "} while (EOF != c)"
+              "} while (EOF != c);"
               "}");
         ASSERT_EQUALS("", errout_str());
 
@@ -10871,7 +10900,7 @@ private:
               "int i;\n"
               "do {\n"
               "  i = fgetc (pFile);\n"
-              "} while (i != EOF)"
+              "} while (i != EOF);"
               "}");
         ASSERT_EQUALS("", errout_str());
 
@@ -10879,7 +10908,7 @@ private:
               "int i;\n"
               "do {\n"
               "  i = fgetc (pFile);\n"
-              "} while (EOF != i)"
+              "} while (EOF != i);"
               "}");
         ASSERT_EQUALS("", errout_str());
 
@@ -12858,6 +12887,154 @@ private:
               "}\n");
         ASSERT_EQUALS("[test.cpp:3]: (performance) Range variable 's' should be declared as const reference.\n",
                       errout_str());
+    }
+
+    void knownConditionFloating()
+    {
+        check("void foo() {\n" // #11200
+              "    float f = 1.0;\n"
+              "    if (f > 1.0) {}\n"
+              "}\n");
+        ASSERT_EQUALS(
+            "[test.cpp:2] -> [test.cpp:3]: (style) The comparison 'f > 1.0' is always false.\n",
+            errout_str());
+
+        check("void foo() {\n" // #13508
+              "    float f = 1.0;\n"
+              "    if (f > -1.0) {}\n"
+              "}\n");
+        TODO_ASSERT_EQUALS(
+            "[test.cpp:2] -> [test.cpp:3]: (style) The comparison 'f > -1.0' is always false.\n",
+            "",
+            errout_str());
+
+        check("void foo() {\n" // #13506
+              "    float f = 1.0;\n"
+              "    if (f > +1.0) {}\n"
+              "}\n");
+        ASSERT_EQUALS(
+            "[test.cpp:2] -> [test.cpp:3]: (style) The comparison 'f > +1.0' is always false.\n",
+            errout_str());
+
+        check("void foo() {\n"
+              "    float f = 1.0;\n"
+              "    if (f < +1.0) {}\n"
+              "}\n");
+        ASSERT_EQUALS(
+            "[test.cpp:2] -> [test.cpp:3]: (style) The comparison 'f < 1.0' is always false.\n",
+            errout_str());
+
+        check("void foo() {\n" // #11200
+              "    float pf = +1.0;\n"
+              "    if (pf > 1.0) {}\n"
+              "}\n");
+        ASSERT_EQUALS(
+            "[test.cpp:2] -> [test.cpp:3]: (style) The comparison 'pf > 1.0' is always false.\n",
+            errout_str());
+
+        check("void foo() {\n" // #13508
+              "    float pf = +1.0;\n"
+              "    if (pf > -1.0) {}\n"
+              "}\n");
+        TODO_ASSERT_EQUALS(
+            "[test.cpp:2] -> [test.cpp:3]: (style) The comparison 'pf > -1.0' is always false.\n",
+            "",
+            errout_str());
+
+        check("void foo() {\n" // #13506
+              "    float pf = +1.0;\n"
+              "    if (pf > +1.0) {}\n"
+              "}\n");
+        ASSERT_EQUALS(
+            "[test.cpp:2] -> [test.cpp:3]: (style) The comparison 'pf > +1.0' is always false.\n",
+            errout_str());
+
+        check("void foo() {\n"
+              "    float pf = +1.0;\n"
+              "    if (pf < +1.0) {}\n"
+              "}\n");
+        ASSERT_EQUALS(
+            "[test.cpp:2] -> [test.cpp:3]: (style) The comparison 'pf < 1.0' is always false.\n",
+            errout_str());
+
+        check("void foo() {\n" // #11200
+              "    float nf = -1.0;\n"
+              "    if (nf > -1.0) {}\n"
+              "}\n");
+        ASSERT_EQUALS(
+            "[test.cpp:2] -> [test.cpp:3]: (style) The comparison 'nf > -1.0' is always false.\n",
+            errout_str());
+
+        check("void foo() {\n" // #13508
+              "    float nf = -1.0;\n"
+              "    if (nf > 1.0) {}\n"
+              "}\n");
+        TODO_ASSERT_EQUALS(
+            "[test.cpp:2] -> [test.cpp:3]: (style) The comparison 'nf > 1.0' is always false.\n",
+            "",
+            errout_str());
+
+        check("void foo() {\n" // #13508
+              "    float nf = -1.0;\n"
+              "    if (nf > +1.0) {}\n"
+              "}\n");
+        TODO_ASSERT_EQUALS(
+            "[test.cpp:2] -> [test.cpp:3]: (style) The comparison 'nf > +1.0' is always false.\n",
+            "",
+            errout_str());
+
+        check("void foo() {\n"
+              "    float f = 1.0f;\n"
+              "    if (f > 1.00f) {}\n"
+              "}\n");
+        ASSERT_EQUALS(
+            "[test.cpp:2] -> [test.cpp:3]: (style) The comparison 'f > 1.00f' is always false.\n",
+            errout_str());
+
+        check("void foo() {\n" // #13508
+              "    float f = 1.0f;\n"
+              "    if (f > 1) {}\n"
+              "}\n");
+        TODO_ASSERT_EQUALS(
+            "[test.cpp:2] -> [test.cpp:3]: (style) The comparison 'f > 1' is always false.\n",
+            "",
+            errout_str());
+
+        check("void foo() {\n"
+              "    float f = 1.0;\n"
+              "    if (f > 1.00) {}\n"
+              "}\n");
+        ASSERT_EQUALS(
+            "[test.cpp:2] -> [test.cpp:3]: (style) The comparison 'f > 1.00' is always false.\n",
+            errout_str());
+
+        check("void foo() {\n" // #13508
+              "    float f = 1.0;\n"
+              "    if (f > 1) {}\n"
+              "}\n");
+        TODO_ASSERT_EQUALS(
+            "[test.cpp:2] -> [test.cpp:3]: (style) The comparison 'f > 1' is always false.\n",
+            "",
+            errout_str());
+    }
+
+    void knownConditionPrefixed()
+    {
+        check("void foo() {\n"
+              "    int i = 1;\n"
+              "    if (i < +1) {}\n"
+              "}\n");
+        ASSERT_EQUALS(
+            "[test.cpp:2] -> [test.cpp:3]: (style) The comparison 'i < 1' is always false.\n",
+            errout_str());
+
+        check("void foo() {\n" // #13506
+              "    int i = 1;\n"
+              "    if (i > +1) {}\n"
+              "}\n");
+        ASSERT_EQUALS(
+            "[test.cpp:2] -> [test.cpp:3]: (style) The comparison 'i > +1' is always false.\n",
+            errout_str());
     }
 };
 

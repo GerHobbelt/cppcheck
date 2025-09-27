@@ -2514,7 +2514,7 @@ void CheckStl::checkDereferenceInvalidIterator2()
                     outOfBoundsError(emptyAdvance,
                                      lValue.tokvalue->expressionString(),
                                      cValue,
-                                     advanceIndex ? advanceIndex->expressionString() : emptyString,
+                                     advanceIndex ? advanceIndex->expressionString() : "",
                                      nullptr);
                 else
                     outOfBoundsError(tok, lValue.tokvalue->expressionString(), cValue, tok->expressionString(), &value);
@@ -2905,6 +2905,13 @@ void CheckStl::useStlAlgorithm()
         return isConstExpression(tok->linkAt(-1)->astOperand2(), mSettings->library);
     };
 
+    auto isAccumulation = [](const Token* tok, int varId) {
+        if (tok->str() != "=")
+            return true;
+        const Token* end = Token::findmatch(tok, "%varid%|;", varId); // TODO: lambdas?
+        return end && end->varId() != 0;
+    };
+
     for (const Scope *function : mTokenizer->getSymbolDatabase()->functionScopes) {
         for (const Token *tok = function->bodyStart; tok != function->bodyEnd; tok = tok->next()) {
             // Parse range-based for loop
@@ -2970,8 +2977,10 @@ void CheckStl::useStlAlgorithm()
                         algo = "std::any_of, std::all_of, std::none_of, or std::accumulate";
                     else if (Token::Match(assignTok, "= %var% <|<=|>=|> %var% ? %var% : %var%") && hasVarIds(assignTok->tokAt(6), loopVar->varId(), assignVarId))
                         algo = minmaxCompare(assignTok->tokAt(2), loopVar->varId(), assignVarId, assignTok->tokAt(5)->varId() == assignVarId);
-                    else
+                    else if (isAccumulation(assignTok, assignVarId))
                         algo = "std::accumulate";
+                    else
+                        continue;
                 }
                 useStlAlgorithmError(assignTok, algo);
                 continue;
@@ -3139,7 +3148,7 @@ void CheckStl::knownEmptyContainer()
                 const Token* contTok = splitTok->astOperand2();
                 if (!isKnownEmptyContainer(contTok))
                     continue;
-                knownEmptyContainerError(contTok, emptyString);
+                knownEmptyContainerError(contTok, "");
             } else {
                 const std::vector<const Token *> args = getArguments(tok);
                 if (args.empty())
@@ -3376,8 +3385,8 @@ void CheckStl::getErrorMessages(ErrorLogger* errorLogger, const Settings* settin
     c.uselessCallsRemoveError(nullptr, "remove");
     c.dereferenceInvalidIteratorError(nullptr, "i");
     c.eraseIteratorOutOfBoundsError(nullptr, nullptr);
-    c.useStlAlgorithmError(nullptr, emptyString);
-    c.knownEmptyContainerError(nullptr, emptyString);
+    c.useStlAlgorithmError(nullptr, "");
+    c.knownEmptyContainerError(nullptr, "");
     c.globalLockGuardError(nullptr);
     c.localMutexError(nullptr);
 }

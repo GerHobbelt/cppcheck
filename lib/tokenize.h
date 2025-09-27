@@ -317,6 +317,8 @@ private:
 
     void simplifySQL();
 
+    void simplifyParenthesizedLibraryFunctions();
+
     void checkForEnumsWithTypedef();
 
     void findComplicatedSyntaxErrorsInTemplates();
@@ -374,7 +376,7 @@ private:
 public:
 
     /** Syntax error */
-    NORETURN void syntaxError(const Token *tok, const std::string &code = emptyString) const;
+    NORETURN void syntaxError(const Token *tok, const std::string &code = "") const;
 
     /** Syntax error. Unmatched character. */
     NORETURN void unmatchedToken(const Token *tok) const;

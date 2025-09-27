@@ -1609,7 +1609,7 @@ namespace {
                     typeEndToken = tok->astParent()->link();
                 }
                 std::string type;
-                for (const Token* t = typeStartToken; t != typeEndToken; t = t->next()) {
+                for (const Token* t = typeStartToken; precedes(t, typeEndToken); t = t->next()) {
                     type += " " + t->str();
                 }
                 key.parentOp += type;
@@ -2639,6 +2639,9 @@ const Token *Function::setFlags(const Token *tok1, const Scope *scope)
     if (tok1->isInline())
         isInlineKeyword(true);
 
+    if (tok1->isExternC())
+        isExtern(true);
+
     // look for end of previous statement
     while (tok1->previous() && !Token::Match(tok1->previous(), ";|}|{|public:|protected:|private:")) {
         tok1 = tok1->previous();
@@ -2647,7 +2650,7 @@ const Token *Function::setFlags(const Token *tok1, const Scope *scope)
             isInlineKeyword(true);
 
         // extern function
-        if (tok1->isExternC() || tok1->str() == "extern") {
+        if (tok1->str() == "extern") {
             isExtern(true);
         }
 
@@ -4264,6 +4267,8 @@ void SymbolDatabase::printXml(std::ostream &out) const
                         outs += " isInlineKeyword=\"true\"";
                     if (function->isStatic())
                         outs += " isStatic=\"true\"";
+                    if (function->isFriend())
+                        outs += " isFriend=\"true\"";
                     if (function->isAttributeNoreturn())
                         outs += " isAttributeNoreturn=\"true\"";
                     if (const Function* overriddenFunction = function->getOverriddenFunction()) {
@@ -6575,10 +6580,18 @@ void SymbolDatabase::setValueType(Token* tok, const Variable& var, const SourceL
     if (parsedecl(var.typeStartToken(), &valuetype, mDefaultSignedness, mSettings)) {
         if (tok->str() == "." && tok->astOperand1()) {
             const ValueType * const vt = tok->astOperand1()->valueType();
-            if (vt && (vt->constness & 1) != 0)
-                valuetype.constness |= 1;
-            if (vt && (vt->volatileness & 1) != 0)
-                valuetype.volatileness |= 1;
+            if (vt && (vt->constness & 1) != 0) {
+                if (var.isArray()) // constness propagates to arrays, but not to regular pointers
+                    valuetype.constness |= 1;
+                else
+                    valuetype.constness |= (1 << valuetype.pointer);
+            }
+            if (vt && (vt->volatileness & 1) != 0) {
+                if (var.isArray())
+                    valuetype.volatileness |= 1;
+                else
+                    valuetype.volatileness |= (1 << valuetype.pointer);
+            }
         }
         setValueType(tok, valuetype);
     }
@@ -7139,6 +7152,10 @@ static ValueType::Type getEnumType(const Scope* scope, const Platform& platform)
 {
     ValueType::Type type = ValueType::Type::INT;
     for (const Token* tok = scope->bodyStart; tok && tok != scope->bodyEnd; tok = tok->next()) {
+        if (const Token* lam = findLambdaEndToken(tok)) {
+            tok = lam;
+            continue;
+        }
         if (!tok->isAssignmentOp())
             continue;
         const Token* vTok = tok->astOperand2();

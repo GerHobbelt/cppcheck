@@ -1792,11 +1792,12 @@ static bool isDifferentType(const Token* src, const Token* dst)
     } else {
         std::pair<const Token*, const Token*> decl = Token::typeDecl(src);
         std::pair<const Token*, const Token*> parentdecl = Token::typeDecl(dst);
-        if (isNotEqual(decl, parentdecl))
+        const bool isCpp = (src && src->isCpp()) || (dst && dst->isCpp());
+        if (isNotEqual(decl, parentdecl) && !(isCpp && (Token::simpleMatch(decl.first, "auto") || Token::simpleMatch(parentdecl.first, "auto"))))
             return true;
-        if (isNotEqual(decl, dst->valueType(), dst->isCpp()))
+        if (isNotEqual(decl, dst->valueType(), isCpp))
             return true;
-        if (isNotEqual(parentdecl, src->valueType(), src->isCpp()))
+        if (isNotEqual(parentdecl, src->valueType(), isCpp))
             return true;
     }
     return false;
@@ -2646,6 +2647,8 @@ static void valueFlowLifetimeClassConstructor(Token* tok,
                 if (it == scope->varlist.cend())
                     return;
                 const Variable& var = *it;
+                if (var.valueType() && var.valueType()->container && var.valueType()->container->stdStringLike && !var.valueType()->container->view)
+                    return; // TODO: check in isLifetimeBorrowed()?
                 if (var.isReference() || var.isRValueReference()) {
                     ls.byRef(tok, tokenlist, errorLogger, settings);
                 } else if (ValueFlow::isLifetimeBorrowed(ls.argtok, settings)) {
@@ -7095,7 +7098,7 @@ struct ValueFlowPassRunner {
             if (n == 0 && values != getTotalValues()) {
                 ErrorMessage::FileLocation loc(state.tokenlist.getFiles()[0], 0, 0);
                 ErrorMessage errmsg({std::move(loc)},
-                                    emptyString,
+                                    "",
                                     Severity::debug,
                                     "ValueFlow maximum iterations exceeded",
                                     "valueFlowMaxIterations",

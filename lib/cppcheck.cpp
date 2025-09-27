@@ -339,7 +339,7 @@ static std::string getDumpFileName(const Settings& settings, const std::string& 
         extension = "." + std::to_string(settings.pid) + ".dump";
 
     if (!settings.dump && !settings.buildDir.empty())
-        return AnalyzerInformation::getAnalyzerInfoFile(settings.buildDir, filename, emptyString) + extension;
+        return AnalyzerInformation::getAnalyzerInfoFile(settings.buildDir, filename, "") + extension;
     return filename + extension;
 }
 
@@ -658,10 +658,10 @@ unsigned int CppCheck::checkClang(const FileWithDetails &file)
         mErrorLogger.reportOut(std::string("Checking ") + file.spath() + " ...", Color::FgGreen);
 
     // TODO: get language from FileWithDetails object
-    const std::string analyzerInfo = mSettings.buildDir.empty() ? std::string() : AnalyzerInformation::getAnalyzerInfoFile(mSettings.buildDir, file.spath(), emptyString);
-    const std::string clangcmd = analyzerInfo + ".clang-cmd";
-    const std::string clangStderr = analyzerInfo + ".clang-stderr";
-    const std::string clangAst = analyzerInfo + ".clang-ast";
+    std::string clangStderr;
+    if (!mSettings.buildDir.empty())
+        clangStderr = AnalyzerInformation::getAnalyzerInfoFile(mSettings.buildDir, file.spath(), "") + ".clang-stderr";
+
     std::string exe = mSettings.clangExecutable;
 #ifdef _WIN32
     // append .exe if it is not a path
@@ -673,17 +673,17 @@ unsigned int CppCheck::checkClang(const FileWithDetails &file)
     const std::string args2 = "-fsyntax-only -Xclang -ast-dump -fno-color-diagnostics " +
                               getClangFlags(Path::identify(file.spath(), mSettings.cppHeaderProbe)) +
                               file.spath();
-    const std::string redirect2 = analyzerInfo.empty() ? std::string("2>&1") : ("2> " + clangStderr);
-    if (!mSettings.buildDir.empty()) {
-        std::ofstream fout(clangcmd);
-        fout << exe << " " << args2 << " " << redirect2 << std::endl;
-    }
+    const std::string redirect2 = clangStderr.empty() ? "2>&1" : ("2> " + clangStderr);
     if (mSettings.verbose && !mSettings.quiet) {
         mErrorLogger.reportOut(exe + " " + args2);
     }
 
     std::string output2;
     const int exitcode = mExecuteCommand(exe,split(args2),redirect2,output2);
+    if (mSettings.debugClangOutput) {
+        std::cout << output2 << std::endl;
+    }
+    // TODO: this might also fail if compiler errors are encountered - we should report them properly
     if (exitcode != EXIT_SUCCESS) {
         // TODO: report as proper error
         std::cerr << "Failed to execute '" << exe << " " << args2 << " " << redirect2 << "' - (exitcode: " << exitcode << " / output: " << output2 << ")" << std::endl;
@@ -696,27 +696,20 @@ unsigned int CppCheck::checkClang(const FileWithDetails &file)
         return 0; // TODO: report as failure?
     }
 
+    const auto reportError = [this](const ErrorMessage& errorMessage) {
+        mErrorLogger.reportErr(errorMessage);
+    };
+
     // Ensure there are not syntax errors...
     std::vector<ErrorMessage> compilerWarnings;
-    if (!mSettings.buildDir.empty()) {
+    if (!clangStderr.empty()) {
         std::ifstream fin(clangStderr);
-        auto reportError = [this](const ErrorMessage& errorMessage) {
-            mErrorLogger.reportErr(errorMessage);
-        };
         if (reportClangErrors(fin, reportError, compilerWarnings))
             return 0; // TODO: report as failure?
     } else {
         std::istringstream istr(output2);
-        auto reportError = [this](const ErrorMessage& errorMessage) {
-            mErrorLogger.reportErr(errorMessage);
-        };
         if (reportClangErrors(istr, reportError, compilerWarnings))
             return 0; // TODO: report as failure?
-    }
-
-    if (!mSettings.buildDir.empty()) {
-        std::ofstream fout(clangAst);
-        fout << output2 << std::endl;
     }
 
     try {
@@ -773,13 +766,13 @@ unsigned int CppCheck::check(const FileWithDetails &file)
     if (mSettings.clang)
         return checkClang(file);
 
-    return checkFile(file, emptyString);
+    return checkFile(file, "");
 }
 
 unsigned int CppCheck::check(const FileWithDetails &file, const std::string &content)
 {
     std::istringstream iss(content);
-    return checkFile(file, emptyString, &iss);
+    return checkFile(file, "", &iss);
 }
 
 unsigned int CppCheck::check(const FileSettings &fs)
@@ -1298,7 +1291,7 @@ void CppCheck::internalError(const std::string &filename, const std::string &msg
     ErrorMessage::FileLocation loc1(filename, 0, 0);
 
     ErrorMessage errmsg({std::move(loc1)},
-                        emptyString,
+                        "",
                         Severity::error,
                         fullmsg,
                         "internalError",
@@ -1333,7 +1326,7 @@ void CppCheck::checkNormalTokens(const Tokenizer &tokenizer, AnalyzerInformation
                 if (mSettings.debugwarnings) {
                     ErrorMessage::FileLocation loc(tokenizer.list.getFiles()[0], 0, 0);
                     ErrorMessage errmsg({std::move(loc)},
-                                        emptyString,
+                                        "",
                                         Severity::debug,
                                         "Checks maximum time exceeded",
                                         "checksMaxTime",
@@ -1564,7 +1557,7 @@ void CppCheck::executeRules(const std::string &tokenlist, const TokenList &list)
             if (pcreCompileErrorStr) {
                 const std::string msg = "pcre_compile failed: " + std::string(pcreCompileErrorStr);
                 const ErrorMessage errmsg(std::list<ErrorMessage::FileLocation>(),
-                                          emptyString,
+                                          "",
                                           Severity::error,
                                           msg,
                                           "pcre_compile",
@@ -1585,7 +1578,7 @@ void CppCheck::executeRules(const std::string &tokenlist, const TokenList &list)
         if (pcreStudyErrorStr) {
             const std::string msg = "pcre_study failed: " + std::string(pcreStudyErrorStr);
             const ErrorMessage errmsg(std::list<ErrorMessage::FileLocation>(),
-                                      emptyString,
+                                      "",
                                       Severity::error,
                                       msg,
                                       "pcre_study",
@@ -1608,7 +1601,7 @@ void CppCheck::executeRules(const std::string &tokenlist, const TokenList &list)
                 const std::string errorMessage = pcreErrorCodeToString(pcreExecRet);
                 if (!errorMessage.empty()) {
                     const ErrorMessage errmsg(std::list<ErrorMessage::FileLocation>(),
-                                              emptyString,
+                                              "",
                                               Severity::error,
                                               std::string("pcre_exec failed: ") + errorMessage,
                                               "pcre_exec",
@@ -1843,7 +1836,7 @@ void CppCheck::tooManyConfigsError(const std::string &file, const int numberOfCo
 
 
     ErrorMessage errmsg(std::move(loclist),
-                        emptyString,
+                        "",
                         Severity::information,
                         msg.str(),
                         "toomanyconfigs", CWE398,
@@ -1865,7 +1858,7 @@ void CppCheck::purgedConfigurationMessage(const std::string &file, const std::st
     }
 
     ErrorMessage errmsg(std::move(loclist),
-                        emptyString,
+                        "",
                         Severity::information,
                         "The configuration '" + configuration + "' was not checked because its code equals another one.",
                         "purgedConfiguration",
@@ -1882,9 +1875,9 @@ void CppCheck::getErrorMessages(ErrorLogger &errorlogger)
     s.addEnabled("all");
 
     CppCheck cppcheck(errorlogger, true, nullptr);
-    cppcheck.purgedConfigurationMessage(emptyString,emptyString);
+    cppcheck.purgedConfigurationMessage("","");
     cppcheck.mTooManyConfigs = true;
-    cppcheck.tooManyConfigsError(emptyString,0U);
+    cppcheck.tooManyConfigsError("",0U);
     // TODO: add functions to get remaining error messages
 
     // call all "getErrorMessages" in all registered Check classes
@@ -1913,7 +1906,7 @@ void CppCheck::analyseClangTidy(const FileSettings &fileSettings)
 
     const std::string args = "-quiet -checks=*,-clang-analyzer-*,-llvm* \"" + fileSettings.filename() + "\" -- " + allIncludes + allDefines;
     std::string output;
-    if (const int exitcode = mExecuteCommand(exe, split(args), emptyString, output)) {
+    if (const int exitcode = mExecuteCommand(exe, split(args), "", output)) {
         std::cerr << "Failed to execute '" << exe << "' (exitcode: " << std::to_string(exitcode) << ")" << std::endl;
         return;
     }
@@ -1923,7 +1916,7 @@ void CppCheck::analyseClangTidy(const FileSettings &fileSettings)
     std::string line;
 
     if (!mSettings.buildDir.empty()) {
-        const std::string analyzerInfoFile = AnalyzerInformation::getAnalyzerInfoFile(mSettings.buildDir, fileSettings.filename(), emptyString);
+        const std::string analyzerInfoFile = AnalyzerInformation::getAnalyzerInfoFile(mSettings.buildDir, fileSettings.filename(), "");
         std::ofstream fcmd(analyzerInfoFile + ".clang-tidy-cmd");
         fcmd << istr.str();
     }

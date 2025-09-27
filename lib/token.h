@@ -167,6 +167,8 @@ class CPPCHECKLIB Token {
 private:
     TokensFrontBack& mTokensFrontBack;
 
+    static const std::string mEmptyString;
+
 public:
     Token(const Token &) = delete;
     Token& operator=(const Token &) = delete;
@@ -256,7 +258,7 @@ public:
     const std::string &strAt(int index) const
     {
         const Token *tok = this->tokAt(index);
-        return tok ? tok->mStr : emptyString;
+        return tok ? tok->mStr : mEmptyString;
     }
 
     /**
@@ -723,6 +725,13 @@ public:
     }
     void isInitComma(bool b) {
         setFlag(fIsInitComma, b);
+    }
+
+    bool isInitBracket() const {
+        return getFlag(fIsInitBracket);
+    }
+    void isInitBracket(bool b) {
+        setFlag(fIsInitBracket, b);
     }
 
     // cppcheck-suppress unusedFunction
@@ -1265,7 +1274,7 @@ public:
      * @return the original name.
      */
     const std::string & originalName() const {
-        return mImpl->mOriginalName ? *mImpl->mOriginalName : emptyString;
+        return mImpl->mOriginalName ? *mImpl->mOriginalName : mEmptyString;
     }
 
     const std::list<ValueFlow::Value>& values() const {
@@ -1401,6 +1410,7 @@ private:
         fIsSimplifiedTypedef    = (1ULL << 40),
         fIsFinalType            = (1ULL << 41), // Is this a type with final specifier
         fIsInitComma            = (1ULL << 42), // Is this comma located inside some {..}. i.e: {1,2,3,4}
+        fIsInitBracket          = (1ULL << 43), // Is this bracket used as a part of variable initialization i.e: int a{5}, b(2);
     };
 
     enum : std::uint8_t  {

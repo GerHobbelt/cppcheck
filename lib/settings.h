@@ -28,6 +28,7 @@
 #include "platform.h"
 #include "standards.h"
 #include "suppressions.h"
+#include "checkers.h"
 
 #include <algorithm>
 #include <atomic>
@@ -110,6 +111,9 @@ public:
 
     static std::pair<std::string, std::string> getNameAndVersion(const std::string& productName);
 
+    /** @brief Report type */
+    ReportType reportType = ReportType::normal;
+
     /** @brief addons, either filename of python/json file or json data */
     std::unordered_set<std::string> addons;
 
@@ -177,6 +181,9 @@ public:
 
     /** @brief Are we running from DACA script? */
     bool daca{};
+
+    /** @brief Is --debug-clang-output given? */
+    bool debugClangOutput{};
 
     /** @brief Internal: Is --debug-lookup or --debug-lookup=all given? */
     bool debuglookup{};

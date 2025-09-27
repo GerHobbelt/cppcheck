@@ -77,7 +77,8 @@ TokenList::~TokenList()
 const std::string& TokenList::getSourceFilePath() const
 {
     if (getFiles().empty()) {
-        return emptyString;
+        static const std::string s_empty_string;
+        return s_empty_string;
     }
     return getFiles()[0];
 }
@@ -1441,7 +1442,9 @@ const Token* findLambdaEndTokenWithoutAST(const Token* tok) {
     tok = tok->link()->next();
     if (Token::simpleMatch(tok, "(") && tok->link())
         tok = tok->link()->next();
-    if (Token::simpleMatch(tok, ".")) { // trailing return type
+    if (Token::simpleMatch(tok, "mutable"))
+        tok = tok->next();
+    if (Token::Match(tok, ".|->")) { // trailing return type
         tok = tok->next();
         while (Token::Match(tok, "%type%|%name%|::|&|&&|*|<|(")) {
             if (tok->link())

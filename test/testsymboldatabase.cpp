@@ -424,6 +424,7 @@ private:
         TEST_CASE(symboldatabase106);
         TEST_CASE(symboldatabase107);
         TEST_CASE(symboldatabase108);
+        TEST_CASE(symboldatabase109); // #13553
 
         TEST_CASE(createSymbolDatabaseFindAllScopes1);
         TEST_CASE(createSymbolDatabaseFindAllScopes2);
@@ -600,12 +601,15 @@ private:
         TEST_CASE(auto20);
         TEST_CASE(auto21);
         TEST_CASE(auto22);
+        TEST_CASE(auto23);
 
         TEST_CASE(unionWithConstructor);
 
         TEST_CASE(incomplete_type); // #9255 (infinite recursion)
         TEST_CASE(exprIds);
         TEST_CASE(testValuetypeOriginalName);
+
+        TEST_CASE(dumpFriend); // Check if isFriend added to dump file
     }
 
     void array() {
@@ -5671,6 +5675,21 @@ private:
             ASSERT_EQUALS(3, db->scopeList.size());
             ASSERT_EQUALS(Scope::ScopeType::eFor, db->scopeList.back().type);
             ASSERT_EQUALS(1, db->scopeList.back().varlist.size());
+            ASSERT_EQUALS("i", db->scopeList.back().varlist.back().name());
+        }
+        {
+            GET_SYMBOL_DB_DBG("void bar(int) {}\n" // #9960
+                              "void foo() {\n"
+                              "    std::vector<int*> a(10);\n"
+                              "    for (int i = 0; i < 10; i++)\n"
+                              "        bar(*a[4]);\n"
+                              "}\n");
+            ASSERT(db != nullptr);
+            ASSERT_EQUALS("", errout_str());
+            ASSERT_EQUALS(4, db->scopeList.size());
+            ASSERT_EQUALS(Scope::ScopeType::eFor, db->scopeList.back().type);
+            ASSERT_EQUALS(1, db->scopeList.back().varlist.size());
+            ASSERT_EQUALS("i", db->scopeList.back().varlist.back().name());
         }
     }
 
@@ -5708,6 +5727,18 @@ private:
             ASSERT(it->isDefault());
             ASSERT_EQUALS(it->type, Function::Type::eDestructor);
         }
+    }
+
+    void symboldatabase109() { // #13553
+        GET_SYMBOL_DB("extern \"C\" {\n"
+                      "class Base {\n"
+                      "public:\n"
+                      "    virtual void show(void) = 0;\n"
+                      "};\n"
+                      "}\n");
+        const Token *f = db ? Token::findsimplematch(tokenizer.tokens(), "show") : nullptr;
+        ASSERT(f != nullptr);
+        ASSERT(f && f->function() && f->function()->hasVirtualSpecifier());
     }
 
     void createSymbolDatabaseFindAllScopes1() {
@@ -10742,6 +10773,24 @@ private:
         ASSERT(s->variable() && s->variable()->isReference());
     }
 
+    void auto23() {
+        GET_SYMBOL_DB("struct S { int* p; };\n" // #12168
+                      "void f(const S& s) {\n"
+                      "    auto q = s.p;\n"
+                      "}\n");
+        ASSERT_EQUALS("", errout_str());
+        const Token* a = Token::findsimplematch(tokenizer.tokens(), "auto");
+        ASSERT(a && a->valueType());
+        ASSERT_EQUALS(a->valueType()->type, ValueType::INT);
+        ASSERT_EQUALS(a->valueType()->pointer, 1);
+        ASSERT_EQUALS(a->valueType()->constness, 0);
+        const Token* dot = Token::findsimplematch(a, ".");
+        ASSERT(dot && dot->valueType());
+        ASSERT_EQUALS(dot->valueType()->type, ValueType::INT);
+        ASSERT_EQUALS(dot->valueType()->pointer, 1);
+        ASSERT_EQUALS(dot->valueType()->constness, 2);
+    }
+
     void unionWithConstructor() {
         GET_SYMBOL_DB("union Fred {\n"
                       "    Fred(int x) : i(x) { }\n"
@@ -11059,6 +11108,19 @@ private:
             ASSERT(tok->valueType()->pointer == 1);
             ASSERT(tok->valueType()->constness == 0);
         }
+    }
+
+    void dumpFriend() {
+        GET_SYMBOL_DB("class Foo {\n"
+                      "    Foo();\n"
+                      "    int x{};\n"
+                      "    friend bool operator==(const Foo&lhs, const Foo&rhs) {\n"
+                      "        return lhs.x == rhs.x;\n"
+                      "    }\n"
+                      "};");
+        std::ostringstream ostr;
+        db->printXml(ostr);
+        ASSERT(ostr.str().find(" isFriend=\"true\"") != std::string::npos);
     }
 };
 

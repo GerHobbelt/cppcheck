@@ -19,6 +19,7 @@
 #include "errortypes.h"
 #include "fixture.h"
 #include "helpers.h"
+#include "path.h"
 #include "settings.h"
 #include "templatesimplifier.h"
 #include "token.h"
@@ -28,6 +29,7 @@
 #include <cstring>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 class TestSimplifyTemplate : public TestFixture {
@@ -5426,11 +5428,12 @@ private:
     }
 
     unsigned int templateParameters(const char code[]) {
-        Tokenizer tokenizer(settings, *this);
-
+        TokenList tokenlist{&settings};
         std::istringstream istr(code);
-        if (!tokenizer.list.createTokens(istr, "test.cpp"))
+        tokenlist.appendFileIfNew("test.cpp");
+        if (!tokenlist.createTokens(istr, Path::identify("test.cpp", false)))
             return false;
+        Tokenizer tokenizer(std::move(tokenlist), settings, *this);
         tokenizer.createLinks();
         tokenizer.splitTemplateRightAngleBrackets(false);
 
@@ -5494,11 +5497,13 @@ private:
 
     // Helper function to unit test TemplateSimplifier::getTemplateNamePosition
     int templateNamePositionHelper(const char code[], unsigned offset = 0) {
-        Tokenizer tokenizer(settings, *this);
+        TokenList tokenlist{&settings};
 
         std::istringstream istr(code);
-        if (!tokenizer.list.createTokens(istr, "test.cpp"))
+        tokenlist.appendFileIfNew("test.cpp");
+        if (!tokenlist.createTokens(istr, Path::identify("test.cpp", false)))
             return false;
+        Tokenizer tokenizer(std::move(tokenlist), settings, *this);
         tokenizer.createLinks();
         tokenizer.splitTemplateRightAngleBrackets(false);
 
@@ -5565,11 +5570,11 @@ private:
 
     // Helper function to unit test TemplateSimplifier::findTemplateDeclarationEnd
     bool findTemplateDeclarationEndHelper(const char code[], const char pattern[], unsigned offset = 0) {
-        Tokenizer tokenizer(settings, *this);
-
+        TokenList tokenlist{&settings};
         std::istringstream istr(code);
-        if (!tokenizer.list.createTokens(istr, "test.cpp"))
+        if (!TokenListHelper::createTokens(tokenlist, istr, "test.cpp"))
             return false;
+        Tokenizer tokenizer(std::move(tokenlist), settings, *this);
         tokenizer.createLinks();
         tokenizer.splitTemplateRightAngleBrackets(false);
 
@@ -5595,11 +5600,12 @@ private:
 
     // Helper function to unit test TemplateSimplifier::getTemplateParametersInDeclaration
     bool getTemplateParametersInDeclarationHelper(const char code[], const std::vector<std::string> & params) {
-        Tokenizer tokenizer(settings, *this);
+        TokenList tokenlist{&settings};
 
         std::istringstream istr(code);
-        if (!tokenizer.list.createTokens(istr, "test.cpp"))
+        if (!TokenListHelper::createTokens(tokenlist, istr, "test.cpp"))
             return false;
+        Tokenizer tokenizer(std::move(tokenlist), settings, *this);
         tokenizer.createLinks();
         tokenizer.splitTemplateRightAngleBrackets(false);
 

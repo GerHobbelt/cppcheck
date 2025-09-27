@@ -1057,7 +1057,7 @@ static bool parseComparison(const Token *comp, bool &not1, std::string &op, std:
             return false;
         op = invertOperatorForOperandSwap(comp->str());
         if (op1->enumerator() && op1->enumerator()->value_known)
-            value = std::to_string(op1->enumerator()->value);
+            value = MathLib::toString(op1->enumerator()->value);
         else
             value = op1->str();
         expr = op2;
@@ -1066,7 +1066,7 @@ static bool parseComparison(const Token *comp, bool &not1, std::string &op, std:
             return false;
         op = comp->str();
         if (op2->enumerator() && op2->enumerator()->value_known)
-            value = std::to_string(op2->enumerator()->value);
+            value = MathLib::toString(op2->enumerator()->value);
         else
             value = op2->str();
         expr = op1;
@@ -1273,8 +1273,8 @@ void CheckCondition::checkIncorrectLogicOperator()
             const MathLib::bigint i1 = (isfloat) ? 0 : MathLib::toBigNumber(value1);
             const MathLib::bigint i2 = (isfloat) ? 0 : MathLib::toBigNumber(value2);
             const bool useUnsignedInt = (std::numeric_limits<MathLib::bigint>::max()==i1) || (std::numeric_limits<MathLib::bigint>::max()==i2);
-            const MathLib::biguint u1 = (useUnsignedInt) ? MathLib::toBigNumber(value1) : 0;
-            const MathLib::biguint u2 = (useUnsignedInt) ? MathLib::toBigNumber(value2) : 0;
+            const MathLib::biguint u1 = (useUnsignedInt) ? MathLib::toBigUNumber(value1) : 0;
+            const MathLib::biguint u2 = (useUnsignedInt) ? MathLib::toBigUNumber(value2) : 0;
             // evaluate if expression is always true/false
             bool alwaysTrue = true, alwaysFalse = true;
             bool firstTrue = true, secondTrue = true;
@@ -2037,13 +2037,58 @@ void CheckCondition::checkCompareValueOutOfTypeRange()
     }
 }
 
-void CheckCondition::compareValueOutOfTypeRangeError(const Token *comparison, const std::string &type, long long value, bool result)
+void CheckCondition::compareValueOutOfTypeRangeError(const Token *comparison, const std::string &type, MathLib::bigint value, bool result)
 {
     reportError(
         comparison,
         Severity::style,
         "compareValueOutOfTypeRangeError",
-        "Comparing expression of type '" + type + "' against value " + std::to_string(value) + ". Condition is always " + bool_to_string(result) + ".",
+        "Comparing expression of type '" + type + "' against value " + MathLib::toString(value) + ". Condition is always " + bool_to_string(result) + ".",
         CWE398,
         Certainty::normal);
+}
+
+void CheckCondition::runChecks(const Tokenizer &tokenizer, ErrorLogger *errorLogger)
+{
+    CheckCondition checkCondition(&tokenizer, &tokenizer.getSettings(), errorLogger);
+    checkCondition.multiCondition();
+    checkCondition.clarifyCondition();   // not simplified because ifAssign
+    checkCondition.multiCondition2();
+    checkCondition.checkIncorrectLogicOperator();
+    checkCondition.checkInvalidTestForOverflow();
+    checkCondition.duplicateCondition();
+    checkCondition.checkPointerAdditionResultNotNull();
+    checkCondition.checkDuplicateConditionalAssign();
+    checkCondition.assignIf();
+    checkCondition.checkBadBitmaskCheck();
+    checkCondition.comparison();
+    checkCondition.checkModuloAlwaysTrueFalse();
+    checkCondition.checkAssignmentInCondition();
+    checkCondition.checkCompareValueOutOfTypeRange();
+    checkCondition.alwaysTrueFalse();
+}
+
+void CheckCondition::getErrorMessages(ErrorLogger *errorLogger, const Settings *settings) const
+{
+    CheckCondition c(nullptr, settings, errorLogger);
+
+    c.assignIfError(nullptr, nullptr, emptyString, false);
+    c.badBitmaskCheckError(nullptr);
+    c.comparisonError(nullptr, "&", 6, "==", 1, false);
+    c.duplicateConditionError(nullptr, nullptr, ErrorPath{});
+    c.overlappingElseIfConditionError(nullptr, 1);
+    c.mismatchingBitAndError(nullptr, 0xf0, nullptr, 1);
+    c.oppositeInnerConditionError(nullptr, nullptr, ErrorPath{});
+    c.identicalInnerConditionError(nullptr, nullptr, ErrorPath{});
+    c.identicalConditionAfterEarlyExitError(nullptr, nullptr, ErrorPath{});
+    c.incorrectLogicOperatorError(nullptr, "foo > 3 && foo < 4", true, false, ErrorPath{});
+    c.redundantConditionError(nullptr, "If x > 11 the condition x > 10 is always true.", false);
+    c.moduloAlwaysTrueFalseError(nullptr, "1");
+    c.clarifyConditionError(nullptr, true, false);
+    c.alwaysTrueFalseError(nullptr, nullptr, nullptr);
+    c.invalidTestForOverflow(nullptr, nullptr, "false");
+    c.pointerAdditionResultNotNullError(nullptr, nullptr);
+    c.duplicateConditionalAssignError(nullptr, nullptr);
+    c.assignmentInCondition(nullptr);
+    c.compareValueOutOfTypeRangeError(nullptr, "unsigned char", 256, true);
 }

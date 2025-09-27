@@ -197,7 +197,7 @@ def test_progress_j(tmpdir):
     assert stderr == ""
 
 
-def test_execute_addon_failure(tmpdir):
+def test_execute_addon_failure_py_auto(tmpdir):
     test_file = os.path.join(tmpdir, 'test.cpp')
     with open(test_file, 'wt') as f:
         f.write("""
@@ -212,19 +212,70 @@ def test_execute_addon_failure(tmpdir):
     assert stderr == '{}:0:0: error: Bailing out from analysis: Checking file failed: Failed to auto detect python [internalError]\n\n^\n'.format(test_file)
 
 
-def test_execute_addon_failure_2(tmpdir):
+def test_execute_addon_failure_py_notexist(tmpdir):
     test_file = os.path.join(tmpdir, 'test.cpp')
     with open(test_file, 'wt') as f:
         f.write("""
                 void f();
                 """)
 
-    # specify non-existent python executbale so execution of addon fails
+    # specify non-existent python executable so execution of addon fails
     args = ['--addon=naming', '--addon-python=python5.x', test_file]
 
     _, _, stderr = cppcheck(args)
     ec = 1 if os.name == 'nt' else 127
     assert stderr == "{}:0:0: error: Bailing out from analysis: Checking file failed: Failed to execute addon 'naming' - exitcode is {} [internalError]\n\n^\n".format(test_file, ec)
+
+
+def test_execute_addon_failure_json_notexist(tmpdir):
+    # specify non-existent python executable so execution of addon fails
+    addon_json = os.path.join(tmpdir, 'addon.json')
+    with open(addon_json, 'wt') as f:
+        f.write(json.dumps({'executable': 'notexist'}))
+
+    test_file = os.path.join(tmpdir, 'test.cpp')
+    with open(test_file, 'wt') as f:
+        f.write("""
+                void f();
+                """)
+
+    args = [
+        '--addon={}'.format(addon_json),
+        test_file
+    ]
+
+    _, _, stderr = cppcheck(args)
+    ec = 1 if os.name == 'nt' else 127
+    assert stderr == "{}:0:0: error: Bailing out from analysis: Checking file failed: Failed to execute addon 'addon.json' - exitcode is {} [internalError]\n\n^\n".format(test_file, ec)
+
+
+def test_execute_addon_failure_json_ctu_notexist(tmpdir):
+    # specify non-existent python executable so execution of addon fails
+    addon_json = os.path.join(tmpdir, 'addon.json')
+    with open(addon_json, 'wt') as f:
+        f.write(json.dumps({
+            'executable': 'notexist',
+            'ctu': True
+        }))
+
+    test_file = os.path.join(tmpdir, 'test.cpp')
+    with open(test_file, 'wt') as f:
+        f.write("""
+                void f(); """)
+
+    args = [
+        '--template=simple',
+        '--addon={}'.format(addon_json),
+        test_file
+    ]
+
+    _, _, stderr = cppcheck(args)
+    ec = 1 if os.name == 'nt' else 127
+    print(stderr)
+    assert stderr.splitlines() == [
+        "{}:0:0: error: Bailing out from analysis: Checking file failed: Failed to execute addon 'addon.json' - exitcode is {} [internalError]".format(test_file, ec),
+        ":0:0: error: Bailing out from analysis: Whole program analysis failed: Failed to execute addon 'addon.json' - exitcode is {} [internalError]".format(ec)
+    ]
 
 
 def test_execute_addon_file0(tmpdir):
@@ -2466,3 +2517,159 @@ void f()
     assert stderr.splitlines() == [
         '{}:7:16: error: Null pointer dereference: (int*)0 [nullPointer]'.format(test_file)
     ]
+
+
+def test_dump_check_config(tmp_path):  # #13432
+    test_file = tmp_path / 'test.c'
+    with open(test_file, 'wt') as f:
+        f.write("""
+void f() {}
+""")
+
+    args = [
+        '-q',
+        '--template=simple',
+        '--dump',
+        '--check-config',
+        str(test_file)
+    ]
+    exitcode, stdout, stderr = cppcheck(args)
+    assert exitcode == 0, stdout
+    assert stdout == ''
+    assert stderr == ''
+
+    # no dump file should have been generated
+    assert not os.path.exists(str(test_file) + '.dump')
+
+
+# TODO: remove all overrides when fully fixed
+def __test_inline_suppr(tmp_path, extra_args):  # #13087
+    test_file = tmp_path / 'test.c'
+    with open(test_file, 'wt') as f:
+        f.write("""
+void f() {
+  // cppcheck-suppress memleak
+}
+""")
+
+    args = [
+        '-q',
+        '--template=simple',
+        '--enable=information',
+        '--inline-suppr',
+        str(test_file)
+    ]
+
+    args += extra_args
+
+    exitcode, stdout, stderr, = cppcheck(args)
+    assert exitcode == 0, stdout
+    assert stdout == ''
+    assert stderr.splitlines() == [
+        '{}:4:0: information: Unmatched suppression: memleak [unmatchedSuppression]'.format(test_file)
+    ]
+
+
+def test_inline_suppr(tmp_path):
+    __test_inline_suppr(tmp_path, ['-j1'])
+
+
+def test_inline_suppr_j(tmp_path):
+    __test_inline_suppr(tmp_path, ['-j2'])
+
+
+def test_inline_suppr_builddir(tmp_path):
+    build_dir = tmp_path / 'b1'
+    os.mkdir(build_dir)
+    __test_inline_suppr(tmp_path, ['--cppcheck-build-dir={}'.format(build_dir), '-j1'])
+
+
+@pytest.mark.xfail(strict=True)
+def test_inline_suppr_builddir_cached(tmp_path):
+    build_dir = tmp_path / 'b1'
+    os.mkdir(build_dir)
+    __test_inline_suppr(tmp_path, ['--cppcheck-build-dir={}'.format(build_dir), '-j1'])
+    __test_inline_suppr(tmp_path, ['--cppcheck-build-dir={}'.format(build_dir), '-j1'])
+
+
+def test_inline_suppr_builddir_j(tmp_path):
+    build_dir = tmp_path / 'b1'
+    os.mkdir(build_dir)
+    __test_inline_suppr(tmp_path, ['--cppcheck-build-dir={}'.format(build_dir), '-j2'])
+
+
+def test_inline_suppr_builddir_j_cached(tmp_path):
+    build_dir = tmp_path / 'b1'
+    os.mkdir(build_dir)
+    __test_inline_suppr(tmp_path, ['--cppcheck-build-dir={}'.format(build_dir), '-j2'])
+    __test_inline_suppr(tmp_path, ['--cppcheck-build-dir={}'.format(build_dir), '-j2'])
+
+
+def test_duplicate_suppression(tmp_path):
+    test_file = tmp_path / 'file.cpp'
+    with open(test_file, 'wt'):
+        pass
+
+    args = [
+        '-q',
+        '--suppress=uninitvar',
+        '--suppress=uninitvar',
+        str(test_file)
+    ]
+
+    exitcode, stdout, stderr = cppcheck(args)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == [
+        "cppcheck: error: suppression 'uninitvar' already exists"
+    ]
+    assert stderr == ''
+
+
+def test_duplicate_suppressions_list(tmp_path):
+    suppr_file = tmp_path / 'suppressions'
+    with open(suppr_file, 'wt') as f:
+        f.write('''
+uninitvar
+uninitvar
+''')
+
+    test_file = tmp_path / 'file.cpp'
+    with open(test_file, 'wt'):
+        pass
+
+    args = [
+        '-q',
+        '--suppressions-list={}'.format(suppr_file),
+        str(test_file)
+    ]
+
+    exitcode, stdout, stderr = cppcheck(args)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == [
+        "cppcheck: error: suppression 'uninitvar' already exists"
+    ]
+    assert stderr == ''
+
+
+def test_duplicate_suppressions_mixed(tmp_path):
+    suppr_file = tmp_path / 'suppressions'
+    with open(suppr_file, 'wt') as f:
+        f.write('uninitvar')
+
+    test_file = tmp_path / 'file.cpp'
+    with open(test_file, 'wt'):
+        pass
+
+    args = [
+        '-q',
+        '--suppress=uninitvar',
+        '--suppressions-list={}'.format(suppr_file),
+        str(test_file)
+    ]
+
+    exitcode, stdout, stderr = cppcheck(args)
+    assert exitcode == 1, stdout
+    assert stdout.splitlines() == [
+        "cppcheck: error: suppression 'uninitvar' already exists"
+    ]
+    assert stderr == ''

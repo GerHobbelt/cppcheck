@@ -94,7 +94,7 @@ namespace ValueFlow
         return true;
     }
 
-    long long truncateIntValue(long long value, size_t value_size, const ValueType::Sign dst_sign)
+    MathLib::bigint truncateIntValue(MathLib::bigint value, size_t value_size, const ValueType::Sign dst_sign)
     {
         if (value_size == 0)
             return value;
@@ -335,7 +335,7 @@ namespace ValueFlow
         if (value.isFloatValue()) {
             value.valueType = Value::ValueType::INT;
             if (value.floatValue >= std::numeric_limits<int>::min() && value.floatValue <= std::numeric_limits<int>::max()) {
-                value.intvalue = value.floatValue;
+                value.intvalue = static_cast<MathLib::bigint>(value.floatValue);
             } else { // don't perform UB
                 value.intvalue = 0;
             }

@@ -5606,6 +5606,62 @@ private:
               "    } while (0);\n"
               "}\n");
         ASSERT_EQUALS("[test.cpp:4]: (style) Statements following 'break' will never be executed.\n", errout_str());
+
+        check("void f() {\n" // #12244
+              "    {\n"
+              "        std::cout << \"x\";\n"
+              "        return;\n"
+              "    }\n"
+              "    std::cout << \"y\";\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:6]: (style) Statements following 'return' will never be executed.\n", errout_str());
+
+        check("void f() {\n"
+              "    {\n"
+              "        std::cout << \"x\";\n"
+              "        exit(1);\n"
+              "    }\n"
+              "    std::cout << \"y\";\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:6]: (style) Statements following noreturn function 'exit()' will never be executed.\n", errout_str());
+
+        check("int f() {\n" // #13475
+              "    { return 0; };\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        check("int f(int i) {\n" // #13478
+              "    int x = 0;\n"
+              "    switch (i) {\n"
+              "        { case 0: x = 5; break; }\n"
+              "        { case 1: x = 7; break; }\n"
+              "    }\n"
+              "    return x;\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        check("int f(int c) {\n"
+              "    switch (c) {\n"
+              "    case '\\n':\n"
+              "    { return 1; };\n"
+              "    default:\n"
+              "    { return c; };\n"
+              "    }\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        check("int main(int argc, char *argv[]) {\n" // #11
+              "    switch (argc) {\n"
+              "        case 0: {\n"
+              "            return 1;\n"
+              "        }\n"
+              "        break;\n"
+              "    }\n"
+              "    return 0;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:6]: (style) Consecutive return, break, continue, goto or throw statements are unnecessary.\n"
+                      "[test.cpp:1]: (style) Parameter 'argv' can be declared as const array\n",
+                      errout_str());
     }
 
     void redundantContinue() {
@@ -5626,6 +5682,21 @@ private:
               "    } while (i < 10);\n"
               "}\n");
         ASSERT_EQUALS("[test.cpp:5]: (style) 'continue' is redundant since it is the last statement in a loop.\n", errout_str());
+
+        check("int f() {\n" // #13475
+              "    { return 0; };\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        check("int f(int i) {\n" // #13478
+              "    int x = 0;\n"
+              "    switch (i) {\n"
+              "        { case 0: x = 5; break; }\n"
+              "        { case 1: x = 7; break; }\n"
+              "    }\n"
+              "    return x;\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
     }
 
 
@@ -6915,6 +6986,12 @@ private:
               "    enum { Four = 4 };\n"
               "    static_assert(Four == 4, \"\");\n"
               "}");
+        ASSERT_EQUALS("", errout_str());
+
+        check("void f() {\n"
+              "    enum { Four = 4 };\n"
+              "    _Static_assert(Four == 4, \"\");\n"
+              "}", false);
         ASSERT_EQUALS("", errout_str());
 
         check("void f() {\n"

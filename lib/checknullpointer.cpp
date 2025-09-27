@@ -98,7 +98,7 @@ void CheckNullPointer::parseFunctionCall(const Token &tok, std::list<const Token
         const bool scan = library.formatstr_scan(&tok);
 
         bool percent = false;
-        for (std::string::const_iterator i = formatString.cbegin(); i != formatString.cend(); ++i) {
+        for (auto i = formatString.cbegin(); i != formatString.cend(); ++i) {
             if (*i == '%') {
                 percent = !percent;
             } else if (percent) {
@@ -681,4 +681,20 @@ bool CheckNullPointer::analyseWholeProgram(const CTU::FileInfo *ctu, const std::
     }
 
     return foundErrors;
+}
+
+void CheckNullPointer::runChecks(const Tokenizer &tokenizer, ErrorLogger *errorLogger)
+{
+    CheckNullPointer checkNullPointer(&tokenizer, &tokenizer.getSettings(), errorLogger);
+    checkNullPointer.nullPointer();
+    checkNullPointer.arithmetic();
+    checkNullPointer.nullConstantDereference();
+}
+
+void CheckNullPointer::getErrorMessages(ErrorLogger *errorLogger, const Settings *settings) const
+{
+    CheckNullPointer c(nullptr, settings, errorLogger);
+    c.nullPointerError(nullptr, "pointer", nullptr, false);
+    c.pointerArithmeticError(nullptr, nullptr, false);
+    c.redundantConditionWarning(nullptr, nullptr, nullptr, false);
 }

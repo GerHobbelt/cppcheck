@@ -3692,10 +3692,10 @@ private:
     void simplifyFunctionPointers3() {
         // Related with ticket #2873
         const char code[] = "void f() {\n"
-                            "(void)(xy(*p)(0);)"
+                            "(void)(xy(*p)(0));"
                             "\n}";
         const char expected[] = "void f ( ) {\n"
-                                "( void ) ( xy ( * p ) ( 0 ) ; )\n"
+                                "( void ) ( xy ( * p ) ( 0 ) ) ;\n"
                                 "}";
         ASSERT_EQUALS(expected, tokenizeAndStringify(code));
     }
@@ -6218,6 +6218,13 @@ private:
                "        (kInput & (uint64_t(1) << 63)) ? 63 : 64;\n"
                "};\n";
         ASSERT_NO_THROW(tokenizeAndStringify(code));
+
+        code = "void f(const std::vector<int>& v) {\n" // #12569
+               "    ::std::for_each(v.begin(), v.end(), [](int i) {\n"
+               "        int j(i ? i : 5);\n"
+               "    });\n"
+               "}\n";
+        ASSERT_NO_THROW(tokenizeAndStringify(code));
     }
 
     void astnewdelete() const {
@@ -6251,6 +6258,8 @@ private:
         ASSERT_EQUALS("pint5[{new=", testAst("p = new int* [5]{};"));
         ASSERT_EQUALS("pint5[0{new=", testAst("p = new int* [5]{ 0 };"));
         ASSERT_EQUALS("sSint(new::(new=", testAst("s = new S(::new int());")); // #12502
+        ASSERT_EQUALS("sS(new::=", testAst("s = ::new (ptr) S();")); // #12552
+        ASSERT_EQUALS("pdelete::return", testAst("return ::delete p;"));
 
         // placement new
         ASSERT_EQUALS("X12,3,(new ab,c,", testAst("new (a,b,c) X(1,2,3);"));
@@ -6541,6 +6550,7 @@ private:
         ASSERT_EQUALS("PT.(", testAst("P->~T();"));  // <- The "T" token::function() will be a destructor
         ASSERT_EQUALS("double&(4[", testAst("void f(double(&)[4]) {}"));
         ASSERT_EQUALS("voidu*", testAst("int* g ( void* (f) (void*), void* u);")); // #12475
+        ASSERT_EQUALS("f::(", testAst("::f();")); // #12544
     }
 
     void asttemplate() { // uninstantiated templates will have <,>,etc..
@@ -7082,6 +7092,9 @@ private:
                             "There is an unknown macro here somewhere. Configuration is required. If MACRO is a macro then please configure it.");
 
         ASSERT_THROW(tokenizeAndStringify("{ for (()()) }"), InternalError); // #11643
+
+        ASSERT_NO_THROW(tokenizeAndStringify("S* g = ::new(ptr) S();")); // #12552
+        ASSERT_NO_THROW(tokenizeAndStringify("void f(int* p) { return ::delete p; }"));
     }
 
 
@@ -7588,8 +7601,9 @@ private:
     }
 
     void checkConfiguration() {
-        ASSERT_THROW(checkConfig("void f() { DEBUG(x();y()); }"), InternalError);
-        ASSERT_EQUALS("[test.cpp:1]: (information) Ensure that 'DEBUG' is defined either using -I, --include or -D.\n", errout_str());
+        ASSERT_THROW_EQUALS(checkConfig("void f() { DEBUG(x();y()); }"),
+                            InternalError,
+                            "There is an unknown macro here somewhere. Configuration is required. If DEBUG is a macro then please configure it.");
     }
 
     void unknownType() { // #8952

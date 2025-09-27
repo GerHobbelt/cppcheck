@@ -35,10 +35,11 @@ public:
 private:
     const ErrorMessage::FileLocation fooCpp5{"foo.cpp", 5, 1};
     const ErrorMessage::FileLocation barCpp8{"bar.cpp", 8, 1};
+    const ErrorMessage::FileLocation barCpp8_i{"bar.cpp", "ä", 8, 1};
 
     void run() override {
         TEST_CASE(PatternSearchReplace);
-        TEST_CASE(FileLocationDefaults);
+        TEST_CASE(FileLocationConstruct);
         TEST_CASE(FileLocationSetFile);
         TEST_CASE(ErrorMessageConstruct);
         TEST_CASE(ErrorMessageConstructLocations);
@@ -101,17 +102,21 @@ private:
         TestPatternSearchReplace(idPlaceholder, longIdValue);
     }
 
-    void FileLocationDefaults() const {
-        ErrorMessage::FileLocation loc;
-        ASSERT_EQUALS("", loc.getfile());
-        ASSERT_EQUALS(0, loc.line);
+    void FileLocationConstruct() const {
+        const ErrorMessage::FileLocation loc("foo.cpp", 1, 2);
+        ASSERT_EQUALS("foo.cpp", loc.getOrigFile());
+        ASSERT_EQUALS("foo.cpp", loc.getfile());
+        ASSERT_EQUALS(1, loc.line);
+        ASSERT_EQUALS(2, loc.column);
     }
 
     void FileLocationSetFile() const {
-        ErrorMessage::FileLocation loc;
+        ErrorMessage::FileLocation loc("foo1.cpp", 0, 0);
         loc.setfile("foo.cpp");
+        ASSERT_EQUALS("foo1.cpp", loc.getOrigFile());
         ASSERT_EQUALS("foo.cpp", loc.getfile());
         ASSERT_EQUALS(0, loc.line);
+        ASSERT_EQUALS(0, loc.column);
     }
 
     void ErrorMessageConstruct() const {
@@ -231,8 +236,7 @@ private:
     }
 
     void ToXmlV2Locations() const {
-        std::list<ErrorMessage::FileLocation> locs = { fooCpp5, barCpp8 };
-        locs.back().setinfo("ä");
+        std::list<ErrorMessage::FileLocation> locs = { fooCpp5, barCpp8_i };
         ErrorMessage msg(std::move(locs), emptyString, Severity::error, "Programming error.\nVerbose error", "errorId", Certainty::normal);
         std::string header("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<results version=\"2\">\n");
         header += "    <cppcheck version=\"";
@@ -427,13 +431,10 @@ private:
     }
 
     void SerializeFileLocation() const {
-        ErrorMessage::FileLocation loc1(":/,;", 654, 33);
+        ErrorMessage::FileLocation loc1(":/,;", "abcd:/,", 654, 33);
         loc1.setfile("[]:;,()");
-        loc1.setinfo("abcd:/,");
 
-        std::list<ErrorMessage::FileLocation> locs{std::move(loc1)};
-
-        ErrorMessage msg(std::move(locs), emptyString, Severity::error, "Programming error", "errorId", Certainty::inconclusive);
+        ErrorMessage msg({std::move(loc1)}, emptyString, Severity::error, "Programming error", "errorId", Certainty::inconclusive);
 
         const std::string msg_str = msg.serialize();
         ASSERT_EQUALS("7 errorId"

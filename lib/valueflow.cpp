@@ -132,9 +132,9 @@ static void bailoutInternal(const std::string& type, const TokenList &tokenlist,
 {
     if (function.find("operator") != std::string::npos)
         function = "(valueFlow)";
-    std::list<ErrorMessage::FileLocation> callstack(1, ErrorMessage::FileLocation(tok, &tokenlist));
+    ErrorMessage::FileLocation loc(tok, &tokenlist);
     const std::string location = Path::stripDirectoryPart(file) + ":" + std::to_string(line) + ":";
-    ErrorMessage errmsg(std::move(callstack), tokenlist.getSourceFilePath(), Severity::debug,
+    ErrorMessage errmsg({std::move(loc)}, tokenlist.getSourceFilePath(), Severity::debug,
                         (file.empty() ? "" : location) + function + " bailout: " + what, type, Certainty::normal);
     errorLogger->reportErr(errmsg);
 }
@@ -3069,7 +3069,7 @@ struct ValueFlowAnalyzer : Analyzer {
         if (d == Direction::Forward && a.isRead())
             setTokenValue(tok, *value, getSettings());
         if (a.isInconclusive())
-            lowerToInconclusive();
+            (void)lowerToInconclusive();
         if (a.isWrite() && tok->astParent()) {
             writeValue(value, tok, d);
         }
@@ -3815,7 +3815,7 @@ static bool isNotEqual(std::pair<const Token*, const Token*> x, const std::strin
 {
     TokenList tokenList(nullptr);
     std::istringstream istr(y);
-    tokenList.createTokens(istr, cpp ? Standards::Language::CPP : Standards::Language::C);
+    tokenList.createTokens(istr, cpp ? Standards::Language::CPP : Standards::Language::C); // TODO: check result?
     return isNotEqual(x, std::make_pair(tokenList.front(), tokenList.back()));
 }
 static bool isNotEqual(std::pair<const Token*, const Token*> x, const ValueType* y, bool cpp)
@@ -9404,8 +9404,7 @@ struct ValueFlowPassRunner {
         }
         if (state.settings.debugwarnings) {
             if (n == 0 && values != getTotalValues()) {
-                ErrorMessage::FileLocation loc;
-                loc.setfile(state.tokenlist.getFiles()[0]);
+                ErrorMessage::FileLocation loc(state.tokenlist.getFiles()[0], 0, 0);
                 ErrorMessage errmsg({std::move(loc)},
                                     emptyString,
                                     Severity::debug,

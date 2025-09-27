@@ -404,10 +404,9 @@ static bool reportClangErrors(std::istream &is, const std::function<void(const E
         const std::string msg = line.substr(line.find(':', pos3+1) + 2);
 
         const std::string locFile = Path::toNativeSeparators(filename);
-        ErrorMessage::FileLocation loc;
-        loc.setfile(locFile);
-        loc.line = strToInt<int>(linenr);
-        loc.column = strToInt<unsigned int>(colnr);
+        const int line_i = strToInt<int>(linenr);
+        const int column = strToInt<unsigned int>(colnr);
+        ErrorMessage::FileLocation loc(locFile, line_i, column);
         ErrorMessage errmsg({std::move(loc)},
                             locFile,
                             Severity::error,
@@ -687,10 +686,9 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
             if (mSettings.relativePaths)
                 file = Path::getRelativePath(file, mSettings.basePaths);
 
-            const ErrorMessage::FileLocation loc1(file, output.location.line, output.location.col);
-            std::list<ErrorMessage::FileLocation> callstack(1, loc1);
+            ErrorMessage::FileLocation loc1(file, output.location.line, output.location.col);
 
-            ErrorMessage errmsg(std::move(callstack),
+            ErrorMessage errmsg({std::move(loc1)},
                                 "",
                                 Severity::error,
                                 output.msg,
@@ -821,20 +819,17 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
 
 #ifdef HAVE_RULES
         // Run define rules on raw code
-        const auto rules_it = std::find_if(mSettings.rules.cbegin(), mSettings.rules.cend(), [](const Settings::Rule& rule) {
-            return rule.tokenlist == "define";
-        });
-        if (rules_it != mSettings.rules.cend()) {
+        if (hasRule("define")) {
             std::string code;
-            const std::list<Directive> &directives = preprocessor.getDirectives();
-            for (const Directive &dir : directives) {
+            for (const Directive &dir : preprocessor.getDirectives()) {
                 if (startsWith(dir.str,"#define ") || startsWith(dir.str,"#include "))
                     code += "#line " + std::to_string(dir.linenr) + " \"" + dir.file + "\"\n" + dir.str + '\n';
             }
-            Tokenizer tokenizer2(mSettings, this);
+            TokenList tokenlist(&mSettings);
             std::istringstream istr2(code);
-            tokenizer2.list.createTokens(istr2, Path::identify(*files.begin()));
-            executeRules("define", tokenizer2);
+            // TODO: asserts when file has unknown extension
+            tokenlist.createTokens(istr2, Path::identify(*files.begin())); // TODO: check result?
+            executeRules("define", tokenlist);
         }
 #endif
 
@@ -926,8 +921,10 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
                 if (mSettings.checkConfiguration)
                     continue;
 
-                // Check raw tokens
-                checkRawTokens(tokenizer);
+#ifdef HAVE_RULES
+                // Execute rules for "raw" code
+                executeRules("raw", tokenizer.list);
+#endif
 
                 // Simplify tokens into normal form, skip rest of iteration if failed
                 if (!tokenizer.simplifyTokens1(mCurrentConfig))
@@ -961,13 +958,6 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
 
                 // Check normal tokens
                 checkNormalTokens(tokenizer);
-
-#ifdef HAVE_RULES
-                // handling of "simple" rules has been removed.
-                if (hasRule("simple"))
-                    throw InternalError(nullptr, "Handling of \"simple\" rules has been removed in Cppcheck. Use --addon instead.");
-#endif
-
             } catch (const simplecpp::Output &o) {
                 // #error etc during preprocessing
                 configurationError.push_back((mCurrentConfig.empty() ? "\'\'" : mCurrentConfig) + " : [" + o.location.file() + ':' + std::to_string(o.location.line) + "] " + o.msg);
@@ -979,10 +969,9 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
                     if (mSettings.relativePaths)
                         file = Path::getRelativePath(file, mSettings.basePaths);
 
-                    const ErrorMessage::FileLocation loc1(file, o.location.line, o.location.col);
-                    std::list<ErrorMessage::FileLocation> callstack(1, loc1);
+                    ErrorMessage::FileLocation loc1(file, o.location.line, o.location.col);
 
-                    ErrorMessage errmsg(std::move(callstack),
+                    ErrorMessage errmsg({std::move(loc1)},
                                         filename,
                                         Severity::error,
                                         o.msg,
@@ -1010,8 +999,7 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
                 msg += '\n' + s;
 
             const std::string locFile = Path::toNativeSeparators(filename);
-            ErrorMessage::FileLocation loc;
-            loc.setfile(locFile);
+            ErrorMessage::FileLocation loc(locFile, 0, 0);
             ErrorMessage errmsg({std::move(loc)},
                                 locFile,
                                 Severity::information,
@@ -1064,10 +1052,9 @@ void CppCheck::internalError(const std::string &filename, const std::string &msg
 {
     const std::string fullmsg("Bailing out from analysis: " + msg);
 
-    const ErrorMessage::FileLocation loc1(filename, 0, 0);
-    std::list<ErrorMessage::FileLocation> callstack(1, loc1);
+    ErrorMessage::FileLocation loc1(filename, 0, 0);
 
-    ErrorMessage errmsg(std::move(callstack),
+    ErrorMessage errmsg({std::move(loc1)},
                         emptyString,
                         Severity::error,
                         fullmsg,
@@ -1075,19 +1062,6 @@ void CppCheck::internalError(const std::string &filename, const std::string &msg
                         Certainty::normal);
 
     mErrorLogger.reportErr(errmsg);
-}
-
-//---------------------------------------------------------------------------
-// CppCheck - A function that checks a raw token list
-//---------------------------------------------------------------------------
-void CppCheck::checkRawTokens(const Tokenizer &tokenizer)
-{
-#ifdef HAVE_RULES
-    // Execute rules for "raw" code
-    executeRules("raw", tokenizer);
-#else
-    (void)tokenizer;
-#endif
 }
 
 //---------------------------------------------------------------------------
@@ -1113,8 +1087,7 @@ void CppCheck::checkNormalTokens(const Tokenizer &tokenizer)
 
             if (maxTime > 0 && std::time(nullptr) > maxTime) {
                 if (mSettings.debugwarnings) {
-                    ErrorMessage::FileLocation loc;
-                    loc.setfile(tokenizer.list.getFiles()[0]);
+                    ErrorMessage::FileLocation loc(tokenizer.list.getFiles()[0], 0, 0);
                     ErrorMessage errmsg({std::move(loc)},
                                         emptyString,
                                         Severity::debug,
@@ -1175,7 +1148,7 @@ void CppCheck::checkNormalTokens(const Tokenizer &tokenizer)
     }
 
 #ifdef HAVE_RULES
-    executeRules("normal", tokenizer);
+    executeRules("normal", tokenizer.list);
 #endif
 }
 
@@ -1318,7 +1291,7 @@ static const char * pcreErrorCodeToString(const int pcreExecRet)
     return "";
 }
 
-void CppCheck::executeRules(const std::string &tokenlist, const Tokenizer &tokenizer)
+void CppCheck::executeRules(const std::string &tokenlist, const TokenList &list)
 {
     // There is no rule to execute
     if (!hasRule(tokenlist))
@@ -1326,7 +1299,7 @@ void CppCheck::executeRules(const std::string &tokenlist, const Tokenizer &token
 
     // Write all tokens in a string that can be parsed by pcre
     std::ostringstream ostr;
-    for (const Token *tok = tokenizer.tokens(); tok; tok = tok->next())
+    for (const Token *tok = list.front(); tok; tok = tok->next())
         ostr << " " << tok->str();
     const std::string str(ostr.str());
 
@@ -1406,21 +1379,20 @@ void CppCheck::executeRules(const std::string &tokenlist, const Tokenizer &token
             pos = (int)pos2;
 
             // determine location..
-            ErrorMessage::FileLocation loc;
-            loc.setfile(tokenizer.list.getSourceFilePath());
-            loc.line = 0;
+            std::string file = list.getSourceFilePath();
+            int line = 0;
 
             std::size_t len = 0;
-            for (const Token *tok = tokenizer.tokens(); tok; tok = tok->next()) {
+            for (const Token *tok = list.front(); tok; tok = tok->next()) {
                 len = len + 1U + tok->str().size();
                 if (len > pos1) {
-                    loc.setfile(tokenizer.list.getFiles().at(tok->fileIndex()));
-                    loc.line = tok->linenr();
+                    file = list.getFiles().at(tok->fileIndex());
+                    line = tok->linenr();
                     break;
                 }
             }
 
-            const std::list<ErrorMessage::FileLocation> callStack(1, loc);
+            ErrorMessage::FileLocation loc(file, line, 0);
 
             // Create error message
             std::string summary;
@@ -1428,7 +1400,7 @@ void CppCheck::executeRules(const std::string &tokenlist, const Tokenizer &token
                 summary = "found '" + str.substr(pos1, pos2 - pos1) + "'";
             else
                 summary = rule.summary;
-            const ErrorMessage errmsg(callStack, tokenizer.list.getSourceFilePath(), rule.severity, summary, rule.id, Certainty::normal);
+            const ErrorMessage errmsg({std::move(loc)}, list.getSourceFilePath(), rule.severity, summary, rule.id, Certainty::normal);
 
             // Report error
             reportErr(errmsg);
@@ -1500,8 +1472,8 @@ void CppCheck::executeAddons(const std::vector<std::string>& files, const std::s
                     std::string fileName = loc["file"].get<std::string>();
                     const int64_t lineNumber = loc["linenr"].get<int64_t>();
                     const int64_t column = loc["column"].get<int64_t>();
-                    const std::string info = loc["info"].get<std::string>();
-                    errmsg.callStack.emplace_back(std::move(fileName), info, lineNumber, column);
+                    std::string info = loc["info"].get<std::string>();
+                    errmsg.callStack.emplace_back(std::move(fileName), std::move(info), lineNumber, column);
                 }
             }
 
@@ -1570,7 +1542,7 @@ void CppCheck::tooManyConfigsError(const std::string &file, const int numberOfCo
 
     std::list<ErrorMessage::FileLocation> loclist;
     if (!file.empty()) {
-        loclist.emplace_back(file);
+        loclist.emplace_back(file, 0, 0);
     }
 
     std::ostringstream msg;
@@ -1606,7 +1578,7 @@ void CppCheck::purgedConfigurationMessage(const std::string &file, const std::st
 
     std::list<ErrorMessage::FileLocation> loclist;
     if (!file.empty()) {
-        loclist.emplace_back(file);
+        loclist.emplace_back(file, 0, 0);
     }
 
     ErrorMessage errmsg(std::move(loclist),

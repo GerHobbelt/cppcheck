@@ -1508,7 +1508,8 @@ bool TemplateSimplifier::getTemplateNamePositionTemplateClass(const Token *tok, 
 
 int TemplateSimplifier::getTemplateNamePosition(const Token *tok)
 {
-    assert(tok && tok->str() == ">");
+    if (!tok || tok->str() != ">")
+        syntaxError(tok);
 
     auto it = mTemplateNamePos.find(tok);
     if (!mSettings.debugtemplate && it != mTemplateNamePos.end()) {
@@ -2172,7 +2173,7 @@ void TemplateSimplifier::expandTemplate(
                             addNamespace(templateDeclaration, tok3);
                         }
                         mTokenList.addtoken(newName, tok3);
-                    } else if (!Token::Match(tok3->next(), ":|{|=|;|[|]"))
+                    } else if (!Token::Match(tok3->next(), "[:{=;[]),]"))
                         tok3->str(newName);
                     continue;
                 }
@@ -3163,8 +3164,7 @@ bool TemplateSimplifier::simplifyTemplateInstantiations(
 
         if (maxtime > 0 && std::time(nullptr) > maxtime) {
             if (mSettings.debugwarnings) {
-                ErrorMessage::FileLocation loc;
-                loc.setfile(mTokenList.getFiles()[0]);
+                ErrorMessage::FileLocation loc(mTokenList.getFiles()[0], 0, 0);
                 ErrorMessage errmsg({std::move(loc)},
                                     emptyString,
                                     Severity::debug,
@@ -3234,8 +3234,7 @@ bool TemplateSimplifier::simplifyTemplateInstantiations(
 
         if (maxtime > 0 && std::time(nullptr) > maxtime) {
             if (mSettings.debugwarnings) {
-                ErrorMessage::FileLocation loc;
-                loc.setfile(mTokenList.getFiles()[0]);
+                ErrorMessage::FileLocation loc(mTokenList.getFiles()[0], 0, 0);
                 ErrorMessage errmsg({std::move(loc)},
                                     emptyString,
                                     Severity::debug,

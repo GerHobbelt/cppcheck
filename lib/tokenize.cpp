@@ -1150,8 +1150,7 @@ void Tokenizer::simplifyTypedefCpp()
 
         if (maxTime > 0 && std::time(nullptr) > maxTime) {
             if (mSettings.debugwarnings) {
-                ErrorMessage::FileLocation loc;
-                loc.setfile(list.getFiles()[0]);
+                ErrorMessage::FileLocation loc(list.getFiles()[0], 0, 0);
                 ErrorMessage errmsg({std::move(loc)},
                                     emptyString,
                                     Severity::debug,
@@ -1254,9 +1253,8 @@ void Tokenizer::simplifyTypedefCpp()
         Token *namespaceEnd = nullptr;
 
         // check for invalid input
-        if (!tokOffset)
+        if (!tokOffset || tokOffset->isControlFlowKeyword())
             syntaxError(tok);
-
 
         if (tokOffset->str() == "::") {
             typeStart = tokOffset;
@@ -6268,6 +6266,8 @@ void Tokenizer::removeExtraTemplateKeywords()
                     templateName->isTemplate(true);
                     templateName = templateName->next();
                 }
+                if (!templateName)
+                    syntaxError(tok);
                 if (Token::Match(templateName->previous(), "operator %op%|(")) {
                     templateName->isTemplate(true);
                     if (templateName->str() == "(" && templateName->link())
@@ -8641,8 +8641,25 @@ void Tokenizer::findGarbageCode() const
             syntaxError(tok);
         if (Token::Match(tok, "==|!=|<=|>= %comp%") && tok->strAt(-1) != "operator")
             syntaxError(tok, tok->str() + " " + tok->strAt(1));
-        if (Token::simpleMatch(tok, ":: ::"))
+        if (Token::simpleMatch(tok, "::") && (!Token::Match(tok->next(), "%name%|*|~") ||
+                                              (tok->next()->isKeyword() && !Token::Match(tok->next(), "new|delete|operator"))))
             syntaxError(tok);
+        if (Token::Match(tok, "& %comp%|&&|%oror%|&|%or%") && tok->strAt(1) != ">")
+            syntaxError(tok);
+
+        if (tok->link() && Token::Match(tok, "[([]") && (!tok->tokAt(-1) || !tok->tokAt(-1)->isControlFlowKeyword())) {
+            const Token* const end = tok->link();
+            for (const Token* inner = tok->next(); inner != end; inner = inner->next()) {
+                if (inner->str() == "{")
+                    inner = inner->link();
+                else if (inner->str() == ";") {
+                    if (tok->tokAt(-1) && tok->tokAt(-1)->isUpperCaseName())
+                        unknownMacroError(tok->tokAt(-1));
+                    else
+                        syntaxError(inner);
+                }
+            }
+        }
     }
 
     // ternary operator without :

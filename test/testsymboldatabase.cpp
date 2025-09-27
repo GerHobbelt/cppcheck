@@ -447,6 +447,7 @@ private:
         TEST_CASE(enum13);
         TEST_CASE(enum14);
         TEST_CASE(enum15);
+        TEST_CASE(enum16);
 
         TEST_CASE(sizeOfType);
 
@@ -2530,7 +2531,7 @@ private:
                       "static const std::string j;\n"
                       "const std::string* k;\n"
                       "const char m[];\n"
-                      "void f(const char* const l;) {}");
+                      "void f(const char* const l) {}");
 
         ASSERT(db && db->variableList().size() == 6 && db->getVariableFromVarId(1) && db->getVariableFromVarId(2) && db->getVariableFromVarId(3) && db->getVariableFromVarId(4) && db->getVariableFromVarId(5));
 
@@ -5844,6 +5845,16 @@ private:
             const Token* r = Token::findsimplematch(q, "r");
             ASSERT(r && !r->isIncompleteVar());
         }
+        {
+            GET_SYMBOL_DB("void f() {\n" // #12571
+                          "    auto g = []() -> std::string* {\n"
+                          "        return nullptr;\n"
+                          "    };\n"
+                          "}\n");
+            ASSERT(db && errout_str().empty());
+            const Token* s = Token::findsimplematch(tokenizer.tokens(), "string");
+            ASSERT(s && !s->isIncompleteVar());
+        }
     }
 
     void enum1() {
@@ -6220,7 +6231,6 @@ private:
             std::advance(it, 2);
             const Enumerator* E0 = it->findEnumerator("E0");
             ASSERT(E0 && E0->value_known && E0->value == 0);
-            std::advance(it, 1);
             const Token* const e = Token::findsimplematch(tokenizer.tokens(), "E0 ;");
             ASSERT(e && e->enumerator());
             ASSERT_EQUALS(E0, e->enumerator());
@@ -6286,6 +6296,75 @@ private:
             const Token* tok = Token::findsimplematch(tokenizer.tokens(), "D ;");
             ASSERT(tok && tok->enumerator());
             ASSERT_EQUALS(D, tok->enumerator());
+        }
+    }
+
+    void enum16() {
+        {
+            GET_SYMBOL_DB("struct B {\n" // #12538
+                          "    struct S {\n"
+                          "        enum E { E0 = 0 };\n"
+                          "    };\n"
+                          "};\n"
+                          "struct D : B {\n"
+                          "    S::E f() const {\n"
+                          "        return S::E0;\n"
+                          "    }\n"
+                          "};\n");
+            ASSERT(db != nullptr);
+            auto it = db->scopeList.begin();
+            std::advance(it, 3);
+            const Enumerator* E0 = it->findEnumerator("E0");
+            ASSERT(E0 && E0->value_known && E0->value == 0);
+            const Token* const e = Token::findsimplematch(tokenizer.tokens(), "E0 ;");
+            ASSERT(e && e->enumerator());
+            ASSERT_EQUALS(E0, e->enumerator());
+        }
+        {
+            GET_SYMBOL_DB("namespace ns {\n" // #12567
+                          "    struct S1 {\n"
+                          "        enum E { E1 } e;\n"
+                          "    };\n"
+                          "    struct S2 {\n"
+                          "        static void f();\n"
+                          "    };\n"
+                          "}\n"
+                          "void ns::S2::f() {\n"
+                          "    S1 s;\n"
+                          "    s.e = S1::E1;\n"
+                          "}\n");
+            ASSERT(db != nullptr);
+            auto it = db->scopeList.begin();
+            std::advance(it, 3);
+            const Enumerator* E1 = it->findEnumerator("E1");
+            ASSERT(E1 && E1->value_known && E1->value == 0);
+            const Token* const e = Token::findsimplematch(tokenizer.tokens(), "E1 ;");
+            ASSERT(e && e->enumerator());
+            ASSERT_EQUALS(E1, e->enumerator());
+        }
+        {
+            GET_SYMBOL_DB("namespace N {\n"
+                          "    struct S1 {\n"
+                          "        enum E { E1 } e;\n"
+                          "    };\n"
+                          "    namespace O {\n"
+                          "        struct S2 {\n"
+                          "            static void f();\n"
+                          "        };\n"
+                          "    }\n"
+                          "}\n"
+                          "void N::O::S2::f() {\n"
+                          "    S1 s;\n"
+                          "    s.e = S1::E1;\n"
+                          "}\n");
+            ASSERT(db != nullptr);
+            auto it = db->scopeList.begin();
+            std::advance(it, 3);
+            const Enumerator* E1 = it->findEnumerator("E1");
+            ASSERT(E1 && E1->value_known && E1->value == 0);
+            const Token* const e = Token::findsimplematch(tokenizer.tokens(), "E1 ;");
+            ASSERT(e && e->enumerator());
+            ASSERT_EQUALS(E1, e->enumerator());
         }
     }
 

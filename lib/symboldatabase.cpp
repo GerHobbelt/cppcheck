@@ -1554,6 +1554,9 @@ void SymbolDatabase::createSymbolDatabaseIncompleteVars()
                 parent = parent->astParent();
             if (Token::simpleMatch(parent, "new"))
                 continue;
+            // trailing return type
+            if (Token::simpleMatch(ftok, ".") && ftok->originalName() == "->" && Token::Match(ftok->tokAt(-1), "[])]"))
+                continue;
         }
         tok->isIncompleteVar(true);
     }
@@ -5209,6 +5212,21 @@ const Token * Scope::addEnum(const Token * tok)
     return tok2;
 }
 
+static const Scope* findEnumScopeInBase(const Scope* scope, const std::string& tokStr)
+{
+    if (scope->definedType) {
+        const std::vector<Type::BaseInfo>& derivedFrom = scope->definedType->derivedFrom;
+        for (const Type::BaseInfo& i : derivedFrom) {
+            const Type *derivedFromType = i.type;
+            if (derivedFromType && derivedFromType->classScope) {
+                if (const Scope* enumScope = derivedFromType->classScope->findRecordInNestedList(tokStr))
+                    return enumScope;
+            }
+        }
+    }
+    return nullptr;
+}
+
 const Enumerator * SymbolDatabase::findEnumerator(const Token * tok, std::set<std::string>& tokensThatAreNotEnumeratorValues) const
 {
     if (tok->isKeyword())
@@ -5231,8 +5249,6 @@ const Enumerator * SymbolDatabase::findEnumerator(const Token * tok, std::set<st
         if (tok1->strAt(-1) == "::")
             scope = &scopeList.front();
         else {
-            // FIXME search base class here
-
             const Scope* temp = nullptr;
             if (scope)
                 temp = scope->findRecordInNestedList(tok1->str());
@@ -5240,8 +5256,16 @@ const Enumerator * SymbolDatabase::findEnumerator(const Token * tok, std::set<st
             while (scope && scope->nestedIn) {
                 if (!temp)
                     temp = scope->nestedIn->findRecordInNestedList(tok1->str());
-                if (!temp && scope->functionOf)
+                if (!temp && scope->functionOf) {
                     temp = scope->functionOf->findRecordInNestedList(tok1->str());
+                    const Scope* nested = scope->functionOf->nestedIn;
+                    while (!temp && nested) {
+                        temp = nested->findRecordInNestedList(tok1->str());
+                        nested = nested->nestedIn;
+                    }
+                }
+                if (!temp)
+                    temp = findEnumScopeInBase(scope, tok1->str());
                 if (temp) {
                     scope = temp;
                     break;
@@ -7583,7 +7607,7 @@ void SymbolDatabase::setValueTypeInTokenList(bool reportDebugWarnings, Token *to
                     ValueType valuetype;
                     TokenList tokenList(&mSettings);
                     std::istringstream istr(typestr+";");
-                    tokenList.createTokens(istr, tok->isCpp() ? Standards::Language::CPP : Standards::Language::C);
+                    tokenList.createTokens(istr, tok->isCpp() ? Standards::Language::CPP : Standards::Language::C); // TODO: check result?
                     tokenList.simplifyStdType();
                     if (parsedecl(tokenList.front(), &valuetype, mDefaultSignedness, mSettings)) {
                         valuetype.originalTypeName = typestr;

@@ -19,7 +19,6 @@
 #include "cmdlinelogger.h"
 #include "cmdlineparser.h"
 #include "config.h"
-#include "cppcheckexecutor.h"
 #include "errorlogger.h"
 #include "errortypes.h"
 #include "helpers.h"
@@ -208,6 +207,11 @@ private:
         TEST_CASE(maxConfigsMissingCount);
         TEST_CASE(maxConfigsInvalid);
         TEST_CASE(maxConfigsTooSmall);
+        TEST_CASE(outputFormatSarif);
+        TEST_CASE(outputFormatXml);
+        TEST_CASE(outputFormatOther);
+        TEST_CASE(outputFormatImplicitPlist);
+        TEST_CASE(outputFormatImplicitXml);
         TEST_CASE(premiumOptions1);
         TEST_CASE(premiumOptions2);
         TEST_CASE(premiumOptions3);
@@ -319,6 +323,8 @@ private:
         TEST_CASE(loadAverageNotSupported);
 #endif
         TEST_CASE(maxCtuDepth);
+        TEST_CASE(maxCtuDepth2);
+        TEST_CASE(maxCtuDepthLimit);
         TEST_CASE(maxCtuDepthInvalid);
         TEST_CASE(performanceValueflowMaxTime);
         TEST_CASE(performanceValueflowMaxTimeInvalid);
@@ -1247,6 +1253,41 @@ private:
         ASSERT_EQUALS("cppcheck: error: argument to '--max-configs=' must be greater than 0.\n", logger->str());
     }
 
+    void outputFormatSarif() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--output-format=sarif", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS_ENUM(Settings::OutputFormat::sarif, settings->outputFormat);
+    }
+
+    void outputFormatXml() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--output-format=xml", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS_ENUM(Settings::OutputFormat::xml, settings->outputFormat);
+    }
+
+    void outputFormatOther() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--output-format=text", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Fail, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS("cppcheck: error: argument to '--output-format=' must be 'sarif' or 'xml'.\n", logger->str());
+    }
+
+    void outputFormatImplicitPlist() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--plist-output=.", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS_ENUM(Settings::OutputFormat::plist, settings->outputFormat);
+    }
+
+    void outputFormatImplicitXml() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--xml", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS_ENUM(Settings::OutputFormat::xml, settings->outputFormat);
+    }
+
     void premiumOptions1() {
         REDIRECT;
         asPremium();
@@ -1768,10 +1809,10 @@ private:
 
     void xmlverunknown() {
         REDIRECT;
-        const char * const argv[] = {"cppcheck", "--xml", "--xml-version=3", "file.cpp"};
+        const char * const argv[] = {"cppcheck", "--xml", "--xml-version=4", "file.cpp"};
         // FAils since unknown XML format version
         ASSERT_EQUALS_ENUM(CmdLineParser::Result::Fail, parser->parseFromArgs(4, argv));
-        ASSERT_EQUALS("cppcheck: error: '--xml-version' can only be 2.\n", logger->str());
+        ASSERT_EQUALS("cppcheck: error: '--xml-version' can only be 2 or 3.\n", logger->str());
     }
 
     void xmlverinvalid() {
@@ -1911,28 +1952,25 @@ private:
     void exceptionhandling() {
         REDIRECT;
         const char * const argv[] = {"cppcheck", "--exception-handling", "file.cpp"};
-        CppCheckExecutor::setExceptionOutput(stderr);
         ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(3, argv));
         ASSERT(settings->exceptionHandling);
-        ASSERT_EQUALS(stderr, CppCheckExecutor::getExceptionOutput());
+        ASSERT_EQUALS(stdout, settings->exceptionOutput);
     }
 
     void exceptionhandling2() {
         REDIRECT;
         const char * const argv[] = {"cppcheck", "--exception-handling=stderr", "file.cpp"};
-        CppCheckExecutor::setExceptionOutput(stdout);
         ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(3, argv));
         ASSERT(settings->exceptionHandling);
-        ASSERT_EQUALS(stderr, CppCheckExecutor::getExceptionOutput());
+        ASSERT_EQUALS(stderr, settings->exceptionOutput);
     }
 
     void exceptionhandling3() {
         REDIRECT;
         const char * const argv[] = {"cppcheck", "--exception-handling=stdout", "file.cpp"};
-        CppCheckExecutor::setExceptionOutput(stderr);
         ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(3, argv));
         ASSERT(settings->exceptionHandling);
-        ASSERT_EQUALS(stdout, CppCheckExecutor::getExceptionOutput());
+        ASSERT_EQUALS(stdout, settings->exceptionOutput);
     }
 
     void exceptionhandlingInvalid() {
@@ -2075,9 +2113,24 @@ private:
 
     void maxCtuDepth() {
         REDIRECT;
+        const char * const argv[] = {"cppcheck", "--max-ctu-depth=5", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS(5, settings->maxCtuDepth);
+    }
+
+    void maxCtuDepth2() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--max-ctu-depth=10", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS(10, settings->maxCtuDepth);
+    }
+
+    void maxCtuDepthLimit() {
+        REDIRECT;
         const char * const argv[] = {"cppcheck", "--max-ctu-depth=12", "file.cpp"};
         ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(3, argv));
-        ASSERT_EQUALS(12, settings->maxCtuDepth);
+        ASSERT_EQUALS(10, settings->maxCtuDepth);
+        ASSERT_EQUALS("cppcheck: --max-ctu-depth is being capped at 10. This limitation will be removed in a future Cppcheck version.\n", logger->str());
     }
 
     void maxCtuDepthInvalid() {

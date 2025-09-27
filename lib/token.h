@@ -873,6 +873,8 @@ private:
     static int multiCompare(const Token *tok, const char *haystack, nonneg int varid);
 
 public:
+    const std::string& fileName() const;
+
     nonneg int fileIndex() const {
         return mImpl->mFileIndex;
     }
@@ -968,16 +970,19 @@ public:
     }
 
     /**
-     * For debugging purposes, prints token and all tokens
-     * followed by it.
+     * For debugging purposes, prints token and all tokens followed by it.
+     */
+    void printOut() const;
+
+    /**
+     * For debugging purposes, prints token and all tokens followed by it.
      * @param title Title for the printout or use default parameter or 0
      * for no title.
      */
     void printOut(std::ostream& out, const char *title = nullptr) const;
 
     /**
-     * For debugging purposes, prints token and all tokens
-     * followed by it.
+     * For debugging purposes, prints token and all tokens followed by it.
      * @param title Title for the printout or use default parameter or 0
      * for no title.
      * @param fileNames Prints out file name instead of file index.

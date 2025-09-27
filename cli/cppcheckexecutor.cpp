@@ -28,6 +28,7 @@
 #include "errorlogger.h"
 #include "errortypes.h"
 #include "filesettings.h"
+#include "json.h"
 #include "settings.h"
 #include "singleexecutor.h"
 #include "suppressions.h"
@@ -71,6 +72,152 @@
 #endif
 
 namespace {
+    class SarifReport {
+    public:
+        void addFinding(ErrorMessage msg) {
+            mFindings.push_back(std::move(msg));
+        }
+
+        picojson::array serializeRules() const {
+            picojson::array ret;
+            std::set<std::string> ruleIds;
+            for (const auto& finding : mFindings) {
+                // github only supports findings with locations
+                if (finding.callStack.empty())
+                    continue;
+                if (ruleIds.insert(finding.id).second) {
+                    picojson::object rule;
+                    rule["id"] = picojson::value(finding.id);
+                    // rule.shortDescription.text
+                    picojson::object shortDescription;
+                    shortDescription["text"] = picojson::value(finding.shortMessage());
+                    rule["shortDescription"] = picojson::value(shortDescription);
+                    // rule.fullDescription.text
+                    picojson::object fullDescription;
+                    fullDescription["text"] = picojson::value(finding.verboseMessage());
+                    rule["fullDescription"] = picojson::value(fullDescription);
+                    // rule.help.text
+                    picojson::object help;
+                    help["text"] = picojson::value(finding.verboseMessage()); // FIXME provide proper help text
+                    rule["help"] = picojson::value(help);
+                    // rule.properties.precision, rule.properties.problem.severity
+                    picojson::object properties;
+                    properties["precision"] = picojson::value(sarifPrecision(finding));
+                    double securitySeverity = 0;
+                    if (finding.severity == Severity::error && !ErrorLogger::isCriticalErrorId(finding.id))
+                        securitySeverity = 9.9; // We see undefined behavior
+                    //else if (finding.severity == Severity::warning)
+                    //    securitySeverity = 5.1; // We see potential undefined behavior
+                    if (securitySeverity > 0.5) {
+                        properties["security-severity"] = picojson::value(securitySeverity);
+                        const picojson::array tags{picojson::value("security")};
+                        properties["tags"] = picojson::value(tags);
+                    }
+                    rule["properties"] = picojson::value(properties);
+
+                    ret.emplace_back(rule);
+                }
+            }
+            return ret;
+        }
+
+        static picojson::array serializeLocations(const ErrorMessage& finding) {
+            picojson::array ret;
+            for (const auto& location : finding.callStack) {
+                picojson::object physicalLocation;
+                picojson::object artifactLocation;
+                artifactLocation["uri"] = picojson::value(location.getfile(false));
+                physicalLocation["artifactLocation"] = picojson::value(artifactLocation);
+                picojson::object region;
+                region["startLine"] = picojson::value(static_cast<int64_t>(location.line));
+                region["startColumn"] = picojson::value(static_cast<int64_t>(location.column));
+                region["endLine"] = region["startLine"];
+                region["endColumn"] = region["startColumn"];
+                physicalLocation["region"] = picojson::value(region);
+                picojson::object loc;
+                loc["physicalLocation"] = picojson::value(physicalLocation);
+                ret.emplace_back(loc);
+            }
+            return ret;
+        }
+
+        picojson::array serializeResults() const {
+            picojson::array results;
+            for (const auto& finding : mFindings) {
+                // github only supports findings with locations
+                if (finding.callStack.empty())
+                    continue;
+                picojson::object res;
+                res["level"] = picojson::value(sarifSeverity(finding));
+                res["locations"] = picojson::value(serializeLocations(finding));
+                picojson::object message;
+                message["text"] = picojson::value(finding.shortMessage());
+                res["message"] = picojson::value(message);
+                res["ruleId"] = picojson::value(finding.id);
+                results.emplace_back(res);
+            }
+            return results;
+        }
+
+        picojson::value serializeRuns(const std::string& productName, const std::string& version) const {
+            picojson::object driver;
+            driver["name"] = picojson::value(productName);
+            driver["semanticVersion"] = picojson::value(version);
+            driver["informationUri"] = picojson::value("https://cppcheck.sourceforge.io");
+            driver["rules"] = picojson::value(serializeRules());
+            picojson::object tool;
+            tool["driver"] = picojson::value(driver);
+            picojson::object run;
+            run["tool"] = picojson::value(tool);
+            run["results"] = picojson::value(serializeResults());
+            picojson::array runs{picojson::value(run)};
+            return picojson::value(runs);
+        }
+
+        std::string serialize(std::string productName) const {
+            const auto nameAndVersion = Settings::getNameAndVersion(productName);
+            productName = nameAndVersion.first.empty() ? "Cppcheck" : nameAndVersion.first;
+            std::string version = nameAndVersion.first.empty() ? CppCheck::version() : nameAndVersion.second;
+            if (version.find(' ') != std::string::npos)
+                version.erase(version.find(' '), std::string::npos);
+
+            picojson::object doc;
+            doc["version"] = picojson::value("2.1.0");
+            doc["$schema"] = picojson::value("https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json");
+            doc["runs"] = serializeRuns(productName, version);
+
+            return picojson::value(doc).serialize(true);
+        }
+    private:
+
+        static std::string sarifSeverity(const ErrorMessage& errmsg) {
+            if (ErrorLogger::isCriticalErrorId(errmsg.id))
+                return "error";
+            switch (errmsg.severity) {
+            case Severity::error:
+            case Severity::warning:
+            case Severity::style:
+            case Severity::portability:
+            case Severity::performance:
+                return "warning";
+            case Severity::information:
+            case Severity::internal:
+            case Severity::debug:
+            case Severity::none:
+                return "note";
+            }
+            return "note";
+        }
+
+        static std::string sarifPrecision(const ErrorMessage& errmsg) {
+            if (errmsg.certainty == Certainty::inconclusive)
+                return "medium";
+            return "high";
+        }
+
+        std::vector<ErrorMessage> mFindings;
+    };
+
     class CmdLineLoggerStd : public CmdLineLogger
     {
     public:
@@ -104,6 +251,9 @@ namespace {
         }
 
         ~StdLogger() override {
+            if (mSettings.outputFormat == Settings::OutputFormat::sarif) {
+                reportErr(mSarifReport.serialize(mSettings.cppcheckCfgProductName));
+            }
             delete mErrorOutput;
         }
 
@@ -127,6 +277,10 @@ namespace {
 
         bool hasCriticalErrors() const {
             return !mCriticalErrors.empty();
+        }
+
+        const std::string& getCtuInfo() const {
+            return mCtuInfo;
         }
 
     private:
@@ -170,17 +324,21 @@ namespace {
         std::set<std::string> mActiveCheckers;
 
         /**
-         * True if there are critical errors
+         * List of critical errors
          */
         std::string mCriticalErrors;
+
+        /**
+         * CTU information
+         */
+        std::string mCtuInfo;
+
+        /**
+         * SARIF report generator
+         */
+        SarifReport mSarifReport;
     };
 }
-
-// TODO: do not directly write to stdout
-
-#if defined(USE_WINDOWS_SEH) || defined(USE_UNIX_SIGNAL_HANDLING)
-/*static*/ FILE* CppCheckExecutor::mExceptionOutput = stdout;
-#endif
 
 int CppCheckExecutor::check(int argc, const char* const argv[])
 {
@@ -213,7 +371,7 @@ int CppCheckExecutor::check_wrapper(const Settings& settings)
         return check_wrapper_seh(*this, &CppCheckExecutor::check_internal, settings);
 #elif defined(USE_UNIX_SIGNAL_HANDLING)
     if (settings.exceptionHandling)
-        register_signal_handler();
+        register_signal_handler(settings.exceptionOutput);
 #endif
     return check_internal(settings);
 }
@@ -255,7 +413,7 @@ int CppCheckExecutor::check_internal(const Settings& settings) const
         stdLogger.resetLatestProgressOutputTime();
 
     if (settings.xml) {
-        stdLogger.reportErr(ErrorMessage::getXMLHeader(settings.cppcheckCfgProductName));
+        stdLogger.reportErr(ErrorMessage::getXMLHeader(settings.cppcheckCfgProductName, settings.xml_version));
     }
 
     if (!settings.buildDir.empty()) {
@@ -292,7 +450,7 @@ int CppCheckExecutor::check_internal(const Settings& settings) const
 #endif
     }
 
-    returnValue |= cppcheck.analyseWholeProgram(settings.buildDir, mFiles, mFileSettings);
+    returnValue |= cppcheck.analyseWholeProgram(settings.buildDir, mFiles, mFileSettings, stdLogger.getCtuInfo());
 
     if (settings.severity.isEnabled(Severity::information) || settings.checkConfiguration) {
         const bool err = reportSuppressions(settings, suppressions, settings.checks.isEnabled(Checks::unusedFunction), mFiles, mFileSettings, stdLogger);
@@ -308,7 +466,7 @@ int CppCheckExecutor::check_internal(const Settings& settings) const
         stdLogger.writeCheckersReport();
 
     if (settings.xml) {
-        stdLogger.reportErr(ErrorMessage::getXMLFooter());
+        stdLogger.reportErr(ErrorMessage::getXMLFooter(settings.xml_version));
     }
 
     if (settings.safety && stdLogger.hasCriticalErrors())
@@ -353,6 +511,11 @@ void StdLogger::writeCheckersReport()
         std::ofstream fout(mSettings.checkersReportFilename);
         if (fout.is_open())
             fout << checkersReport.getReport(mCriticalErrors);
+    }
+
+    if (mSettings.xml && mSettings.xml_version == 3) {
+        reportErr("    </errors>\n");
+        reportErr(checkersReport.getXmlReport(mCriticalErrors));
     }
 }
 
@@ -430,6 +593,11 @@ void StdLogger::reportErr(const ErrorMessage &msg)
         return;
     }
 
+    if (msg.severity == Severity::internal && msg.id == "ctuinfo") {
+        mCtuInfo += msg.shortMessage() + "\n";
+        return;
+    }
+
     if (ErrorLogger::isCriticalErrorId(msg.id) && mCriticalErrors.find(msg.id) == std::string::npos) {
         if (!mCriticalErrors.empty())
             mCriticalErrors += ", ";
@@ -447,27 +615,13 @@ void StdLogger::reportErr(const ErrorMessage &msg)
     if (!mShownErrors.insert(msg.toString(mSettings.verbose)).second)
         return;
 
-    if (mSettings.xml)
+    if (mSettings.outputFormat == Settings::OutputFormat::sarif)
+        mSarifReport.addFinding(msg);
+    else if (mSettings.xml)
         reportErr(msg.toXML());
     else
         reportErr(msg.toString(mSettings.verbose, mSettings.templateFormat, mSettings.templateLocation));
 }
-
-#if defined(USE_WINDOWS_SEH) || defined(USE_UNIX_SIGNAL_HANDLING)
-void CppCheckExecutor::setExceptionOutput(FILE* exceptionOutput)
-{
-    mExceptionOutput = exceptionOutput;
-#if defined(USE_UNIX_SIGNAL_HANDLING)
-    set_signal_handler_output(mExceptionOutput);
-#endif
-}
-
-// cppcheck-suppress unusedFunction - only used by USE_WINDOWS_SEH code
-FILE* CppCheckExecutor::getExceptionOutput()
-{
-    return mExceptionOutput;
-}
-#endif
 
 /**
  * Execute a shell command and read the output from it. Returns true if command terminated successfully.

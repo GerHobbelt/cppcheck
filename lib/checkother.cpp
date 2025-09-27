@@ -1254,10 +1254,12 @@ bool CheckOther::checkInnerScope(const Token *tok, const Variable* var, bool& us
                     }
                     if (ftok->function()) {
                         const std::list<Variable> &argvars = ftok->function()->argumentList;
-                        const Variable *argvar = ftok->function()->getArgumentVar(argn);
-                        if (!std::all_of(argvars.cbegin(), argvars.cend(), [&](const Variable &other) {
-                            return &other == argvar || !mayDependOn(other.valueType(), argvar->valueType());
-                        })) return false;
+                        if (const Variable* argvar = ftok->function()->getArgumentVar(argn)) {
+                            if (!std::all_of(argvars.cbegin(), argvars.cend(), [&](const Variable& other) {
+                                return &other == argvar || !mayDependOn(other.valueType(), argvar->valueType());
+                            }))
+                                return false;
+                        }
                     }
                 }
             }
@@ -3413,7 +3415,7 @@ void CheckOther::checkUnusedLabel()
 
             if (Token::Match(tok, "{|}|; %name% :") && !tok->tokAt(1)->isKeyword()) {
                 const std::string tmp("goto " + tok->strAt(1));
-                if (!Token::findsimplematch(scope->bodyStart->next(), tmp.c_str(), tmp.size(), scope->bodyEnd->previous()))
+                if (!Token::findsimplematch(scope->bodyStart->next(), tmp.c_str(), tmp.size(), scope->bodyEnd->previous()) && !tok->next()->isExpandedMacro())
                     unusedLabelError(tok->next(), tok->next()->scope()->type == Scope::eSwitch, hasIfdef);
             }
         }

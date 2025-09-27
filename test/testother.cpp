@@ -177,6 +177,7 @@ private:
         TEST_CASE(duplicateExpression15); // #10650
         TEST_CASE(duplicateExpression16); // #10569
         TEST_CASE(duplicateExpression17); // #12036
+        TEST_CASE(duplicateExpression18);
         TEST_CASE(duplicateExpressionLoop);
         TEST_CASE(duplicateValueTernary);
         TEST_CASE(duplicateExpressionTernary); // #6391
@@ -1843,6 +1844,14 @@ private:
               "    printf(\"result: %d\\n\", msg);\n"
               "}\n");
         ASSERT_EQUALS("", errout_str());
+
+        check("void g(const char* format, ...);\n"
+              "void f(bool b) {\n"
+              "    const char* s = \"abc\";\n"
+              "    if (b)\n"
+              "       g(\"%d %s\", 1, s);\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:3]: (style) The scope of the variable 's' can be reduced.\n", errout_str());
     }
 
 #define checkOldStylePointerCast(...) checkOldStylePointerCast_(__FILE__, __LINE__, __VA_ARGS__)
@@ -3733,6 +3742,13 @@ private:
               "        return ios;\n"
               "    };\n"
               "    return lam();\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        check("struct S { int x[3]; };\n" // #13226
+              "void g(int a, int* b);\n"
+              "void f(int a, S& s) {\n"
+              "    return g(a, s.x);\n"
               "}\n");
         ASSERT_EQUALS("", errout_str());
     }
@@ -7066,6 +7082,21 @@ private:
               "    if ($a == $a) { }\n"
               "}");
         ASSERT_EQUALS("", errout_str());
+
+        checkP("#define X 1\n"
+               "#define Y 1\n"
+               "void f() {\n"
+               "    if (X == X) {}\n"
+               "    if (X == Y) {}\n"
+               "}\n");
+        ASSERT_EQUALS("[test.cpp:4]: (style) Same expression on both sides of '=='.\n", errout_str());
+
+        checkP("#define X 1\n"
+               "#define Y X\n"
+               "void f() {\n"
+               "    if (X == Y) {}\n"
+               "}\n");
+        ASSERT_EQUALS("", errout_str());
     }
 
     void duplicateExpression6() {  // #4639
@@ -7459,6 +7490,24 @@ private:
               "void f() {\n"
               "    static_assert(std::is_same<T, U>::value || std::is_integral<T>::value);\n"
               "}\n");
+        ASSERT_EQUALS("", errout_str());
+    }
+
+    void duplicateExpression18() {
+        checkP("#if defined(ABC)\n" // #13218
+               "#define MACRO1 (0x1)\n"
+               "#else\n"
+               "#define MACRO1 (0)\n"
+               "#endif\n"
+               "#if defined(XYZ)\n"
+               "#define MACRO2 (0x2)\n"
+               "#else\n"
+               "#define MACRO2 (0)\n"
+               "#endif\n"
+               "#define MACRO_ALL (MACRO1 | MACRO2)\n"
+               "void f() {\n"
+               "    if (MACRO_ALL == 0) {}\n"
+               "}\n");
         ASSERT_EQUALS("", errout_str());
     }
 

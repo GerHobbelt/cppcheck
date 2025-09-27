@@ -6544,6 +6544,8 @@ private:
                                              "    auto l = [x = 3](std::string&& v) { };\n"
                                              "}\n"));
         ASSERT_EQUALS("[test.cpp:2]: (debug) analyzeConditionExpressions bailout: Skipping function due to incomplete variable x\n", errout_str());
+
+        ASSERT_EQUALS("forinti(0=i5<=i++;;(", testAst("for (int (i) = 0; (i) <= 5; (i)++) {}")); // #13225
     }
 
     void astbrackets() { // []
@@ -6903,6 +6905,7 @@ private:
         ASSERT_EQUALS("12+case", testAst("case 1+2:"));
         ASSERT_EQUALS("xyz:?case", testAst("case (x?y:z):"));
         ASSERT_EQUALS("switchx( 1case y++ 2case", testAst("switch(x){case 1:{++y;break;case 2:break;}}"));
+        ASSERT_EQUALS("switchi( 12<<~case 0return", testAst("switch (i) { case ~(1 << 2) : return 0; }")); // #13197
     }
 
     void astrefqualifier() {
@@ -7037,6 +7040,10 @@ private:
                                                    "std::string f() {\n"
                                                    "    return std::string{ g() + \"abc\" MACRO \"def\" };\n"
                                                    "}\n", /*expand*/ true, Platform::Type::Native, true), UNKNOWN_MACRO);
+
+        ASSERT_THROW_INTERNAL_EQUALS(tokenizeAndStringify("static void handle_toggle(void (*proc) PROTO_XT_CALLBACK_ARGS, int var) {}\n"), // #13198
+                                     UNKNOWN_MACRO,
+                                     "There is an unknown macro here somewhere. Configuration is required. If PROTO_XT_CALLBACK_ARGS is a macro then please configure it.");
 
         ignore_errout();
     }
@@ -7208,6 +7215,8 @@ private:
 
         ASSERT_NO_THROW(tokenizeAndStringify("class A { bool restrict() const; };\n"
                                              "bool A::restrict() const { return true; }")); // #12718
+
+        ASSERT_NO_THROW(tokenizeAndStringify("enum { E = sizeof(struct { int i; }) };")); // #13249
 
         ignore_errout();
     }

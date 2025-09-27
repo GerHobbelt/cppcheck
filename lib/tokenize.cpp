@@ -1528,6 +1528,11 @@ void Tokenizer::simplifyTypedefCpp()
             argEnd = tokOffset->linkAt(1);
             if (!argEnd)
                 syntaxError(argStart);
+            const Token* tok2 = argEnd->next();
+            while (tok2 && (tok2->isKeyword() || tok2->str() == ")"))
+                tok2 = tok2->next();
+            if (!Token::simpleMatch(tok2, ";"))
+                syntaxError(tok2);
 
             tok = argEnd->next();
             Token *spec = tok;
@@ -3605,17 +3610,8 @@ void Tokenizer::combineOperators()
                 tok->deleteNext();
             }
         } else if (tok->str() == "->") {
-            // If the preceding sequence is "( & %name% )", replace it by "%name%"
-            Token *t = tok->tokAt(-4);
-            if (Token::Match(t, "( & %name% )") && !Token::simpleMatch(t->previous(), ">")) {
-                t->deleteThis();
-                t->deleteThis();
-                t->deleteNext();
-                tok->str(".");
-            } else {
-                tok->str(".");
-                tok->originalName("->");
-            }
+            tok->str(".");
+            tok->originalName("->");
         }
     }
 }
@@ -8470,7 +8466,10 @@ void Tokenizer::reportUnknownMacros() const
                 continue;
             if (startsWith(tok->strAt(1), "__")) // attribute/annotation
                 continue;
-            unknownMacroError(tok->next());
+            if (tok->next()->isStandardType() && !tok->linkAt(2)->next()->isStandardType())
+                unknownMacroError(tok->linkAt(2)->next());
+            else
+                unknownMacroError(tok->next());
         }
     }
 
@@ -8534,6 +8533,9 @@ void Tokenizer::findGarbageCode() const
             syntaxError(tok, tok->str() + "[...];");
 
         else if (Token::Match(tok, "[({<] %assign%"))
+            syntaxError(tok);
+
+        else if (Token::Match(tok, "%assign% >"))
             syntaxError(tok);
 
         else if (Token::Match(tok, "[`\\@]"))
@@ -8617,6 +8619,10 @@ void Tokenizer::findGarbageCode() const
                 syntaxError(tok->tokAt(2), "Unexpected token '" + tok->strAt(2) + "'");
             if (const Token* start = SymbolDatabase::isEnumDefinition(tok)) {
                 for (const Token* tok2 = start->next(); tok2 && tok2 != start->link(); tok2 = tok2->next()) {
+                    if (Token::simpleMatch(tok2, "sizeof (")) {
+                        tok2 = tok2->linkAt(1);
+                        continue;
+                    }
                     if (tok2->str() == ";")
                         syntaxError(tok2);
                 }
@@ -8750,6 +8756,8 @@ void Tokenizer::findGarbageCode() const
                      !(tok->tokType() == Token::Type::eBoolean && cpp && Token::simpleMatch(tok->tokAt(-1), "requires")))
                 syntaxError(tok);
         }
+        if (Token::Match(tok, "( ) %num%|%bool%|%char%|%str%"))
+            syntaxError(tok);
         if (Token::Match(tok, "%assign% typename|class %assign%"))
             syntaxError(tok);
         if (Token::Match(tok, "%assign% [;)}]") && (!cpp || !Token::simpleMatch(tok->previous(), "operator")))

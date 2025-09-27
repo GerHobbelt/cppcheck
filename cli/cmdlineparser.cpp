@@ -23,7 +23,6 @@
 #include "color.h"
 #include "config.h"
 #include "cppcheck.h"
-#include "cppcheckexecutor.h"
 #include "errorlogger.h"
 #include "errortypes.h"
 #include "filelister.h"
@@ -341,7 +340,7 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
                 return Result::Fail;
             {
                 XMLErrorMessagesLogger xmlLogger;
-                std::cout << ErrorMessage::getXMLHeader(mSettings.cppcheckCfgProductName);
+                std::cout << ErrorMessage::getXMLHeader(mSettings.cppcheckCfgProductName, mSettings.xml_version);
                 CppCheck::getErrorMessages(xmlLogger);
                 std::cout << ErrorMessage::getXMLFooter() << std::endl;
             }
@@ -637,7 +636,7 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
                     return Result::Fail;
                 }
                 mSettings.exceptionHandling = true;
-                CppCheckExecutor::setExceptionOutput((exceptionOutfilename == "stderr") ? stderr : stdout);
+                mSettings.exceptionOutput = (exceptionOutfilename == "stderr") ? stderr : stdout;
 #else
                 mLogger.printError("Option --exception-handling is not supported since Cppcheck has not been built with any exception handling enabled.");
                 return Result::Fail;
@@ -745,7 +744,6 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
 
                 if (!path.empty()) {
                     path = Path::removeQuotationMarks(std::move(path));
-                    path = Path::fromNativeSeparators(std::move(path));
                     path = Path::simplifyPath(std::move(path));
 
                     // TODO: this only works when it exists
@@ -905,8 +903,14 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
 
             // max ctu depth
             else if (std::strncmp(argv[i], "--max-ctu-depth=", 16) == 0) {
-                if (!parseNumberArg(argv[i], 16, mSettings.maxCtuDepth))
+                int temp = 0;
+                if (!parseNumberArg(argv[i], 16, temp))
                     return Result::Fail;
+                if (temp > 10) {
+                    mLogger.printMessage("--max-ctu-depth is being capped at 10. This limitation will be removed in a future Cppcheck version.");
+                    temp = 10;
+                }
+                mSettings.maxCtuDepth = temp;
             }
 
             else if (std::strcmp(argv[i], "--no-cpp-header-probe") == 0) {
@@ -916,6 +920,20 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
             // Write results in file
             else if (std::strncmp(argv[i], "--output-file=", 14) == 0)
                 mSettings.outputFile = Path::simplifyPath(argv[i] + 14);
+
+            else if (std::strncmp(argv[i], "--output-format=", 16) == 0) {
+                const std::string format = argv[i] + 16;
+                if (format == "sarif")
+                    mSettings.outputFormat = Settings::OutputFormat::sarif;
+                else if (format == "xml")
+                    mSettings.outputFormat = Settings::OutputFormat::xml;
+                else {
+                    mLogger.printError("argument to '--output-format=' must be 'sarif' or 'xml'.");
+                    return Result::Fail;
+                }
+                mSettings.xml = (mSettings.outputFormat == Settings::OutputFormat::xml);
+            }
+
 
             // Experimental: limit execution time for extended valueflow analysis. basic valueflow analysis
             // is always executed.
@@ -951,6 +969,7 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
 
             // Write results in results.plist
             else if (std::strncmp(argv[i], "--plist-output=", 15) == 0) {
+                mSettings.outputFormat = Settings::OutputFormat::plist;
                 mSettings.plistOutput = Path::simplifyPath(argv[i] + 15);
                 if (mSettings.plistOutput.empty())
                     mSettings.plistOutput = ".";
@@ -1363,23 +1382,26 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
                 mSettings.verbose = true;
 
             // Write results in results.xml
-            else if (std::strcmp(argv[i], "--xml") == 0)
+            else if (std::strcmp(argv[i], "--xml") == 0) {
                 mSettings.xml = true;
+                mSettings.outputFormat = Settings::OutputFormat::xml;
+            }
 
             // Define the XML file version (and enable XML output)
             else if (std::strncmp(argv[i], "--xml-version=", 14) == 0) {
                 int tmp;
                 if (!parseNumberArg(argv[i], 14, tmp))
                     return Result::Fail;
-                if (tmp != 2) {
-                    // We only have xml version 2
-                    mLogger.printError("'--xml-version' can only be 2.");
+                if (tmp != 2 && tmp != 3) {
+                    // We only have xml version 2 and 3
+                    mLogger.printError("'--xml-version' can only be 2 or 3.");
                     return Result::Fail;
                 }
 
                 mSettings.xml_version = tmp;
                 // Enable also XML if version is set
                 mSettings.xml = true;
+                mSettings.outputFormat = Settings::OutputFormat::xml;
             }
 
             else {
@@ -1625,6 +1647,10 @@ void CmdLineParser::printHelp() const
         "                         is 2. A larger value will mean more errors can be found\n"
         "                         but also means the analysis will be slower.\n"
         "    --output-file=<file> Write results to file, rather than standard error.\n"
+        "    --output-format=<format>\n"
+        "                        Specify the output format. The available formats are:\n"
+        "                          * sarif\n"
+        "                          * xml\n"
         "    --platform=<type>, --platform=<file>\n"
         "                         Specifies platform specific types and sizes. The\n"
         "                         available builtin platforms are:\n"

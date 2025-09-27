@@ -144,6 +144,22 @@ private:
         check_(file, line, code, settings, filename);
     }
 
+#define checkP(...) checkP_(__FILE__, __LINE__, __VA_ARGS__)
+    void checkP_(const char* file, int line, const char code[], const char* filename = "test.cpp")
+    {
+        const Settings settings = settingsBuilder(settings0).severity(Severity::performance).certainty(Certainty::inconclusive).build();
+
+        std::vector<std::string> files(1, filename);
+        Tokenizer tokenizer(settings, *this);
+        PreprocessorHelper::preprocess(code, files, tokenizer, *this);
+
+        // Tokenizer..
+        ASSERT_LOC(tokenizer.simplifyTokens1(""), file, line);
+
+        // Run checks..
+        runChecks<CheckCondition>(tokenizer, this);
+    }
+
     void assignAndCompare() {
         // &
         check("void foo(int x)\n"
@@ -479,6 +495,14 @@ private:
                       "[test.cpp:2]: (style) Expression '(X & 0x100) == 0x200' is always false.\n"
                       "[test.cpp:3]: (style) Expression '(X & 0x100) == 0x200' is always false.\n",
                       errout_str());
+
+        checkP("#define MACRO1 (0x0010)\n" // #13222
+               "#define MACRO2 (0x0020)\n"
+               "#define MACRO_ALL (MACRO1 | MACRO2)\n"
+               "void f() {\n"
+               "    if (MACRO_ALL == 0) {}\n"
+               "}\n");
+        ASSERT_EQUALS("", errout_str());
     }
 
 #define checkPureFunction(code) checkPureFunction_(code, __FILE__, __LINE__)
@@ -2753,6 +2777,18 @@ private:
               "        if ((value >> 28) & 1) {}\n"
               "    }\n"
               "}");
+        ASSERT_EQUALS("", errout_str());
+
+        checkP("#define TYPE_1 \"a\"\n" // #13202
+               "#define TYPE_2 \"b\"\n"
+               "#define TYPE_3 \"c\"\n"
+               "void f(const std::string& s) {\n"
+               "    if (s == TYPE_1) {}\n"
+               "    else if (s == TYPE_2 || s == TYPE_3) {\n"
+               "        if (s == TYPE_2) {}\n"
+               "        else if (s == TYPE_3) {}\n"
+               "    }\n"
+               "}");
         ASSERT_EQUALS("", errout_str());
     }
 

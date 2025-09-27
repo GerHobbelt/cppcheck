@@ -211,6 +211,8 @@ public:
 #if defined(USE_WINDOWS_SEH) || defined(USE_UNIX_SIGNAL_HANDLING)
     /** @brief Is --exception-handling given */
     bool exceptionHandling{};
+
+    FILE* exceptionOutput = stdout;
 #endif
 
     enum class ExecutorType : std::uint8_t
@@ -270,6 +272,9 @@ public:
 
     /** @brief write results (--output-file=&lt;file&gt;) */
     std::string outputFile;
+
+    enum class OutputFormat : std::uint8_t {text, plist, sarif, xml};
+    OutputFormat outputFormat = OutputFormat::text;
 
     Platform platform;
 

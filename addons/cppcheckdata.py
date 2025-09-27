@@ -532,6 +532,7 @@ class Token:
         for i, t in enumerate(tl):
             if i == n:
                 return t
+        return None
 
     def linkAt(self, n):
         token = self.tokAt(n)
@@ -588,14 +589,14 @@ class Scope:
         self.bodyEnd = None
         self.nestedInId = element.get('nestedIn')
         self.nestedIn = None
-        self.nestedList = list()
+        self.nestedList = []
         self.type = element.get('type')
         self.definedType = element.get('definedType')
         self.isExecutable = (self.type in ('Function', 'If', 'Else', 'For', 'While', 'Do',
                                            'Switch', 'Try', 'Catch', 'Unconditional', 'Lambda'))
 
-        self.varlistId = list()
-        self.varlist = list()
+        self.varlistId = []
+        self.varlist = []
 
     def __repr__(self):
         attrs = ["Id", "className", "functionId", "bodyStartId", "bodyEndId",
@@ -1293,7 +1294,7 @@ class CppcheckData:
                 if event == 'start':
                     cfg = Configuration(node.get('cfg'))
                     continue
-                elif event == 'end':
+                if event == 'end':
                     cfg.setIdMap(cfg_arguments)
                     yield cfg
                     cfg = None
@@ -1353,7 +1354,7 @@ class CppcheckData:
                 if event == 'start':
                     cfg_function = Function(node, cfg.scopes[-1])
                     continue
-                elif event == 'end':
+                if event == 'end':
                     cfg.functions.append(cfg_function)
                     cfg_function = None
 
@@ -1397,7 +1398,7 @@ class CppcheckData:
                 if event == 'start':
                     cfg_valueflow = ValueFlow(node)
                     continue
-                elif event == 'end':
+                if event == 'end':
                     cfg.valueflow.append(cfg_valueflow)
                     cfg_valueflow = None
 
@@ -1593,8 +1594,7 @@ class MatchResult:
     def __getattr__(self, k):
         if k in self._keys:
             return None
-        else:
-            raise AttributeError
+        raise AttributeError
 
 def bind_split(s):
     if '@' in s:
@@ -1688,11 +1688,14 @@ def reportError(location, severity, message, addon, errorId, extra='', columnOve
         EXIT_CODE = 1
 
 def reportSummary(dumpfile, summary_type, summary_data):
-    # dumpfile ends with ".dump"
-    ctu_info_file = dumpfile[:-4] + "ctu-info"
-    with open(ctu_info_file, 'at') as f:
-        msg = {'summary': summary_type, 'data': summary_data}
-        f.write(json.dumps(msg) + '\n')
+    msg = {'summary': summary_type, 'data': summary_data}
+    if '--cli' in sys.argv:
+        sys.stdout.write(json.dumps(msg) + '\n')
+    else:
+        # dumpfile ends with ".dump"
+        ctu_info_file = dumpfile[:-4] + "ctu-info"
+        with open(ctu_info_file, 'at') as f:
+            f.write(json.dumps(msg) + '\n')
 
 
 def get_path_premium_addon():

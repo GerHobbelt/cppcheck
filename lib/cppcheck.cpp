@@ -195,9 +195,11 @@ static void createDumpFile(const Settings& settings,
         language = " language=\"cpp\"";
         break;
     case Standards::Language::None:
-        if (Path::isCPP(filename))
+        // TODO: error out on unknown language?
+        const Standards::Language lang = Path::identify(filename);
+        if (lang == Standards::Language::CPP)
             language = " language=\"cpp\"";
-        else if (Path::isC(filename))
+        else if (lang == Standards::Language::C)
             language = " language=\"c\"";
         break;
     }
@@ -429,7 +431,8 @@ unsigned int CppCheck::checkClang(const std::string &path)
         mErrorLogger.reportOut(std::string("Checking ") + path + " ...", Color::FgGreen);
 
     // TODO: this ignores the configured language
-    const std::string lang = Path::isCPP(path) ? "-x c++" : "-x c";
+    const bool isCpp = Path::identify(path) == Standards::Language::CPP;
+    const std::string langOpt = isCpp ? "-x c++" : "-x c";
     const std::string analyzerInfo = mSettings.buildDir.empty() ? std::string() : AnalyzerInformation::getAnalyzerInfoFile(mSettings.buildDir, path, emptyString);
     const std::string clangcmd = analyzerInfo + ".clang-cmd";
     const std::string clangStderr = analyzerInfo + ".clang-stderr";
@@ -442,9 +445,9 @@ unsigned int CppCheck::checkClang(const std::string &path)
     }
 #endif
 
-    std::string flags(lang + " ");
+    std::string flags(langOpt + " ");
     // TODO: does not apply C standard
-    if (Path::isCPP(path) && !mSettings.standards.stdValue.empty())
+    if (isCpp && !mSettings.standards.stdValue.empty())
         flags += "-std=" + mSettings.standards.stdValue + " ";
 
     for (const std::string &i: mSettings.includePaths)
@@ -492,13 +495,13 @@ unsigned int CppCheck::checkClang(const std::string &path)
 
     try {
         std::istringstream ast(output2);
-        Tokenizer tokenizer(&mSettings, this);
+        Tokenizer tokenizer(mSettings, this);
         tokenizer.list.appendFileIfNew(path);
         clangimport::parseClangAstDump(tokenizer, ast);
         ValueFlow::setValues(tokenizer.list,
                              const_cast<SymbolDatabase&>(*tokenizer.getSymbolDatabase()),
                              this,
-                             &mSettings,
+                             mSettings,
                              &s_timerResults);
         if (mSettings.debugnormal)
             tokenizer.printDebugOutput(1);
@@ -629,6 +632,18 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
     CheckUnusedFunctions checkUnusedFunctions(nullptr, nullptr, nullptr);
 
     try {
+        if (mSettings.library.markupFile(filename)) {
+            Tokenizer tokenizer(mSettings, this);
+            if (fileStream)
+                tokenizer.list.createTokens(*fileStream, filename);
+            else {
+                std::ifstream in(filename);
+                tokenizer.list.createTokens(in, filename);
+            }
+            checkUnusedFunctions.getFileInfo(&tokenizer, &mSettings);
+            return EXIT_SUCCESS;
+        }
+
         Preprocessor preprocessor(mSettings, this);
         std::set<std::string> configurations;
 
@@ -657,13 +672,6 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
                                 Certainty::normal);
             reportErr(errmsg);
             return mExitCode;
-        }
-
-        if (mSettings.library.markupFile(filename)) {
-            Tokenizer tokenizer(&mSettings, this, &preprocessor);
-            tokenizer.createTokens(std::move(tokens1));
-            checkUnusedFunctions.getFileInfo(&tokenizer, &mSettings);
-            return EXIT_SUCCESS;
         }
 
         if (!preprocessor.loadFiles(tokens1, files))
@@ -792,7 +800,7 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
                 if (startsWith(dir.str,"#define ") || startsWith(dir.str,"#include "))
                     code += "#line " + std::to_string(dir.linenr) + " \"" + dir.file + "\"\n" + dir.str + '\n';
             }
-            Tokenizer tokenizer2(&mSettings, this);
+            Tokenizer tokenizer2(mSettings, this);
             std::istringstream istr2(code);
             tokenizer2.list.createTokens(istr2);
             executeRules("define", tokenizer2);
@@ -853,7 +861,7 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
                 continue;
             }
 
-            Tokenizer tokenizer(&mSettings, this, &preprocessor);
+            Tokenizer tokenizer(mSettings, this, &preprocessor);
             if (mSettings.showtime != SHOWTIME_MODES::SHOWTIME_NONE)
                 tokenizer.setTimerResults(&s_timerResults);
 
@@ -1472,8 +1480,12 @@ void CppCheck::executeAddons(const std::vector<std::string>& files, const std::s
                     continue;
                 errmsg.severity = Severity::internal;
             }
-            else if (!mSettings.severity.isEnabled(errmsg.severity))
-                continue;
+            else if (!mSettings.severity.isEnabled(errmsg.severity)) {
+                // Do not filter out premium misra/cert/autosar messages that has been
+                // explicitly enabled with a --premium option
+                if (!isPremiumCodingStandardId(errmsg.id))
+                    continue;
+            }
             errmsg.file0 = file0;
 
             reportErr(errmsg);
@@ -1670,7 +1682,7 @@ void CppCheck::getErrorMessages(ErrorLogger &errorlogger)
     for (std::list<Check *>::const_iterator it = Check::instances().cbegin(); it != Check::instances().cend(); ++it)
         (*it)->getErrorMessages(&errorlogger, &s);
 
-    Preprocessor::getErrorMessages(&errorlogger, &s);
+    Preprocessor::getErrorMessages(&errorlogger, s);
 }
 
 void CppCheck::analyseClangTidy(const FileSettings &fileSettings)
@@ -1865,4 +1877,16 @@ void CppCheck::resetTimerResults()
 void CppCheck::printTimerResults(SHOWTIME_MODES mode)
 {
     s_timerResults.showResults(mode);
+}
+
+bool CppCheck::isPremiumCodingStandardId(const std::string& id) const {
+    if (mSettings.premiumArgs.find("--misra") != std::string::npos) {
+        if (startsWith(id, "misra-") || startsWith(id, "premium-misra-"))
+            return true;
+    }
+    if (mSettings.premiumArgs.find("--cert") != std::string::npos && startsWith(id, "premium-cert-"))
+        return true;
+    if (mSettings.premiumArgs.find("--autosar") != std::string::npos && startsWith(id, "premium-autosar-"))
+        return true;
+    return false;
 }

@@ -113,7 +113,7 @@ private:
             settings_ = &settings;
 
         // Tokenize..
-        Tokenizer tokenizer(settings_, this);
+        Tokenizer tokenizer(*settings_, this);
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, filename), file, line);
 
@@ -2040,6 +2040,11 @@ private:
               "    auto t = h();\n"
               "    if (t.at(0)) {}\n"
               "};\n", "test.cpp", &s);
+        ASSERT_EQUALS("", errout.str());
+
+        check("::std::string f(const char* c) {\n" // #12365
+              "    return ::std::string(c);\n"
+              "}\n", "test.cpp", &s);
         ASSERT_EQUALS("", errout.str());
     }
 

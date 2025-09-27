@@ -303,6 +303,9 @@ Library::Container::Yield astFunctionYield(const Token* tok, const Settings* set
     if (!tok)
         return Library::Container::Yield::NO_YIELD;
 
+    if (!settings)
+        return Library::Container::Yield::NO_YIELD;
+
     const auto* function = settings->library.getFunction(tok);
     if (!function)
         return Library::Container::Yield::NO_YIELD;
@@ -1497,6 +1500,20 @@ bool isUsedAsBool(const Token* const tok, const Settings* settings)
     return false;
 }
 
+bool compareTokenFlags(const Token* tok1, const Token* tok2, bool macro) {
+    if (macro && (tok1->isExpandedMacro() || tok2->isExpandedMacro() || tok1->isTemplateArg() || tok2->isTemplateArg()))
+        return false;
+    if (tok1->isComplex() != tok2->isComplex())
+        return false;
+    if (tok1->isLong() != tok2->isLong())
+        return false;
+    if (tok1->isUnsigned() != tok2->isUnsigned())
+        return false;
+    if (tok1->isSigned() != tok2->isSigned())
+        return false;
+    return true;
+};
+
 static bool astIsBoolLike(const Token* tok)
 {
     return astIsBool(tok) || isUsedAsBool(tok);
@@ -1613,20 +1630,8 @@ bool isSameExpression(bool cpp, bool macro, const Token *tok1, const Token *tok2
         }
         return false;
     }
-    auto flagsDiffer = [](const Token* tok1, const Token* tok2, bool macro) {
-        if (macro && (tok1->isExpandedMacro() || tok2->isExpandedMacro() || tok1->isTemplateArg() || tok2->isTemplateArg()))
-            return true;
-        if (tok1->isComplex() != tok2->isComplex())
-            return true;
-        if (tok1->isLong() != tok2->isLong())
-            return true;
-        if (tok1->isUnsigned() != tok2->isUnsigned())
-            return true;
-        if (tok1->isSigned() != tok2->isSigned())
-            return true;
-        return false;
-    };
-    if (flagsDiffer(tok1, tok2, macro))
+
+    if (!compareTokenFlags(tok1, tok2, macro))
         return false;
 
     if (pure && tok1->isName() && tok1->next()->str() == "(" && tok1->str() != "sizeof" && !(tok1->variable() && tok1 == tok1->variable()->nameToken())) {
@@ -1671,7 +1676,7 @@ bool isSameExpression(bool cpp, bool macro, const Token *tok1, const Token *tok2
         const Token *end1 = t1->link();
         const Token *end2 = t2->link();
         while (t1 && t2 && t1 != end1 && t2 != end2) {
-            if (t1->str() != t2->str() || flagsDiffer(t1, t2, macro))
+            if (t1->str() != t2->str() || !compareTokenFlags(t1, t2, macro))
                 return false;
             t1 = t1->next();
             t2 = t2->next();
@@ -1692,7 +1697,7 @@ bool isSameExpression(bool cpp, bool macro, const Token *tok1, const Token *tok2
         const Token *t2 = tok2->next();
         while (t1 && t2 &&
                t1->str() == t2->str() &&
-               !flagsDiffer(t1, t2, macro) &&
+               compareTokenFlags(t1, t2, macro) &&
                (t1->isName() || t1->str() == "*")) {
             t1 = t1->next();
             t2 = t2->next();
@@ -2416,6 +2421,9 @@ bool isVariableChangedByFunctionCall(const Token *tok, int indirect, const Setti
     if (deref && indirect > 0)
         indirect--;
 
+    if (indirect == 1 && tok->isCpp() && tok->tokAt(-1) && Token::simpleMatch(tok->tokAt(-2), "new (")) // placement new TODO: fix AST
+        return true;
+
     int argnr;
     tok = getTokenArgumentFunction(tok, argnr);
     if (!tok)
@@ -2464,6 +2472,11 @@ bool isVariableChangedByFunctionCall(const Token *tok, int indirect, const Setti
         }
         // Safe guess: Assume that parameter is changed by function call
         return true;
+    }
+
+    if (const Variable* var = tok->variable()) {
+        if (tok == var->nameToken() && (!var->isReference() || var->isConst()) && (!var->isClass() || (var->valueType() && var->valueType()->container))) // const ref or passed to (copy) ctor
+            return false;
     }
 
     std::vector<const Variable*> args = getArgumentVars(tok, argnr);
@@ -2772,7 +2785,7 @@ static bool isExpressionChangedAt(const F& getExprTok,
         return true;
     if (tok->isLiteral() || tok->isKeyword() || tok->isStandardType() || Token::Match(tok, ",|;|:"))
         return false;
-    if (tok->exprId() != exprid) {
+    if (tok->exprId() != exprid || (!tok->varId() && !tok->isName())) {
         if (globalvar && Token::Match(tok, "%name% (") && !(tok->function() && tok->function()->isAttributePure()))
             // TODO: Is global variable really changed by function call?
             return true;
@@ -3100,7 +3113,7 @@ bool isIteratorPair(const std::vector<const Token*>& args)
 
 const Token *findLambdaStartToken(const Token *last)
 {
-    if (!last || last->str() != "}")
+    if (!last || !last->isCpp() || last->str() != "}")
         return nullptr;
     const Token* tok = last->link();
     if (Token::simpleMatch(tok->astParent(), "("))
@@ -3110,7 +3123,7 @@ const Token *findLambdaStartToken(const Token *last)
     return nullptr;
 }
 
-template<class T>
+template<class T, REQUIRES("T must be a Token class", std::is_convertible<T*, const Token*> )>
 static T* findLambdaEndTokenGeneric(T* first)
 {
     auto maybeLambda = [](T* tok) -> bool {
@@ -3128,7 +3141,7 @@ static T* findLambdaEndTokenGeneric(T* first)
         return true;
     };
 
-    if (!first || first->str() != "[")
+    if (!first || !first->isCpp() || first->str() != "[")
         return nullptr;
     if (!maybeLambda(first->previous()))
         return nullptr;
@@ -3442,7 +3455,7 @@ bool isNullOperand(const Token *expr)
 {
     if (!expr)
         return false;
-    if (Token::Match(expr, "static_cast|const_cast|dynamic_cast|reinterpret_cast <"))
+    if (expr->isCpp() && Token::Match(expr, "static_cast|const_cast|dynamic_cast|reinterpret_cast <"))
         expr = expr->astParent();
     else if (!expr->isCast())
         return Token::Match(expr, "NULL|nullptr");

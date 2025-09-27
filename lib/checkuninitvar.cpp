@@ -162,7 +162,7 @@ void CheckUninitVar::checkScope(const Scope* scope, const std::set<std::string> 
                 tok = tok->next();
             while (Token::simpleMatch(tok->link(), "] ["))
                 tok = tok->link()->next();
-            if (Token::Match(tok->link(), "] =|{"))
+            if (Token::Match(tok->link(), "] =|{|("))
                 continue;
         }
 
@@ -1653,11 +1653,14 @@ void CheckUninitVar::valueFlowUninit()
                     continue;
                 if (!v->subexpressions.empty() && usage == ExprUsage::PassedByReference)
                     continue;
+                bool inconclusive = false;
+                if (usage == ExprUsage::Used && v->tokvalue && tok->variable() && tok->variable()->isArgument() &&
+                    (!isVariableChangedByFunctionCall(v->tokvalue, v->indirect, mSettings, &inconclusive) || inconclusive))
+                    continue;
                 if (usage != ExprUsage::Used) {
                     if (!(Token::Match(tok->astParent(), ". %name% (") && uninitderef) &&
                         isVariableChanged(tok, v->indirect, mSettings, mTokenizer->isCPP()))
                         continue;
-                    bool inconclusive = false;
                     if (isVariableChangedByFunctionCall(tok, v->indirect, mSettings, &inconclusive) || inconclusive)
                         continue;
                 }

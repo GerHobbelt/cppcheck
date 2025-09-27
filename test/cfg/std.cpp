@@ -25,6 +25,7 @@
 #define __STDC_WANT_LIB_EXT1__ 1
 #include <ctime>
 #include <cwchar>
+#include <exception>
 #include <fstream>
 #include <functional>
 #ifndef __STDC_NO_THREADS__
@@ -37,8 +38,12 @@
 #include <iterator>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <numeric>
+#include <queue>
+#include <set>
 #include <string_view>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -899,6 +904,34 @@ int std_map_find_constref(std::map<int, int>& m) // #11857
     return ++*p;
 }
 
+void std_queue_front_ignoredReturnValue(const std::queue<int>& q) {
+    // cppcheck-suppress ignoredReturnValue
+    q.front();
+}
+
+void std_priority_queue_top_ignoredReturnValue(const std::priority_queue<int>& pq) {
+    // cppcheck-suppress ignoredReturnValue
+    pq.top();
+}
+
+void std_tie_ignoredReturnValue(int a, int b)
+{
+    std::set<int> s;
+    std::set<int>::iterator it;
+    bool success;
+    std::tie(it, success) = s.insert(1);
+    // cppcheck-suppress ignoredReturnValue
+    std::tie();
+    // cppcheck-suppress ignoredReturnValue
+    std::tie(a, b);
+}
+
+void std_exception_ignoredReturnValue(const std::exception& e)
+{
+    // cppcheck-suppress ignoredReturnValue
+    e.what();
+}
+
 void valid_code()
 {
     std::vector<int> vecInt{0, 1, 2};
@@ -1583,6 +1616,7 @@ void uninitvar_fdim(void)
 
 void uninitvar_fclose(void)
 {
+    // cppcheck-suppress unassignedVariable
     FILE *stream;
     // cppcheck-suppress uninitvar
     (void)std::fclose(stream);
@@ -1815,6 +1849,7 @@ void uninitvar_fread(void)
 
 void uninitvar_free(void)
 {
+    // cppcheck-suppress unassignedVariable
     void *block;
     // cppcheck-suppress uninitvar
     std::free(block);
@@ -1827,7 +1862,7 @@ void uninitvar_freopen(void)
     FILE *stream;
     // cppcheck-suppress uninitvar
     FILE * p = std::freopen(filename,mode,stream);
-    free(p);
+    std::fclose(p);
 }
 
 void uninitvar_frexp(void)
@@ -2525,6 +2560,8 @@ void uninitvar_srand(void)
     unsigned int seed;
     // cppcheck-suppress uninitvar
     (void)std::srand(seed);
+    // cppcheck-suppress ignoredReturnValue
+    std::rand();
 }
 
 void uninitvar_ldiv(void)
@@ -4859,4 +4896,43 @@ void std_vector_data_arithmetic()
     std::vector<char> buf;
     buf.resize(1);
     memcpy(buf.data() + 0, "", 1);
+}
+
+void memleak_std_malloc() // #12332
+{
+    //cppcheck-suppress [unreadVariable, constVariablePointer]
+    void* p = std::malloc(1);
+    //cppcheck-suppress memleak
+}
+
+void memleak_std_realloc(void* block, size_t newsize)
+{
+    //cppcheck-suppress [unreadVariable, constVariablePointer]
+    void* p = std::realloc(block, newsize);
+    //cppcheck-suppress memleak
+}
+
+void unusedAllocatedMemory_std_free()
+{
+    //cppcheck-suppress unusedAllocatedMemory
+    void* p = std::malloc(1);
+    std::free(p);
+}
+
+std::string global_scope_std() // #12355
+{
+    ::std::stringstream ss;
+    return ss.str();
+}
+
+::std::size_t global_scope_std2() // #12378
+{
+    std::vector<::std::size_t> v;
+    // cppcheck-suppress containerOutOfBounds
+    return v.front();
+}
+
+void unique_lock_const_ref(std::mutex& m)
+{
+    std::unique_lock lock(m);
 }

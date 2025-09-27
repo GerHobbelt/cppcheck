@@ -462,8 +462,8 @@ void ResultsView::updateDetails(const QModelIndex &index)
     QString formattedMsg = message;
 
     const QString file0 = data["file0"].toString();
-    if (!file0.isEmpty() && Path::isHeader(data["file"].toString().toStdString()))
-        formattedMsg += QString("\n\n%1: %2").arg(tr("First included by"), QDir::toNativeSeparators(file0));
+    if (!file0.isEmpty() && Path::isHeader2(data["file"].toString().toStdString()))
+        formattedMsg += QString("\n\n%1: %2").arg(tr("First included by")).arg(QDir::toNativeSeparators(file0));
 
     if (data["cwe"].toInt() > 0)
         formattedMsg.prepend("CWE: " + QString::number(data["cwe"].toInt()) + "\n");

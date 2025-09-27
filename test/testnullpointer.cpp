@@ -184,7 +184,7 @@ private:
         const Settings settings1 = settingsBuilder(settings).certainty(Certainty::inconclusive, inconclusive).build();
 
         // Tokenize..
-        Tokenizer tokenizer(&settings1, this);
+        Tokenizer tokenizer(settings1, this);
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, filename), file, line);
 
@@ -200,7 +200,7 @@ private:
         const Settings settings1 = settingsBuilder(settings).certainty(Certainty::inconclusive, false).build();
 
         std::vector<std::string> files(1, "test.cpp");
-        Tokenizer tokenizer(&settings1, this);
+        Tokenizer tokenizer(settings1, this);
         PreprocessorHelper::preprocess(code, files, tokenizer);
 
         // Tokenizer..
@@ -3717,7 +3717,7 @@ private:
         ASSERT_EQUALS("[test.cpp:9]: (error) Null pointer dereference: p\n"
                       "[test.cpp:10]: (error) Null pointer dereference: p\n"
                       "[test.cpp:11]: (error) Null pointer dereference: p\n"
-                      "[test.cpp:12]: (warning, inconclusive) Possible null pointer dereference: p\n"
+                      "[test.cpp:12]: (error) Null pointer dereference: p\n"
                       "[test.cpp:3]: (error) Null pointer dereference\n"
                       "[test.cpp:5]: (error) Null pointer dereference\n"
                       "[test.cpp:7]: (error) Null pointer dereference\n"
@@ -4148,7 +4148,7 @@ private:
 
     void functioncalllibrary() {
         const Settings settings1;
-        Tokenizer tokenizer(&settings1,this);
+        Tokenizer tokenizer(settings1,this);
         std::istringstream code("void f() { int a,b,c; x(a,b,c); }");
         ASSERT_EQUALS(true, tokenizer.tokenize(code, "test.c"));
         const Token *xtok = Token::findsimplematch(tokenizer.tokens(), "x");
@@ -4492,7 +4492,7 @@ private:
         errout.str("");
 
         // Tokenize..
-        Tokenizer tokenizer(&settings, this);
+        Tokenizer tokenizer(settings, this);
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
 

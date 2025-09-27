@@ -314,7 +314,7 @@ private:
         Preprocessor preprocessor(*settings);
 
         // Tokenize..
-        Tokenizer tokenizer(settings, this, &preprocessor);
+        Tokenizer tokenizer(*settings, this, &preprocessor);
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, filename ? filename : "test.cpp"), file, line);
 
@@ -344,7 +344,7 @@ private:
 
         Preprocessor preprocessor(*settings);
         std::vector<std::string> files(1, filename);
-        Tokenizer tokenizer(settings, this, &preprocessor);
+        Tokenizer tokenizer(*settings, this, &preprocessor);
         PreprocessorHelper::preprocess(preprocessor, code, files, tokenizer);
 
         // Tokenizer..
@@ -1709,7 +1709,7 @@ private:
         Preprocessor preprocessor(settings);
 
         // Tokenize..
-        Tokenizer tokenizerCpp(&settings, this, &preprocessor);
+        Tokenizer tokenizerCpp(settings, this, &preprocessor);
         std::istringstream istr(code);
         ASSERT_LOC(tokenizerCpp.tokenize(istr, "test.cpp"), file, line);
 
@@ -1911,7 +1911,7 @@ private:
         Preprocessor preprocessor(settings);
 
         // Tokenize..
-        Tokenizer tokenizer(&settings, this, &preprocessor);
+        Tokenizer tokenizer(settings, this, &preprocessor);
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
 
@@ -3479,6 +3479,47 @@ private:
         ASSERT_EQUALS("[test.cpp:1]: (style) Parameter 'v' can be declared as reference to const\n"
                       "[test.cpp:8]: (style) Parameter 'v' can be declared as reference to const\n",
                       errout.str());
+
+        check("void cb(const std::string&);\n" // #12349, #12350, #12351
+              "void f(std::string& s) {\n"
+              "    const std::string& str(s);\n"
+              "    cb(str);\n"
+              "}\n"
+              "void g(std::string& s) {\n"
+              "    const std::string& str{ s };\n"
+              "    cb(str);\n"
+              "}\n"
+              "void h(std::string* s) {\n"
+              "    const std::string& str(*s);\n"
+              "    cb(str);\n"
+              "}\n"
+              "void k(std::string* s) {\n"
+              "    const std::string& str = *s;\n"
+              "    cb(str);\n"
+              "}\n"
+              "void m(std::string& s) {\n"
+              "    const std::string str(s);\n"
+              "    cb(str);\n"
+              "}\n"
+              "void n(std::string* s) {\n"
+              "    const std::string& str(*s);\n"
+              "    cb(str);\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Parameter 's' can be declared as reference to const\n"
+                      "[test.cpp:6]: (style) Parameter 's' can be declared as reference to const\n"
+                      "[test.cpp:18]: (style) Parameter 's' can be declared as reference to const\n"
+                      "[test.cpp:10]: (style) Parameter 's' can be declared as pointer to const\n"
+                      "[test.cpp:14]: (style) Parameter 's' can be declared as pointer to const\n"
+                      "[test.cpp:22]: (style) Parameter 's' can be declared as pointer to const\n",
+                      errout.str());
+
+        check("struct S {\n"
+              "    S(std::string& r);\n"
+              "};\n"
+              "void f(std::string& str) {\n"
+              "    const S& s(str);\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void constParameterCallback() {

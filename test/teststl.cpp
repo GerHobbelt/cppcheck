@@ -70,6 +70,7 @@ private:
         TEST_CASE(iterator26); // #9176
         TEST_CASE(iterator27); // #10378
         TEST_CASE(iterator28); // #10450
+        TEST_CASE(iterator29);
         TEST_CASE(iteratorExpression);
         TEST_CASE(iteratorSameExpression);
         TEST_CASE(mismatchingContainerIterator);
@@ -183,7 +184,7 @@ private:
         const Settings settings1 = settingsBuilder(settings).certainty(Certainty::inconclusive, inconclusive).cpp(cppstandard).build();
 
         // Tokenize..
-        Tokenizer tokenizer(&settings1, this);
+        Tokenizer tokenizer(settings1, this);
         std::istringstream istr(code);
 
         ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
@@ -201,7 +202,7 @@ private:
         errout.str("");
 
         // Tokenize..
-        Tokenizer tokenizer(&settings, this);
+        Tokenizer tokenizer(settings, this);
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
 
@@ -223,10 +224,10 @@ private:
                     "            bar(v[2], v[3]) )\n"                          // v[3] is accessed
                     "    {;}\n"
                     "}\n");
-        ASSERT_EQUALS("test.cpp:9:warning:Either the condition 'v.size()>=2' is redundant or v size can be 2. Expression 'v[2]' cause access out of bounds.\n"
+        ASSERT_EQUALS("test.cpp:9:warning:Either the condition 'v.size()>=2' is redundant or size of 'v' can be 2. Expression 'v[2]' causes access out of bounds.\n"
                       "test.cpp:8:note:condition 'v.size()>=2'\n"
                       "test.cpp:9:note:Access out of bounds\n"
-                      "test.cpp:9:warning:Either the condition 'v.size()>=2' is redundant or v size can be 2. Expression 'v[3]' cause access out of bounds.\n"
+                      "test.cpp:9:warning:Either the condition 'v.size()>=2' is redundant or size of 'v' can be 2. Expression 'v[3]' causes access out of bounds.\n"
                       "test.cpp:8:note:condition 'v.size()>=2'\n"
                       "test.cpp:9:note:Access out of bounds\n", errout.str());
 
@@ -246,7 +247,7 @@ private:
                     "    v.front();\n"
                     "    if (v.empty()) {}\n"
                     "}");
-        ASSERT_EQUALS("test.cpp:2:warning:Either the condition 'v.empty()' is redundant or expression 'v.front()' cause access out of bounds.\n"
+        ASSERT_EQUALS("test.cpp:2:warning:Either the condition 'v.empty()' is redundant or expression 'v.front()' causes access out of bounds.\n"
                       "test.cpp:3:note:condition 'v.empty()'\n"
                       "test.cpp:2:note:Access out of bounds\n", errout.str());
 
@@ -254,7 +255,7 @@ private:
                     "    if (v.size() == 3) {}\n"
                     "    v[16] = 0;\n"
                     "}");
-        ASSERT_EQUALS("test.cpp:3:warning:Either the condition 'v.size()==3' is redundant or v size can be 3. Expression 'v[16]' cause access out of bounds.\n"
+        ASSERT_EQUALS("test.cpp:3:warning:Either the condition 'v.size()==3' is redundant or size of 'v' can be 3. Expression 'v[16]' causes access out of bounds.\n"
                       "test.cpp:2:note:condition 'v.size()==3'\n"
                       "test.cpp:3:note:Access out of bounds\n", errout.str());
 
@@ -264,7 +265,7 @@ private:
                     "        v[i] = 0;\n"
                     "    }\n"
                     "}");
-        ASSERT_EQUALS("test.cpp:4:warning:Either the condition 'v.size()==3' is redundant or v size can be 3. Expression 'v[i]' cause access out of bounds.\n"
+        ASSERT_EQUALS("test.cpp:4:warning:Either the condition 'v.size()==3' is redundant or size of 'v' can be 3. Expression 'v[i]' causes access out of bounds.\n"
                       "test.cpp:3:note:condition 'v.size()==3'\n"
                       "test.cpp:4:note:Access out of bounds\n", errout.str());
 
@@ -284,7 +285,7 @@ private:
                     "        s[2] = 0;\n"
                     "    }\n"
                     "}");
-        ASSERT_EQUALS("test.cpp:3:warning:Either the condition 's.size()==1' is redundant or s size can be 1. Expression 's[2]' cause access out of bounds.\n"
+        ASSERT_EQUALS("test.cpp:3:warning:Either the condition 's.size()==1' is redundant or size of 's' can be 1. Expression 's[2]' causes access out of bounds.\n"
                       "test.cpp:2:note:condition 's.size()==1'\n"
                       "test.cpp:3:note:Access out of bounds\n", errout.str());
 
@@ -319,7 +320,7 @@ private:
 
         checkNormal("void f(int x) {\n"
                     "  std::string s;\n"
-                    "  x = s.begin() + x;\n"
+                    "  auto it = s.begin() + x;\n"
                     "}");
         ASSERT_EQUALS("test.cpp:3:error:Out of bounds access in expression 's.begin()+x' because 's' is empty and 'x' may be non-zero.\n", errout.str());
 
@@ -376,7 +377,7 @@ private:
                     "    if(v.at(b?42:0)) {}\n"
                     "}\n");
         ASSERT_EQUALS(
-            "test.cpp:3:error:Out of bounds access in expression 'v.at(b?42:0)' because 'v' is empty and 'b?42:0' may be non-zero.\n",
+            "test.cpp:3:error:Out of bounds access in expression 'v.at(b?42:0)' because 'v' is empty.\n",
             errout.str());
 
         checkNormal("void f(std::vector<int> v, bool b){\n"
@@ -384,7 +385,7 @@ private:
                     "        if(v.at(b?42:0)) {}\n"
                     "}\n");
         ASSERT_EQUALS(
-            "test.cpp:3:warning:Either the condition 'v.size()==1' is redundant or v size can be 1. Expression 'v.at(b?42:0)' cause access out of bounds.\n"
+            "test.cpp:3:warning:Either the condition 'v.size()==1' is redundant or size of 'v' can be 1. Expression 'v.at(b?42:0)' causes access out of bounds.\n"
             "test.cpp:2:note:condition 'v.size()==1'\n"
             "test.cpp:3:note:Access out of bounds\n",
             errout.str());
@@ -627,7 +628,7 @@ private:
         checkNormal("void foo(const std::vector<int> &v) {\n"
                     "    if(v.size() >=1 && v[0] == 4 && v[1] == 2){}\n"
                     "}\n");
-        ASSERT_EQUALS("test.cpp:2:warning:Either the condition 'v.size()>=1' is redundant or v size can be 1. Expression 'v[1]' cause access out of bounds.\n"
+        ASSERT_EQUALS("test.cpp:2:warning:Either the condition 'v.size()>=1' is redundant or size of 'v' can be 1. Expression 'v[1]' causes access out of bounds.\n"
                       "test.cpp:2:note:condition 'v.size()>=1'\n"
                       "test.cpp:2:note:Access out of bounds\n", errout.str());
 
@@ -640,7 +641,7 @@ private:
                     "    return y;\n"
                     "}\n");
         ASSERT_EQUALS(
-            "test.cpp:6:warning:Either the condition 'x<2' is redundant or 'x' can have the value greater or equal to 3. Expression 'a[x]' cause access out of bounds.\n"
+            "test.cpp:6:warning:Either the condition 'x<2' is redundant or 'x' can have the value greater or equal to 3. Expression 'a[x]' causes access out of bounds.\n"
             "test.cpp:3:note:condition 'x<2'\n"
             "test.cpp:6:note:Access out of bounds\n",
             errout.str());
@@ -691,10 +692,10 @@ private:
                     "        if (v[i]) {}\n"
                     "    }\n"
                     "}\n");
-        ASSERT_EQUALS("test.cpp:3:warning:Either the condition 'i<=(int)v.size()' is redundant or 'i' can have the value v.size(). Expression 'v[i]' cause access out of bounds.\n"
+        ASSERT_EQUALS("test.cpp:3:warning:Either the condition 'i<=(int)v.size()' is redundant or 'i' can have the value v.size(). Expression 'v[i]' causes access out of bounds.\n"
                       "test.cpp:2:note:condition 'i<=(int)v.size()'\n"
                       "test.cpp:3:note:Access out of bounds\n"
-                      "test.cpp:6:warning:Either the condition 'i<=static_cast<int>(v.size())' is redundant or 'i' can have the value v.size(). Expression 'v[i]' cause access out of bounds.\n"
+                      "test.cpp:6:warning:Either the condition 'i<=static_cast<int>(v.size())' is redundant or 'i' can have the value v.size(). Expression 'v[i]' causes access out of bounds.\n"
                       "test.cpp:5:note:condition 'i<=static_cast<int>(v.size())'\n"
                       "test.cpp:6:note:Access out of bounds\n",
                       errout.str());
@@ -729,7 +730,7 @@ private:
               "}\n",
               true);
         ASSERT_EQUALS(
-            "test.cpp:2:warning:Either the condition 'v.empty()' is redundant or expression 'v.back()' cause access out of bounds.\n"
+            "test.cpp:2:warning:Either the condition 'v.empty()' is redundant or expression 'v.back()' causes access out of bounds.\n"
             "test.cpp:2:note:condition 'v.empty()'\n"
             "test.cpp:2:note:Access out of bounds\n",
             errout.str());
@@ -924,7 +925,7 @@ private:
                     "    std::string_view sv(s);\n"
                     "    return s[2];\n"
                     "}\n");
-        TODO_ASSERT_EQUALS("test.cpp:4:error:Out of bounds access in expression 's[2]' because 's' is empty.\n", "", errout.str());
+        ASSERT_EQUALS("test.cpp:4:error:Out of bounds access in expression 's[2]' because 's' is empty.\n", errout.str());
     }
 
     void outOfBoundsSymbolic()
@@ -935,7 +936,7 @@ private:
               "    int x = textline[col];\n"
               "}\n");
         ASSERT_EQUALS(
-            "[test.cpp:2] -> [test.cpp:4]: (warning) Either the condition 'col>textline.size()' is redundant or 'col' can have the value textline.size(). Expression 'textline[col]' cause access out of bounds.\n",
+            "[test.cpp:2] -> [test.cpp:4]: (warning) Either the condition 'col>textline.size()' is redundant or 'col' can have the value textline.size(). Expression 'textline[col]' causes access out of bounds.\n",
             errout.str());
     }
 
@@ -1107,7 +1108,7 @@ private:
               "    l2.insert(it, 0);\n"
               "}");
         ASSERT_EQUALS("[test.cpp:6]: (error) Same iterator is used with different containers 'l1' and 'l2'.\n"
-                      "[test.cpp:6]: (error) Iterator 'it' from different container 'l2' are used together.\n",
+                      "[test.cpp:6]: (error) Iterator 'it' referring to container 'l1' is used with container 'l2'.\n",
                       errout.str());
 
         check("void foo() {\n" // #5803
@@ -1846,6 +1847,37 @@ private:
         ASSERT_EQUALS("[test.cpp:10]: (style) Consider using std::find_if algorithm instead of a raw loop.\n", errout.str());
     }
 
+    void iterator29()
+    {
+        // #11511
+        check("std::vector<int>& g();\n"
+              "void f() {\n"
+              "    auto v = g();\n"
+              "    auto it = g().begin();\n"
+              "    while (it != g().end())\n"
+              "        it = v.erase(it);\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:6]: (error) Iterator 'it' referring to container 'g()' is used with container 'v'.\n", errout.str());
+
+        check("std::vector<int>& g(int);\n"
+              "void f(int i, int j) {\n"
+              "    auto& r = g(i);\n"
+              "    auto it = g(j).begin();\n"
+              "    while (it != g(j).end())\n"
+              "        it = r.erase(it);\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:6]: (error) Iterator 'it' referring to container 'g(j)' is used with container 'r'.\n", errout.str());
+
+        check("std::vector<int>& g();\n"
+              "void f() {\n"
+              "    auto& r = g();\n"
+              "    auto it = g().begin();\n"
+              "    while (it != g().end())\n"
+              "        it = r.erase(it);\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+    }
+
     void iteratorExpression() {
         check("std::vector<int>& f();\n"
               "std::vector<int>& g();\n"
@@ -2053,13 +2085,13 @@ private:
               "    a.insert(b.end(), value);\n"
               "    return a;\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:3]: (error) Iterator 'b.end()' from different container 'a' are used together.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:3]: (error) Iterator 'b.end()' referring to container 'b' is used with container 'a'.\n", errout.str());
 
         check("std::vector<int> f(std::vector<int> a, std::vector<int> b) {\n"
               "    a.erase(b.begin());\n"
               "    return a;\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:2]: (error) Iterator 'b.begin()' from different container 'a' are used together.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:2]: (error) Iterator 'b.begin()' referring to container 'b' is used with container 'a'.\n", errout.str());
 
         // #9973
         check("void f() {\n"
@@ -2214,7 +2246,7 @@ private:
               "    }\n"
               "}");
         ASSERT_EQUALS(
-            "[test.cpp:6]: (error) Out of bounds access in expression 'foo[ii]' because 'foo' is empty and 'ii' may be non-zero.\n",
+            "[test.cpp:6]: (error) Out of bounds access in expression 'foo[ii]' because 'foo' is empty.\n",
             errout.str());
 
         check("void foo(std::vector<int> foo) {\n"
@@ -2319,7 +2351,7 @@ private:
                   "    }\n"
                   "}");
             ASSERT_EQUALS(
-                "[test.cpp:11]: (error) Out of bounds access in expression 'foo[ii]' because 'foo' is empty and 'ii' may be non-zero.\n",
+                "[test.cpp:11]: (error) Out of bounds access in expression 'foo[ii]' because 'foo' is empty.\n",
                 errout.str());
         }
 
@@ -3174,7 +3206,7 @@ private:
               "    if (v.empty()) {}\n"
               "    v.pop_back();\n"
               "}\n");
-        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:3]: (warning) Either the condition 'v.empty()' is redundant or expression 'v.pop_back()' cause access out of bounds.\n",
+        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:3]: (warning) Either the condition 'v.empty()' is redundant or expression 'v.pop_back()' causes access out of bounds.\n",
                       errout.str());
 
         check("void f(std::vector<int>& v) {\n"

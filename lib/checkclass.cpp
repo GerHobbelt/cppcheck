@@ -127,7 +127,7 @@ void CheckClass::constructors()
 {
     const bool printStyle = mSettings->severity.isEnabled(Severity::style);
     const bool printWarnings = mSettings->severity.isEnabled(Severity::warning);
-    if (!printStyle && !printWarnings)
+    if (!printStyle && !printWarnings && !mSettings->isPremiumEnabled("uninitMemberVar"))
         return;
 
     logChecker("CheckClass::checkConstructors"); // style,warning
@@ -336,7 +336,7 @@ void CheckClass::constructors()
 
 void CheckClass::checkExplicitConstructors()
 {
-    if (!mSettings->severity.isEnabled(Severity::style))
+    if (!mSettings->severity.isEnabled(Severity::style) && !mSettings->isPremiumEnabled("noExplicitConstructor"))
         return;
 
     logChecker("CheckClass::checkExplicitConstructors"); // style
@@ -1275,7 +1275,7 @@ static bool checkFunctionUsage(const Function *privfunc, const Scope* scope)
 
 void CheckClass::privateFunctions()
 {
-    if (!mSettings->severity.isEnabled(Severity::style))
+    if (!mSettings->severity.isEnabled(Severity::style) && !mSettings->isPremiumEnabled("unusedPrivateFunction"))
         return;
 
     logChecker("CheckClass::privateFunctions"); // style
@@ -1564,7 +1564,7 @@ void CheckClass::memsetErrorFloat(const Token *tok, const std::string &type)
 
 void CheckClass::operatorEqRetRefThis()
 {
-    if (!mSettings->severity.isEnabled(Severity::style))
+    if (!mSettings->severity.isEnabled(Severity::style) && !mSettings->isPremiumEnabled("operatorEqRetRefThis"))
         return;
 
     logChecker("CheckClass::operatorEqRetRefThis"); // style
@@ -2090,7 +2090,9 @@ void CheckClass::checkConst()
     if (!mSettings->certainty.isEnabled(Certainty::inconclusive))
         return;
 
-    if (!mSettings->severity.isEnabled(Severity::style))
+    if (!mSettings->severity.isEnabled(Severity::style) &&
+        !mSettings->isPremiumEnabled("functionConst") &&
+        !mSettings->isPremiumEnabled("functionStatic"))
         return;
 
     logChecker("CheckClass::checkConst"); // style,inconclusive
@@ -2639,7 +2641,7 @@ namespace { // avoid one-definition-rule violation
 
 void CheckClass::initializerListOrder()
 {
-    if (!mSettings->severity.isEnabled(Severity::style))
+    if (!mSettings->severity.isEnabled(Severity::style) && !mSettings->isPremiumEnabled("initializerList"))
         return;
 
     // This check is not inconclusive.  However it only determines if the initialization
@@ -2697,7 +2699,7 @@ void CheckClass::initializerListOrder()
                         // check for use of uninitialized arguments
                         for (const auto& arg : vars[j].initArgs)
                             if (vars[j].var->index() < arg->index())
-                                initializerListError(vars[j].tok, vars[j].var->nameToken(), scope->className, vars[j].var->name(), /*isArgument*/ true);
+                                initializerListError(vars[j].tok, vars[j].var->nameToken(), scope->className, vars[j].var->name(), arg->name());
 
                         // need at least 2 members to have out of order initialization
                         if (j == 0)
@@ -2712,12 +2714,12 @@ void CheckClass::initializerListOrder()
     }
 }
 
-void CheckClass::initializerListError(const Token *tok1, const Token *tok2, const std::string &classname, const std::string &varname, bool isArgument)
+void CheckClass::initializerListError(const Token *tok1, const Token *tok2, const std::string &classname, const std::string &varname, const std::string& argname)
 {
     std::list<const Token *> toks = { tok1, tok2 };
-    const std::string msg = isArgument ?
-                            "Member variable '$symbol' uses an uninitialized argument due to the order of declarations." :
-                            "Member variable '$symbol' is in the wrong place in the initializer list.";
+    const std::string msg = argname.empty() ?
+                            "Member variable '$symbol' is in the wrong place in the initializer list." :
+                            "Member variable '$symbol' uses an uninitialized argument '" + argname + "' due to the order of declarations.";
     reportError(toks, Severity::style, "initializerList",
                 "$symbol:" + classname + "::" + varname + '\n' +
                 msg + '\n' +
@@ -3012,7 +3014,8 @@ static std::vector<DuplMemberFuncInfo> getDuplInheritedMemberFunctionsRecursive(
                     (parentClassFuncIt.access != AccessControl::Private || !skipPrivate) &&
                     !classFuncIt.isConstructor() && !classFuncIt.isDestructor() &&
                     classFuncIt.argsMatch(parentClassIt.type->classScope, parentClassFuncIt.argDef, classFuncIt.argDef, emptyString, 0) &&
-                    (classFuncIt.isConst() == parentClassFuncIt.isConst() || Function::returnsConst(&classFuncIt) == Function::returnsConst(&parentClassFuncIt)))
+                    (classFuncIt.isConst() == parentClassFuncIt.isConst() || Function::returnsConst(&classFuncIt) == Function::returnsConst(&parentClassFuncIt)) &&
+                    !(classFuncIt.isDelete() || parentClassFuncIt.isDelete()))
                     results.emplace_back(&classFuncIt, &parentClassFuncIt, &parentClassIt);
             }
         }
@@ -3136,7 +3139,7 @@ void CheckClass::copyCtorAndEqOperatorError(const Token *tok, const std::string 
 
 void CheckClass::checkOverride()
 {
-    if (!mSettings->severity.isEnabled(Severity::style))
+    if (!mSettings->severity.isEnabled(Severity::style) && !mSettings->isPremiumEnabled("missingOverride"))
         return;
     if (mSettings->standards.cpp < Standards::CPP11)
         return;
@@ -3236,7 +3239,7 @@ static bool compareTokenRanges(const Token* start1, const Token* end1, const Tok
 
 void CheckClass::checkUselessOverride()
 {
-    if (!mSettings->severity.isEnabled(Severity::style))
+    if (!mSettings->severity.isEnabled(Severity::style) && !mSettings->isPremiumEnabled("uselessOverride"))
         return;
 
     logChecker("CheckClass::checkUselessOverride"); // style

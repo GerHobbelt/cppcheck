@@ -421,7 +421,7 @@ void ResultsTree::loadSettings()
     mSaveAllErrors = mSettings->value(SETTINGS_SAVE_ALL_ERRORS, false).toBool();
     mShowFullPath = mSettings->value(SETTINGS_SHOW_FULL_PATH, false).toBool();
 
-    showIdColumn(mSettings->value(SETTINGS_SHOW_ERROR_ID, false).toBool());
+    showIdColumn(mSettings->value(SETTINGS_SHOW_ERROR_ID, true).toBool());
     showInconclusiveColumn(mSettings->value(SETTINGS_INCONCLUSIVE_ERRORS, false).toBool());
 }
 
@@ -816,7 +816,7 @@ void ResultsTree::startApplication(const QStandardItem *target, int application)
         }
 #endif // Q_OS_WIN
 
-        const QString cmdLine = QString("%1 %2").arg(program, params);
+        const QString cmdLine = QString("%1 %2").arg(program).arg(params);
 
         // this is reported as deprecated in Qt 5.15.2 but no longer in Qt 6
 #if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
@@ -962,7 +962,7 @@ void ResultsTree::recheckSelectedFiles()
                 askFileDir(currentFile);
                 return;
             }
-            if (Path::isHeader(currentFile.toStdString())) {
+            if (Path::isHeader2(currentFile.toStdString())) {
                 if (!data[FILE0].toString().isEmpty() && !selectedItems.contains(data[FILE0].toString())) {
                     selectedItems<<((!mCheckPath.isEmpty() && (data[FILE0].toString().indexOf(mCheckPath) != 0)) ? (mCheckPath + "/" + data[FILE0].toString()) : data[FILE0].toString());
                     if (!selectedItems.contains(fileNameWithCheckPath))

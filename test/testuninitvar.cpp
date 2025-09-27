@@ -113,7 +113,7 @@ private:
         const Settings settings1 = settingsBuilder(s ? *s : settings).debugwarnings(debugwarnings).build();
 
         // Tokenize..
-        Tokenizer tokenizer(&settings1, this);
+        Tokenizer tokenizer(settings1, this);
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, fname), file, line);
 
@@ -1849,6 +1849,13 @@ private:
         checkUninitVar("std::string f() {\n"
                        "    std::array<std::string, 1> a;\n"
                        "    return a[0];\n"
+                       "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        checkUninitVar("int f() {\n" // #12355
+                       "    const int x[10](1, 2);\n"
+                       "    if (x[0] == 1) {}\n"
+                       "    return x[0];\n"
                        "}\n");
         ASSERT_EQUALS("", errout.str());
     }
@@ -5380,7 +5387,7 @@ private:
         // Tokenize..
         const Settings s = settingsBuilder(settings).debugwarnings(false).build();
 
-        Tokenizer tokenizer(&s, this);
+        Tokenizer tokenizer(s, this);
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, fname), file, line);
 
@@ -5555,7 +5562,9 @@ private:
                         "        p = new S(io);\n"
                         "    p->Write();\n"
                         "}");
-        ASSERT_EQUALS("[test.cpp:8] -> [test.cpp:10]: (warning) Uninitialized variable: p.rIo\n", errout.str());
+        TODO_ASSERT_EQUALS("[test.cpp:8] -> [test.cpp:10]: (warning) Uninitialized variable: p\n",
+                           "[test.cpp:8] -> [test.cpp:10]: (warning) Uninitialized variable: p.rIo\n",
+                           errout.str());
 
         // Unknown types
         {
@@ -6101,7 +6110,7 @@ private:
                         "    increment(n);\n"
                         "    return n;\n"
                         "}\n");
-        ASSERT_EQUALS("[test.cpp:4] -> [test.cpp:1]: (warning) Uninitialized variable: i\n", errout.str());
+        ASSERT_EQUALS("", errout.str());
 
         // #11412
         valueFlowUninit("void f(int n) {\n"
@@ -6373,6 +6382,30 @@ private:
                         "    g(buf);\n"
                         "}\n");
         ASSERT_EQUALS("[test.cpp:4]: (error) Uninitialized variable: buf\n", errout.str());
+
+        valueFlowUninit("void f() {\n" // #12288
+                        "    char buf[100];\n"
+                        "    char* p = new (buf) char[100];\n"
+                        "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        // #12355
+        valueFlowUninit("int f() {\n"
+                        "    const int x[10](1, 2);\n"
+                        "    if (x[0] == 1) {}\n"
+                        "    return x[0];\n"
+                        "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        valueFlowUninit("void f(bool* p) {\n" // #12287
+                        "    if (p)\n"
+                        "        *p = true; \n"
+                        "}\n"
+                        "void g() {\n"
+                        "    bool b;\n"
+                        "    f(&b);\n"
+                        "}\n");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void valueFlowUninitBreak() { // Do not show duplicate warnings about the same uninitialized value
@@ -7587,7 +7620,7 @@ private:
         errout.str("");
 
         // Tokenize..
-        Tokenizer tokenizer(&settings, this);
+        Tokenizer tokenizer(settings, this);
         std::istringstream istr(code);
         ASSERT_LOC(tokenizer.tokenize(istr, "test.cpp"), file, line);
 
@@ -7691,6 +7724,14 @@ private:
             "    lookupStem(h, &stem);\n"
             "}\n");
         ASSERT_EQUALS("", errout.str());
+
+        ctu("void increment(int& i) { ++i; }\n" // #6475
+            "int f() {\n"
+            "    int n;\n"
+            "    increment(n);\n"
+            "    return n;\n"
+            "}\n");
+        ASSERT_EQUALS("[test.cpp:4] -> [test.cpp:1]: (error) Using argument i that points at uninitialized variable n\n", errout.str());
     }
 };
 

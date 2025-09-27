@@ -70,7 +70,7 @@ private:
         if (tokenizer.isC())
             return;
 
-        CheckClass checkClass(&tokenizer, tokenizer.getSettings(), errorLogger);
+        CheckClass checkClass(&tokenizer, &tokenizer.getSettings(), errorLogger);
 
         // can't be a simplified check .. the 'sizeof' is used.
         checkClass.checkMemset();
@@ -199,7 +199,7 @@ private:
     void operatorEqToSelfError(const Token *tok);
     void checkConstError(const Token *tok, const std::string &classname, const std::string &funcname, bool suggestStatic);
     void checkConstError2(const Token *tok1, const Token *tok2, const std::string &classname, const std::string &funcname, bool suggestStatic);
-    void initializerListError(const Token *tok1,const Token *tok2, const std::string & classname, const std::string &varname, bool isArgument = false);
+    void initializerListError(const Token *tok1,const Token *tok2, const std::string & classname, const std::string &varname, const std::string& argname = {});
     void suggestInitializationList(const Token *tok, const std::string& varname);
     void selfInitializationError(const Token* tok, const std::string& varname);
     void pureVirtualFunctionCallInConstructorError(const Function * scopeFunction, const std::list<const Token *> & tokStack, const std::string &purefuncname);

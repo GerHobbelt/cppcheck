@@ -125,7 +125,7 @@ std::string Settings::loadCppcheckCfg()
             const auto& v = it->second;
             if (!v.is<bool>())
                 return "'safety' is not a bool";
-            safety = v.get<bool>();
+            safety = safety || v.get<bool>();
         }
     }
 
@@ -252,4 +252,142 @@ void Settings::setCheckLevelNormal()
     // Checking should finish in reasonable time.
     performanceValueFlowMaxSubFunctionArgs = 8;
     performanceValueFlowMaxIfCount = 100;
+}
+
+// TODO: auto generate these tables
+
+static const std::set<std::string> autosar_checkers{
+    "accessMoved",
+    "arrayIndexOutOfBounds",
+    "comparePointers",
+    "constParameter",
+    "cstyleCast",
+    "ctuOneDefinitionViolation",
+    "doubleFree",
+    "duplicateBreak",
+    "funcArgNamesDifferent",
+    "functionConst",
+    "functionStatic",
+    "invalidContainer",
+    "memleak",
+    "mismatchAllocDealloc",
+    "missingReturn",
+    "noExplicitConstructor",
+    "nullPointer",
+    "pointerOutOfBounds",
+    "unreadVariable",
+    "unusedValue",
+    "redundantAssignment",
+    "redundantInitialization",
+    "returnDanglingLifetime",
+    "shadowVariable",
+    "shiftTooManyBits",
+    "sizeofSideEffects",
+    "throwInDestructor",
+    "throwInNoexceptFunction",
+    "unreachableCode",
+    "uninitData",
+    "uninitMember",
+    "unusedVariable",
+    "useInitializerList",
+    "variableScope",
+    "virtualCallInConstructor",
+    "zeroDiv"
+};
+
+static const std::set<std::string> cert_c_checkers{
+    "danglingLifetime", "autoVariables", "invalidLifetime",
+    "unknownEvaluationOrder",
+    "uninitvar", "uninitdata", "uninitStructMember",
+    "nullPointer",
+    "sizeofCalculation",
+    "bitwiseOnBoolean",
+    "invalidFunctionArg",
+    "floatConversionOverflow",
+    "comparePointers",
+    "stringLiteralWrite",
+    "doubleFree",
+    "deallocret",
+    "deallocuse",
+    "memleak",
+    "autovarInvalidDeallocation",
+    "mismatchAllocDealloc",
+    "IOWithoutPositioning",
+    "resourceLeak",
+    "useClosedFile",
+    "invalidscanf",
+    "wrongPrintfScanfArgNum",
+    "invalidLengthModifierError",
+    "invalidScanfFormatWidth",
+    "wrongPrintfScanfParameterPositionError",
+    "missingReturn"
+};
+
+static const std::set<std::string> cert_cpp_checkers{
+    "deallocThrow", "exceptThrowInDestructor",
+    "ctuOneDefinitionViolation",
+    "sizeofCalculation",
+    "comparePointers",
+    "IOWithoutPositioning",
+    "virtualCallInConstructor",
+    "virtualDestructor",
+    "initializerList",
+    "operatorEqToSelf",
+    "missingReturn",
+};
+
+static const std::set<std::string> misra_c_checkers{
+    "alwaysFalse", "duplicateBreak",
+    "alwaysTrue", "redundantCondition", "redundantAssignment", "redundantAssignInSwitch", "unreadVariable",
+    "unusedVariable",
+    "unusedLabel",
+    "shadowVariable",
+    "funcArgNamesDifferent",
+    "constPointer",
+    "uninitvar",
+    "alwaysTrue", "alwaysFalse", "compareValueOutOfTypeRangeError", "knownConditionTrueFalse",
+    "unknownEvaluationOrder",
+    "sizeofCalculation",
+    "missingReturn",
+    "argumentSize",
+    "pointerOutOfBounds",
+    "comparePointers",
+    "danglingLifetime",
+    "overlappingWriteUnion", "overlappingWriteFunction",
+    "invalidFunctionArg",
+    "bufferAccessOutOfBounds",
+    "memleak", "resourceLeak", "memleakOnRealloc", "leakReturnValNotUsed", "leakNoVarFunctionCall",
+    "autovarInvalidDeallocation",
+    "incompatibleFileOpen",
+    "writeReadOnlyFile",
+    "useClosedFile"
+};
+
+static const std::set<std::string> misra_cpp_checkers{
+    "redundantAssignment", "unreadVariable", "varScope",
+    "shadowVariable",
+    "unknownEvaluationOrder",
+    "cstyleCast",
+    "constVariable", "constParameter",
+    "danglingLifetime",
+    "missingReturn",
+    "uninitMember",
+    "noExplicit",
+    "exceptThrowInDestructor",
+    "throwInDestructor"
+};
+
+bool Settings::isPremiumEnabled(const char id[]) const
+{
+    if (premiumArgs.find("autosar") != std::string::npos && autosar_checkers.count(id))
+        return true;
+    if (premiumArgs.find("cert-c-") != std::string::npos && cert_c_checkers.count(id))
+        return true;
+    if (premiumArgs.find("cert-c++") != std::string::npos && cert_cpp_checkers.count(id))
+        return true;
+    if (premiumArgs.find("misra-c-") != std::string::npos && misra_c_checkers.count(id))
+        return true;
+    if (premiumArgs.find("misra-c++") != std::string::npos && misra_cpp_checkers.count(id))
+        return true;
+    return false;
 }

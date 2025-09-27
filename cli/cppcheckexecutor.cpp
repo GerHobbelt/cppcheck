@@ -141,7 +141,7 @@ namespace {
         /** xml output of errors */
         void reportErr(const ErrorMessage &msg) override;
 
-        void reportProgress(const std::string &filename, const char stage[], const std::size_t value) override;
+        void reportProgress(const std::string &filename, const char stage[], std::size_t value) override;
 
         /**
          * Pointer to current settings; set while check() is running for reportError().
@@ -311,7 +311,7 @@ int CppCheckExecutor::check_internal(const Settings& settings) const
         stdLogger.reportErr(ErrorMessage::getXMLFooter());
     }
 
-    if (settings.safety && (stdLogger.hasCriticalErrors() || returnValue != 0))
+    if (settings.safety && stdLogger.hasCriticalErrors())
         return EXIT_FAILURE;
 
     if (returnValue)

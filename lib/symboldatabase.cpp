@@ -76,8 +76,8 @@ SymbolDatabase::SymbolDatabase(Tokenizer& tokenizer, const Settings& settings, E
     createSymbolDatabaseVariableSymbolTable();
     createSymbolDatabaseSetScopePointers();
     createSymbolDatabaseSetVariablePointers();
-    setValueTypeInTokenList(false);
     createSymbolDatabaseSetTypePointers();
+    setValueTypeInTokenList(false);
     createSymbolDatabaseSetFunctionPointers(true);
     createSymbolDatabaseSetSmartPointerType();
     setValueTypeInTokenList(false);
@@ -152,6 +152,8 @@ void SymbolDatabase::createSymbolDatabaseFindAllScopes()
             return false;
         return endInitList.top().second == scope;
     };
+
+    std::stack<const Token*> inIfCondition;
 
     auto addLambda = [this, &scope](const Token* tok, const Token* lambdaEndToken) -> const Token* {
         const Token* lambdaStartToken = lambdaEndToken->link();
@@ -732,7 +734,8 @@ void SymbolDatabase::createSymbolDatabaseFindAllScopes()
                     scope->checkVariable(tok->tokAt(2), AccessControl::Local, mSettings); // check for variable declaration and add it to new scope if found
                 else if (scope->type == Scope::eCatch)
                     scope->checkVariable(tok->tokAt(2), AccessControl::Throw, mSettings); // check for variable declaration and add it to new scope if found
-                tok = scopeStartTok;
+                tok = tok->next();
+                inIfCondition.push(scopeStartTok);
             } else if (Token::Match(tok, "%var% {")) {
                 endInitList.emplace(tok->linkAt(1), scope);
                 tok = tok->next();
@@ -741,6 +744,8 @@ void SymbolDatabase::createSymbolDatabaseFindAllScopes()
             } else if (tok->str() == "{") {
                 if (inInitList()) {
                     endInitList.emplace(tok->link(), scope);
+                } else if (!inIfCondition.empty() && tok == inIfCondition.top()) {
+                    inIfCondition.pop();
                 } else if (isExecutableScope(tok)) {
                     scopeList.emplace_back(this, tok, scope, Scope::eUnconditional, tok);
                     scope->nestedList.push_back(&scopeList.back());
@@ -6514,7 +6519,7 @@ nonneg int SymbolDatabase::sizeOfType(const Token *type) const
 }
 
 static const Token* parsedecl(const Token* type,
-                              ValueType* const valuetype,
+                              ValueType* valuetype,
                               ValueType::Sign defaultSignedness,
                               const Settings& settings,
                               SourceLocation loc = SourceLocation::current());
@@ -7166,6 +7171,8 @@ static const Token* parsedecl(const Token* type,
            !type->variable() && !type->function()) {
         bool isIterator = false;
         if (type->str() == "(") {
+            if (!Token::simpleMatch(type, "( *"))
+                break;
             if (Token::Match(type->link(), ") const| {"))
                 break;
             if (par)

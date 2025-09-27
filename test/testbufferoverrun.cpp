@@ -2799,6 +2799,18 @@ private:
         ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:3]: (warning) Either the condition 's>sizeof(a)' is redundant or the array 'a[16]' is accessed at index 16, which is out of bounds.\n",
                       errout_str());
 
+        check("void f(int fd) {\n" // #12318
+              "    char buf[10];\n"
+              "    int size = 0;\n"
+              "    int pos = -1;\n"
+              "    do {\n"
+              "        pos++;\n"
+              "        size = read(fd, &buf[pos], 1);\n"
+              "    } while (size > 0);\n"
+              "    buf[pos] = '\\0';\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+
     }
 
     void array_index_valueflow_pointer() {
@@ -5204,7 +5216,7 @@ private:
         std::list<Check::FileInfo*> fileInfo;
         Check& c = getCheck<CheckBufferOverrun>();
         fileInfo.push_back(c.getFileInfo(tokenizer, settings0));
-        c.analyseWholeProgram(ctu, fileInfo, settings0, *this);
+        c.analyseWholeProgram(ctu, fileInfo, settings0, *this); // TODO: check result
         while (!fileInfo.empty()) {
             delete fileInfo.back();
             fileInfo.pop_back();

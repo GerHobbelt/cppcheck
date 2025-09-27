@@ -1372,7 +1372,7 @@ void CheckOther::checkPassByReference()
             continue;
 
         const bool isConst = var->isConst();
-        if (isConst) {
+        if (isConst && !var->isArray()) {
             passedByValueError(var, inconclusive, isRangeBasedFor);
             continue;
         }
@@ -1609,8 +1609,9 @@ void CheckOther::checkConstPointer()
 {
     if (!mSettings->severity.isEnabled(Severity::style) &&
         !mSettings->isPremiumEnabled("constParameter") &&
+        !mSettings->isPremiumEnabled("constParameterPointer") &&
         !mSettings->isPremiumEnabled("constParameterReference") &&
-        !mSettings->isPremiumEnabled("constPointer"))
+        !mSettings->isPremiumEnabled("constVariablePointer"))
         return;
 
     logChecker("CheckOther::checkConstPointer"); // style

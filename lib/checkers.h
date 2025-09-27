@@ -1,6 +1,6 @@
 /* -*- C++ -*-
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2023 Cppcheck team.
+ * Copyright (C) 2007-2024 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -48,6 +48,7 @@ namespace checkers {
     extern CPPCHECKLIB const char Man[]; // = "Mandatory";
     extern CPPCHECKLIB const char Doc[]; // = "Document";
 
+    extern CPPCHECKLIB const std::vector<MisraInfo> misraC2012Directives;
     extern CPPCHECKLIB const std::vector<MisraInfo> misraC2012Rules;
     extern CPPCHECKLIB const std::vector<MisraCppInfo> misraCpp2008Rules;
     extern CPPCHECKLIB const std::vector<MisraCppInfo> misraCpp2023Rules;

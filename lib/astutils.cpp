@@ -738,6 +738,8 @@ std::vector<ValueType> getParentValueTypes(const Token* tok, const Settings& set
                         continue;
                     nameTok = var->nameToken();
                     result.push_back(*var->valueType());
+                    if (var->isArray())
+                        result.back().pointer += var->dimensions().size();
                 }
                 if (result.size() == 1 && nameTok && parent) {
                     *parent = nameTok;
@@ -1090,18 +1092,6 @@ static bool isAliased(const Token *startTok, const Token *endTok, nonneg int var
             return true;
     }
     return false;
-}
-
-bool isAliased(const Variable *var)
-{
-    if (!var)
-        return false;
-    if (!var->scope())
-        return false;
-    const Token *start = var->declEndToken();
-    if (!start)
-        return false;
-    return isAliased(start, var->scope()->bodyEnd, var->declarationId());
 }
 
 bool exprDependsOnThis(const Token* expr, bool onVar, nonneg int depth)

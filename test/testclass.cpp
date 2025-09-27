@@ -185,6 +185,7 @@ private:
         TEST_CASE(const91);
         TEST_CASE(const92);
         TEST_CASE(const93);
+        TEST_CASE(const94);
 
         TEST_CASE(const_handleDefaultParameters);
         TEST_CASE(const_passThisToMemberOfOtherClass);
@@ -6691,6 +6692,19 @@ private:
                       errout_str());
     }
 
+    void const94() { // #7459
+        checkConst("class A {\n"
+                   "public:\n"
+                   "    A() : tickFunction(&A::nop) {}\n"
+                   "    void tick() { (this->*tickFunction)(); }\n"
+                   "private:\n"
+                   "    typedef void (A::* Fn)();\n"
+                   "    Fn tickFunction;\n"
+                   "    void nop() {}\n"
+                   "};\n");
+        ASSERT_EQUALS("", errout_str());
+    }
+
     void const_handleDefaultParameters() {
         checkConst("struct Foo {\n"
                    "    void foo1(int i, int j = 0) {\n"
@@ -8933,7 +8947,7 @@ private:
         }
 
         // Check code..
-        check.analyseWholeProgram(nullptr, fileInfo, settingsDefault, *this);
+        check.analyseWholeProgram(nullptr, fileInfo, settingsDefault, *this); // TODO: check result
 
         while (!fileInfo.empty()) {
             delete fileInfo.back();
@@ -9052,6 +9066,40 @@ private:
                                "    std::string foo() && { return s; }\n" // <- used for temporary objects
                                "};\n");
         ASSERT_EQUALS("", errout_str());
+
+        checkReturnByReference("struct S1 {\n" // #13056
+                               "    std::string str;\n"
+                               "    struct T { std::string strT; } mT;\n"
+                               "};\n"
+                               "struct S2 {\n"
+                               "    std::string get1() const {\n"
+                               "        return mS1->str;\n"
+                               "    }\n"
+                               "    std::string get2() const {\n"
+                               "        return mS1->mT.strT;\n"
+                               "    }\n"
+                               "    S1* mS1;\n"
+                               "};\n");
+        ASSERT_EQUALS("[test.cpp:6]: (performance) Function 'get1()' should return member 'str' by const reference.\n"
+                      "[test.cpp:9]: (performance) Function 'get2()' should return member 'strT' by const reference.\n",
+                      errout_str());
+
+        checkReturnByReference("struct S { std::string str; };\n" // #13059
+                               "struct T {\n"
+                               "    S temp() const;\n"
+                               "    S s[1];\n"
+                               "};\n"
+                               "struct U {\n"
+                               "    std::string get1() const {\n"
+                               "        return t.temp().str;\n"
+                               "    }\n"
+                               "    std::string get2() const {\n"
+                               "        return t.s[0].str;\n"
+                               "    }\n"
+                               "    T t;\n"
+                               "};\n");
+        ASSERT_EQUALS("[test.cpp:10]: (performance) Function 'get2()' should return member 'str' by const reference.\n",
+                      errout_str());
     }
 };
 

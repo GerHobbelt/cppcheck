@@ -316,7 +316,7 @@ void Settings::setCheckLevel(CheckLevel level)
     }
 }
 
-// TODO: auto generate these tables
+// These tables are auto generated from Cppcheck Premium script
 
 static const std::set<std::string> autosarCheckers{
     "accessMoved",
@@ -448,8 +448,6 @@ static const std::set<std::string> certCppCheckers{
 };
 
 static const std::set<std::string> misrac2012Checkers{
-    "alwaysFalse",
-    "alwaysTrue",
     "argumentSize",
     "autovarInvalidDeallocation",
     "bufferAccessOutOfBounds",
@@ -492,8 +490,6 @@ static const std::set<std::string> misrac2012Checkers{
 };
 
 static const std::set<std::string> misrac2023Checkers{
-    "alwaysFalse",
-    "alwaysTrue",
     "argumentSize",
     "autovarInvalidDeallocation",
     "bufferAccessOutOfBounds",
@@ -669,6 +665,8 @@ void Settings::setMisraRuleTexts(const std::string& data)
         std::string text = line.substr(pos + 1);
         if (id.empty() || text.empty())
             continue;
+        if (text[text.size() -1] == '\r')
+            text.erase(text.size() -1);
         mMisraRuleTexts[id] = std::move(text);
     }
 }

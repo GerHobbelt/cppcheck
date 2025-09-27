@@ -433,6 +433,7 @@ private:
         TEST_CASE(createSymbolDatabaseFindAllScopes6);
         TEST_CASE(createSymbolDatabaseFindAllScopes7);
         TEST_CASE(createSymbolDatabaseFindAllScopes8); // #12761
+        TEST_CASE(createSymbolDatabaseFindAllScopes9);
 
         TEST_CASE(createSymbolDatabaseIncompleteVars);
 
@@ -517,6 +518,7 @@ private:
         TEST_CASE(findFunction52);
         TEST_CASE(findFunction53);
         TEST_CASE(findFunction54);
+        TEST_CASE(findFunction55); // #31004
         TEST_CASE(findFunctionContainer);
         TEST_CASE(findFunctionExternC);
         TEST_CASE(findFunctionGlobalScope); // ::foo
@@ -5849,6 +5851,15 @@ private:
         ASSERT(myst1->scope() != myst2->scope());
     }
 
+    void createSymbolDatabaseFindAllScopes9() // #12943
+    {
+        GET_SYMBOL_DB("void f(int n) {\n"
+                      "    if ([](int i) { return i == 2; }(n)) {}\n"
+                      "}\n");
+        ASSERT(db && db->scopeList.size() == 4);
+        ASSERT_EQUALS(db->scopeList.back().type, Scope::eLambda);
+    }
+
     void createSymbolDatabaseIncompleteVars()
     {
         {
@@ -6591,7 +6602,7 @@ private:
                       "    int i = abc[ARRAY_SIZE(cats)];\n"
                       "}");
         const Token *e = Token::findsimplematch(tokenizer.tokens(), "e abc");
-        db->sizeOfType(e);  // <- don't crash
+        (void)db->sizeOfType(e);  // <- don't crash
     }
 
     void isImplicitlyVirtual() {
@@ -8304,6 +8315,16 @@ private:
         }
     }
 
+    void findFunction55() {
+        GET_SYMBOL_DB("struct Token { int x; };\n"
+                      "static void f(std::size_t s);\n"
+                      "static void f(const Token* ptr);\n"
+                      "static void f2(const std::vector<Token*>& args) { f(args[0]); }\n");
+        const Token* f = Token::findsimplematch(tokenizer.tokens(), "f ( args [ 0 ] )");
+        ASSERT(f && f->function());
+        ASSERT(Token::simpleMatch(f->function()->tokenDef, "f ( const Token * ptr ) ;"));
+    }
+
     void findFunctionContainer() {
         {
             GET_SYMBOL_DB("void dostuff(std::vector<int> v);\n"
@@ -9141,6 +9162,7 @@ private:
         ASSERT_EQUALS("s", typeOf("struct s { s foo(); s(int, int); }; s s::foo() { return s(1, 2); } ", "( 1 , 2 )"));
         // Some standard template functions.. TODO library configuration
         ASSERT_EQUALS("signed int &&", typeOf("std::move(5);", "( 5 )"));
+        ASSERT_EQUALS("signed int", typeOf("using F = int(int*); F* f; f(ptr);", "( ptr")); // #9792
 
         // struct member..
         ASSERT_EQUALS("signed int", typeOf("struct AB { int a; int b; } ab; x = ab.a;", "."));

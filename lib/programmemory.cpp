@@ -602,7 +602,6 @@ static bool isIntegralValue(const ValueFlow::Value& value)
 static ValueFlow::Value evaluate(const std::string& op, const ValueFlow::Value& lhs, const ValueFlow::Value& rhs)
 {
     ValueFlow::Value result;
-    combineValueProperties(lhs, rhs, result);
     if (lhs.isImpossible() && rhs.isImpossible())
         return ValueFlow::Value::unknown();
     if (lhs.isImpossible() || rhs.isImpossible()) {
@@ -1529,13 +1528,13 @@ namespace {
                         std::vector<ValueFlow::Value> result =
                             infer(ValueFlow::makeIntegralInferModel(), expr->str(), expr->astOperand1()->values(), {std::move(rhs)});
                         if (!result.empty() && result.front().isKnown())
-                            return result.front();
+                            return std::move(result.front());
                     }
                     if (lhs.isIntValue() && !expr->astOperand2()->values().empty()) {
                         std::vector<ValueFlow::Value> result =
                             infer(ValueFlow::makeIntegralInferModel(), expr->str(), {std::move(lhs)}, expr->astOperand2()->values());
                         if (!result.empty() && result.front().isKnown())
-                            return result.front();
+                            return std::move(result.front());
                     }
                     return unknown();
                 }
@@ -1613,7 +1612,7 @@ namespace {
                             ex.fdepth--;
                             auto r = ex.execute(f->functionScope);
                             if (!r.empty())
-                                result = r.front();
+                                result = std::move(r.front());
                             // TODO: Track values changed by reference
                         }
                     } else {

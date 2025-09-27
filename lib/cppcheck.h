@@ -132,7 +132,7 @@ public:
      */
     static void getErrorMessages(ErrorLogger &errorlogger);
 
-    void tooManyConfigsError(const std::string &file, const int numberOfConfigurations);
+    void tooManyConfigsError(const std::string &file, int numberOfConfigurations);
     void purgedConfigurationMessage(const std::string &file, const std::string& configuration);
 
     /** Analyse whole program, run this after all TUs has been scanned.
@@ -155,8 +155,6 @@ public:
     static void printTimerResults(SHOWTIME_MODES mode);
 
     bool isPremiumCodingStandardId(const std::string& id) const;
-
-    std::string getAddonMessage(const std::string& id, const std::string& text) const;
 
     /**
      * @brief Get dumpfile <rawtokens> contents, this is only public for testing purposes
@@ -231,7 +229,7 @@ private:
     std::unordered_set<std::string> mErrorList;
     Settings mSettings;
 
-    void reportProgress(const std::string &filename, const char stage[], const std::size_t value) override;
+    void reportProgress(const std::string &filename, const char stage[], std::size_t value) override;
 
     ErrorLogger &mErrorLogger;
 

@@ -2111,6 +2111,8 @@ void CheckClass::checkConst()
             // don't warn for friend/static/virtual functions
             if (func.isFriend() || func.isStatic() || func.hasVirtualSpecifier())
                 continue;
+            if (func.functionPointerUsage)
+                continue;
 
             // don't suggest const when returning non-const pointer/reference, but still suggest static
             auto isPointerOrReference = [this](const Token* start, const Token* end) -> bool {
@@ -3324,7 +3326,16 @@ static const Variable* getSingleReturnVar(const Scope* scope) {
         return nullptr;
     if (!start->astOperand1() || start->str() != "return")
         return nullptr;
-    return start->astOperand1()->variable();
+    const Token* tok = start->astOperand1();
+    if (tok->str() == ".") {
+        const Token* top = tok->astOperand1();
+        while (Token::Match(top, "[[.]"))
+            top = top->astOperand1();
+        if (!Token::Match(top, "%var%"))
+            return nullptr;
+        tok = tok->astOperand2();
+    }
+    return tok->variable();
 }
 
 void CheckClass::checkReturnByReference()

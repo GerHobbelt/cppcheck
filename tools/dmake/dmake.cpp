@@ -691,8 +691,6 @@ int main(int argc, char **argv)
                                 "-Wpacked "
                                 "-Wredundant-decls "
                                 "-Wundef "
-                                "-Wno-shadow "
-                                "-Wno-missing-braces "
                                 "-Wno-sign-compare "
                                 "-Wno-multichar "
                                 "-Woverloaded-virtual "
@@ -775,6 +773,7 @@ int main(int argc, char **argv)
     fout << "ifdef FILESDIR\n";
     fout << "\tinstall -d ${DESTDIR}${FILESDIR}\n";
     fout << "\tinstall -d ${DESTDIR}${FILESDIR}/addons\n";
+    fout << "\tinstall -m 644 addons/*.json ${DESTDIR}${FILESDIR}/addons\n";
     fout << "\tinstall -m 644 addons/*.py ${DESTDIR}${FILESDIR}/addons\n";
     fout << "\tinstall -d ${DESTDIR}${FILESDIR}/cfg\n";
     fout << "\tinstall -m 644 cfg/*.cfg ${DESTDIR}${FILESDIR}/cfg\n";

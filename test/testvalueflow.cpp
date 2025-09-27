@@ -138,6 +138,8 @@ private:
 
         TEST_CASE(valueFlowSafeFunctionParameterValues);
         TEST_CASE(valueFlowUnknownFunctionReturn);
+        TEST_CASE(valueFlowUnknownFunctionReturnRand);
+        TEST_CASE(valueFlowUnknownFunctionReturnMalloc);
 
         TEST_CASE(valueFlowPointerAliasDeref);
 
@@ -1820,6 +1822,23 @@ private:
                "    }\n"
                "}";
         ASSERT_EQUALS(false, testValueOfX(code, 2U, 0));
+
+        code = "struct S {\n" // #12848
+               "    S* next;\n"
+               "    int a;\n"
+               "};\n"
+               "void f(S* x, int i) {\n"
+               "    while (x) {\n"
+               "        if (x->a == 0) {\n"
+               "            x = x->next;\n"
+               "            continue;\n"
+               "        }\n"
+               "        if (i == 0)\n"
+               "            break;\n"
+               "        x->a = i--;\n"
+               "    }\n"
+               "}\n";
+        ASSERT_EQUALS(false, testValueOfX(code, 13U, 0));
     }
 
     void valueFlowBeforeConditionTernaryOp() { // bailout: ?:
@@ -7222,8 +7241,16 @@ private:
         ASSERT_EQUALS(100, values.back().intvalue);
     }
 
-
     void valueFlowUnknownFunctionReturn() {
+        const char code[] = "template <typename T>\n" // #13409
+                            "struct S {\n"
+                            "    std::max_align_t T::* m;\n"
+                            "    S(std::max_align_t T::* p) : m(p) {}\n"
+                            "};\n";
+        (void)valueOfTok(code, ":"); // don't crash
+    }
+
+    void valueFlowUnknownFunctionReturnRand() {
         const char *code;
         std::list<ValueFlow::Value> values;
         /*const*/ Settings s = settingsBuilder().library("std.cfg").build();
@@ -7235,6 +7262,19 @@ private:
         ASSERT_EQUALS(INT_MIN, values.front().intvalue);
         ASSERT_EQUALS(INT_MAX, values.back().intvalue);
     }
+
+    void valueFlowUnknownFunctionReturnMalloc() { // #4626
+        const char *code;
+        const Settings s = settingsBuilder().library("std.cfg").build();
+
+        code = "ptr = malloc(10);";
+        const auto& values = tokenValues(code, "(", &s);
+        ASSERT_EQUALS(1, values.size());
+        ASSERT_EQUALS(true, values.front().isIntValue());
+        ASSERT_EQUALS(true, values.front().isPossible());
+        ASSERT_EQUALS(0, values.front().intvalue);
+    }
+
 
     void valueFlowPointerAliasDeref() {
         const char* code;

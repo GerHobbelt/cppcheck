@@ -5,11 +5,12 @@
 import pytest
 import re
 import sys
+import os
 
 from .util import dump_create, dump_remove, convert_json_output
 
 
-TEST_SOURCE_FILES = ['./addons/test/misra/misra-test.c']
+TEST_SOURCE_FILES = [os.path.join('addons','test','misra','misra-test.c')]
 
 
 def remove_misra_config(s:str):
@@ -29,6 +30,7 @@ def checker():
     return MisraChecker(settings)
 
 
+# FIXME: files are generates in the source tree so it will cause issues if tests are run with xdist.
 @pytest.fixture
 def test_files():
     for f in TEST_SOURCE_FILES:
@@ -116,7 +118,6 @@ def test_rules_suppression(checker, capsys):
 
     for src in test_sources:
         re_suppressed= r"\[%s\:[0-9]+\]" % src
-        dump_remove(src)
         dump_create(src, "--suppressions-list=addons/test/misra/suppressions.txt","--inline-suppr")
         checker.parseDump(src + ".dump")
         captured = capsys.readouterr().err
@@ -170,3 +171,13 @@ def test_read_ctu_info_line(checker):
     assert checker.read_ctu_info_line('{"summary":"123"}') is None
     assert checker.read_ctu_info_line('{"data":123}') is None
     assert checker.read_ctu_info_line('{"summary":"123","data":123}') is not None
+
+def test_platform(checker):
+    test_file = os.path.join('addons','test','misra','misra-test.c')
+    dump_create(test_file, "--language=c++")
+    checker.parseDump(test_file + ".dump")
+    assert checker.is_cpp is True
+
+    dump_create(test_file, "--language=c")
+    checker.parseDump(test_file + ".dump")
+    assert checker.is_cpp is False

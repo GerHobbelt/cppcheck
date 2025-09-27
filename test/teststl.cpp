@@ -70,6 +70,7 @@ private:
         TEST_CASE(iterator28); // #10450
         TEST_CASE(iterator29);
         TEST_CASE(iterator30);
+        TEST_CASE(iterator31);
         TEST_CASE(iteratorExpression);
         TEST_CASE(iteratorSameExpression);
         TEST_CASE(mismatchingContainerIterator);
@@ -1900,6 +1901,27 @@ private:
         ASSERT_EQUALS("", errout_str());
     }
 
+    void iterator31()
+    {
+        check("struct S {\n" // #13327
+              "    std::string a;\n"
+              "};\n"
+              "struct T {\n"
+              "    S s;\n"
+              "};\n"
+              "bool f(const S& s) {\n"
+              "    std::string b;\n"
+              "    return s.a.c_str() == b.c_str();\n"
+              "}\n"
+              "bool g(const T& t) {\n"
+              "    std::string b;\n"
+              "    return t.s.a.c_str() == b.c_str();\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:9]: (error) Iterators of different containers 's.a' and 'b' are used together.\n"
+                      "[test.cpp:13]: (error) Iterators of different containers 't.s.a' and 'b' are used together.\n",
+                      errout_str());
+    }
+
     void iteratorExpression() {
         check("std::vector<int>& f();\n"
               "std::vector<int>& g();\n"
@@ -2239,6 +2261,14 @@ private:
         check("void f(void* p) {\n" // #12445
               "    std::vector<int>&v = *(std::vector<int>*)(p);\n"
               "    v.erase(v.begin(), v.end());\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        // #13408
+        check("void f(const std::vector<int>& v) {\n"
+              "    for (const auto& i : v) {\n"
+              "        if (std::distance(&*v.cbegin(), &i)) {}\n"
+              "    }   \n"
               "}\n");
         ASSERT_EQUALS("", errout_str());
     }

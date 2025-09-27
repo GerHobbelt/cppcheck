@@ -3753,6 +3753,23 @@ private:
               "    return g(a, s.x);\n"
               "}\n");
         ASSERT_EQUALS("", errout_str());
+
+        check("struct S { std::vector<int> v; };\n" // #13317
+              "struct T { S s; };\n"
+              "int f(S& s) {\n"
+              "    for (std::vector<int>::const_iterator it = s.v.cbegin(); it != s.v.cend(); ++it) {}\n"
+              "    return *s.v.cbegin();\n"
+              "}\n"
+              "int f(T& t) {\n"
+              "    return *t.s.v.cbegin();\n"
+              "}\n"
+              "int f(std::vector<int>& v) {\n"
+              "    return *v.cbegin();\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:3]: (style) Parameter 's' can be declared as reference to const\n"
+                      "[test.cpp:7]: (style) Parameter 't' can be declared as reference to const\n"
+                      "[test.cpp:10]: (style) Parameter 'v' can be declared as reference to const\n",
+                      errout_str());
     }
 
     void constParameterCallback() {
@@ -10532,6 +10549,23 @@ private:
               "    if (i > 5)\n"
               "        j = i;\n"
               "    return j;\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        check("struct S {\n" // #12894
+              "    std::string a;\n"
+              "    void f(const S& s);\n"
+              "    void g(const S& s);\n"
+              "};\n"
+              "void S::f(const S& s) {\n"
+              "    std::string x = a;\n"
+              "    this->operator=(s);\n"
+              "    a = x;\n"
+              "}\n"
+              "void S::g(const S& s) {\n"
+              "    std::string x = a;\n"
+              "    operator=(s);\n"
+              "    a = x;\n"
               "}\n");
         ASSERT_EQUALS("", errout_str());
     }

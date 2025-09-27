@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     env:
-      QT_VERSION: 6.8.0
+      QT_VERSION: 6.8.1
       UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1:report_error_type=1
       # TODO: figure out why there are cache misses with PCH enabled
       CCACHE_SLOPPINESS: pch_defines,time_macros
@@ -67,6 +67,7 @@ jobs:
           python3 -m pip install pip --upgrade
           python3 -m pip install pytest
           python3 -m pip install pytest-timeout
+          python3 -m pip install pytest-xdist
           python3 -m pip install psutil
 
       # TODO: disable warnings
@@ -85,6 +86,10 @@ jobs:
         run: |
           cmake --build cmake.output --target testrunner -- -j $(nproc)
 
+      - name: Build GUI tests
+        run: |
+          cmake --build cmake.output --target gui-tests -- -j $(nproc)
+
       - name: Run tests
         run: ./cmake.output/bin/testrunner
 
@@ -92,21 +97,19 @@ jobs:
         run: |
           cmake --build cmake.output --target checkcfg -- -j $(nproc)
 
-      # TODO: we should use CTest instead to parallelize tests but the start-up overhead will slow things down
       - name: Run CTest
-        if: false
         run: |
           ctest --test-dir cmake.output --output-on-failure -j$(nproc)
 
       - name: Run test/cli
         run: |
           pwd=$(pwd)
-          TEST_CPPCHECK_EXE_LOOKUP_PATH="$pwd/cmake.output" python3 -m pytest -Werror --strict-markers -vv test/cli
+          TEST_CPPCHECK_EXE_LOOKUP_PATH="$pwd/cmake.output" python3 -m pytest -Werror --strict-markers -vv -n auto test/cli
 
       - name: Run test/cli (-j2)
         run: |
           pwd=$(pwd)
-          TEST_CPPCHECK_EXE_LOOKUP_PATH="$pwd/cmake.output" python3 -m pytest -Werror --strict-markers -vv test/cli
+          TEST_CPPCHECK_EXE_LOOKUP_PATH="$pwd/cmake.output" python3 -m pytest -Werror --strict-markers -vv -n auto test/cli
         env:
           TEST_CPPCHECK_INJECT_J: 2
 
@@ -114,9 +117,16 @@ jobs:
         if: false
         run: |
           pwd=$(pwd)
-          TEST_CPPCHECK_EXE_LOOKUP_PATH="$pwd/cmake.output" python3 -m pytest -Werror --strict-markers -vv test/cli
+          TEST_CPPCHECK_EXE_LOOKUP_PATH="$pwd/cmake.output" python3 -m pytest -Werror --strict-markers -vv -n auto test/cli
         env:
           TEST_CPPCHECK_INJECT_CLANG: clang
+
+      - name: Run test/cli (--cppcheck-build-dir)
+        run: |
+          pwd=$(pwd)
+          TEST_CPPCHECK_EXE_LOOKUP_PATH="$pwd/cmake.output" python3 -m pytest -Werror --strict-markers -vv test/cli
+        env:
+          TEST_CPPCHECK_INJECT_BUILDDIR: injected
 
       - name: Generate dependencies
         run: |

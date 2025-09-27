@@ -136,7 +136,7 @@ ifeq (clang++, $(findstring clang++,$(CXX)))
     CPPCHK_GLIBCXX_DEBUG=
 endif
 ifndef CXXFLAGS
-    CXXFLAGS=-pedantic -Wall -Wextra -Wcast-qual -Wfloat-equal -Wmissing-declarations -Wmissing-format-attribute -Wno-long-long -Wpacked -Wredundant-decls -Wundef -Wno-shadow -Wno-missing-braces -Wno-sign-compare -Wno-multichar -Woverloaded-virtual $(CPPCHK_GLIBCXX_DEBUG) -g
+    CXXFLAGS=-pedantic -Wall -Wextra -Wcast-qual -Wfloat-equal -Wmissing-declarations -Wmissing-format-attribute -Wno-long-long -Wpacked -Wredundant-decls -Wundef -Wno-sign-compare -Wno-multichar -Woverloaded-virtual $(CPPCHK_GLIBCXX_DEBUG) -g
 endif
 
 ifeq (g++, $(findstring g++,$(CXX)))
@@ -395,6 +395,7 @@ install: cppcheck
 ifdef FILESDIR
 	install -d ${DESTDIR}${FILESDIR}
 	install -d ${DESTDIR}${FILESDIR}/addons
+	install -m 644 addons/*.json ${DESTDIR}${FILESDIR}/addons
 	install -m 644 addons/*.py ${DESTDIR}${FILESDIR}/addons
 	install -d ${DESTDIR}${FILESDIR}/cfg
 	install -m 644 cfg/*.cfg ${DESTDIR}${FILESDIR}/cfg
@@ -511,7 +512,7 @@ $(libcppdir)/checkersidmapping.o: lib/checkersidmapping.cpp lib/checkers.h lib/c
 $(libcppdir)/checkersreport.o: lib/checkersreport.cpp lib/addoninfo.h lib/checkers.h lib/checkersreport.h lib/config.h lib/errortypes.h lib/library.h lib/mathlib.h lib/platform.h lib/settings.h lib/standards.h lib/suppressions.h
 	$(CXX) ${INCLUDE_FOR_LIB} $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $(libcppdir)/checkersreport.cpp
 
-$(libcppdir)/checkexceptionsafety.o: lib/checkexceptionsafety.cpp lib/addoninfo.h lib/check.h lib/checkexceptionsafety.h lib/config.h lib/errortypes.h lib/library.h lib/mathlib.h lib/platform.h lib/settings.h lib/sourcelocation.h lib/standards.h lib/suppressions.h lib/symboldatabase.h lib/templatesimplifier.h lib/token.h lib/tokenize.h lib/tokenlist.h lib/utils.h lib/vfvalue.h
+$(libcppdir)/checkexceptionsafety.o: lib/checkexceptionsafety.cpp lib/addoninfo.h lib/astutils.h lib/check.h lib/checkexceptionsafety.h lib/config.h lib/errortypes.h lib/library.h lib/mathlib.h lib/platform.h lib/settings.h lib/smallvector.h lib/sourcelocation.h lib/standards.h lib/suppressions.h lib/symboldatabase.h lib/templatesimplifier.h lib/token.h lib/tokenize.h lib/tokenlist.h lib/utils.h lib/vfvalue.h
 	$(CXX) ${INCLUDE_FOR_LIB} $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $(libcppdir)/checkexceptionsafety.cpp
 
 $(libcppdir)/checkfunctions.o: lib/checkfunctions.cpp lib/addoninfo.h lib/astutils.h lib/check.h lib/checkfunctions.h lib/config.h lib/errortypes.h lib/library.h lib/mathlib.h lib/platform.h lib/settings.h lib/smallvector.h lib/sourcelocation.h lib/standards.h lib/suppressions.h lib/symboldatabase.h lib/templatesimplifier.h lib/token.h lib/tokenize.h lib/tokenlist.h lib/utils.h lib/valueflow.h lib/vfvalue.h
@@ -685,7 +686,7 @@ cli/processexecutor.o: cli/processexecutor.cpp cli/executor.h cli/processexecuto
 cli/signalhandler.o: cli/signalhandler.cpp cli/signalhandler.h cli/stacktrace.h lib/config.h
 	$(CXX) ${INCLUDE_FOR_CLI} $(CPPFLAGS) $(CXXFLAGS) -c -o $@ cli/signalhandler.cpp
 
-cli/singleexecutor.o: cli/singleexecutor.cpp cli/executor.h cli/singleexecutor.h lib/addoninfo.h lib/check.h lib/color.h lib/config.h lib/cppcheck.h lib/errorlogger.h lib/errortypes.h lib/filesettings.h lib/library.h lib/mathlib.h lib/path.h lib/platform.h lib/settings.h lib/standards.h lib/suppressions.h lib/timer.h
+cli/singleexecutor.o: cli/singleexecutor.cpp cli/executor.h cli/singleexecutor.h lib/addoninfo.h lib/check.h lib/config.h lib/cppcheck.h lib/errortypes.h lib/filesettings.h lib/library.h lib/mathlib.h lib/path.h lib/platform.h lib/settings.h lib/standards.h lib/suppressions.h lib/timer.h
 	$(CXX) ${INCLUDE_FOR_CLI} $(CPPFLAGS) $(CXXFLAGS) -c -o $@ cli/singleexecutor.cpp
 
 cli/stacktrace.o: cli/stacktrace.cpp cli/stacktrace.h lib/config.h lib/utils.h

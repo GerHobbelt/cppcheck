@@ -9,6 +9,7 @@ import pytest
 from testutils import cppcheck, assert_cppcheck
 
 try:
+    # TODO: handle exitcode?
     subprocess.call(['clang', '--version'])
 except OSError:
     pytest.skip("'clang' does not exist", allow_module_level=True)
@@ -48,7 +49,6 @@ def __check_symbol_database(tmpdir, code):
         f.write(code)
     ret1, stdout1, _ = cppcheck(['--clang', '--debug', '-v', testfile])
     ret2, stdout2, _ = cppcheck(['--debug', '-v', testfile])
-    os.remove(testfile)
     assert 0 == ret1, stdout1
     assert 0 == ret2, stdout2
     assert __get_debug_section('### Symbol database', stdout1) == __get_debug_section('### Symbol database', stdout2)
@@ -60,7 +60,6 @@ def __check_ast(tmpdir, code):
         f.write(code)
     ret1, stdout1, _ = cppcheck(['--clang', '--debug', '-v', testfile])
     ret2, stdout2, _ = cppcheck(['--debug', '-v', testfile])
-    os.remove(testfile)
     assert 0 == ret1, stdout1
     assert 0 == ret2, stdout1
     assert __get_debug_section('##AST', stdout1) == __get_debug_section('##AST', stdout2)

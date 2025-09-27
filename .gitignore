@@ -113,3 +113,16 @@ compile_commands.json
 
 # GDB configuration
 .gdbinit
+
+# pyinstaller output
+/addons/dist
+/addons/misra.spec
+/htmlreport/cppcheck-htmlreport.spec
+/htmlreport/dist
+
+# ccache folder in CI
+/.ccache
+
+# PCRE Windows files
+/externals/pcre.h
+/externals/pcre64.lib

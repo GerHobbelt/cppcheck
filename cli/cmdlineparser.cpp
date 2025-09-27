@@ -128,6 +128,12 @@ namespace {
             reportOut(msg.toXML());
         }
 
+        void reportMetric(const std::string &metric) override
+        {
+            /* Not used here */
+            (void) metric;
+        }
+
         void reportProgress(const std::string & /*filename*/, const char /*stage*/[], const std::size_t /*value*/) override
         {}
     };
@@ -544,8 +550,10 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
         else if (std::strncmp(argv[i],"--addon-python=", 15) == 0)
             mSettings.addonPython.assign(argv[i]+15);
 
-        else if (std::strcmp(argv[i],"--analyze-all-vs-configs") == 0)
+        else if (std::strcmp(argv[i],"--analyze-all-vs-configs") == 0) {
             mSettings.analyzeAllVsConfigs = true;
+            mAnalyzeAllVsConfigsSetOnCmdLine = true;
+        }
 
         // Check configuration
         else if (std::strcmp(argv[i], "--check-config") == 0)
@@ -1030,8 +1038,10 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
                 return Result::Fail;
         }
 
-        else if (std::strcmp(argv[i],"--no-analyze-all-vs-configs") == 0)
+        else if (std::strcmp(argv[i],"--no-analyze-all-vs-configs") == 0) {
             mSettings.analyzeAllVsConfigs = false;
+            mAnalyzeAllVsConfigsSetOnCmdLine = true;
+        }
 
         else if (std::strcmp(argv[i], "--no-check-headers") == 0)
             mSettings.checkHeaders = false;
@@ -1100,10 +1110,14 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
             // TODO: remove
             // these are loaded via external files and thus have Settings::PlatformFile set instead.
             // override the type so they behave like the regular platforms.
-            if (platform == "unix32-unsigned")
+            if (platform == "unix32-unsigned") {
                 mSettings.platform.type = Platform::Type::Unix32;
-            else if (platform == "unix64-unsigned")
+                mLogger.printMessage("The platform 'unix32-unsigned' has been deprecated and will be removed in Cppcheck 2.19. Please use '--platform=unix32 --funsigned-char' instead");
+            }
+            else if (platform == "unix64-unsigned") {
                 mSettings.platform.type = Platform::Type::Unix64;
+                mLogger.printMessage("The platform 'unix64-unsigned' has been deprecated and will be removed in Cppcheck 2.19. Please use '--platform=unix64 --funsigned-char' instead");
+            }
         }
 
         // Write results in results.plist
@@ -1136,8 +1150,12 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
                 "cert-c-2016",
                 "cert-c++-2016",
                 "cert-cpp-2016",
+                "cert-c",
+                "cert-c++",
+                "metrics",
                 "misra-c-2012",
                 "misra-c-2023",
+                "misra-c-2025",
                 "misra-c++-2008",
                 "misra-cpp-2008",
                 "misra-c++-2023",
@@ -1625,12 +1643,14 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
 
     if (!mSettings.analyzeAllVsConfigs) {
         if (projectType != ImportProject::Type::VS_SLN && projectType != ImportProject::Type::VS_VCXPROJ) {
-            mLogger.printError("--no-analyze-all-vs-configs has no effect - no Visual Studio project provided.");
-            return Result::Fail;
+            if (mAnalyzeAllVsConfigsSetOnCmdLine) {
+                mLogger.printError("--no-analyze-all-vs-configs has no effect - no Visual Studio project provided.");
+                return Result::Fail;
+            }
+        } else {
+            // TODO: bail out when this does nothing
+            project.selectOneVsConfig(mSettings.platform.type);
         }
-
-        // TODO: bail out when this does nothing
-        project.selectOneVsConfig(mSettings.platform.type);
     }
 
     if (!mSettings.buildDir.empty() && !Path::isDirectory(mSettings.buildDir)) {
@@ -1898,10 +1918,11 @@ void CmdLineParser::printHelp() const
             "    --premium=<option>\n"
             "                         Coding standards:\n"
             "                          * autosar           Autosar (partial)\n"
-            "                          * cert-c-2016       Cert C 2016 checking\n"
-            "                          * cert-c++-2016     Cert C++ 2016 checking\n"
+            "                          * cert-c            Cert C checking\n"
+            "                          * cert-c++          Cert C++ checking\n"
             "                          * misra-c-2012      Misra C 2012\n"
             "                          * misra-c-2023      Misra C 2023\n"
+            "                          * misra-c-2025      Misra C 2025\n"
             "                          * misra-c++-2008    Misra C++ 2008\n"
             "                          * misra-c++-2023    Misra C++ 2023\n"
             "                         Other:\n"

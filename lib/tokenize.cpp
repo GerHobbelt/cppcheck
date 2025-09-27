@@ -2257,6 +2257,9 @@ void Tokenizer::simplifyTypedefCpp()
                             if (!tok2->next())
                                 syntaxError(tok2);
 
+                            if (Token::Match(tok2, "] ; %name% = {") && tok2->next()->isSplittedVarDeclEq())
+                                tok2->deleteNext(2);
+
                             if (tok2->str() == "=") {
                                 if (tok2->strAt(1) == "{")
                                     tok2 = tok2->linkAt(1)->next();
@@ -6199,8 +6202,23 @@ void Tokenizer::dump(std::ostream &out) const
             outs += "\" ";
             outs += "std-string-like=\"";
             outs += bool_to_string(c->stdStringLike);
-            outs += "\"/>";
-            outs += '\n';
+            outs += "\"";
+            if (c->functions.empty()) {
+                outs += "/>\n";
+                continue;
+            }
+            outs += ">\n";
+            for (const auto& fp: c->functions) {
+                std::string action;
+                std::string yield;
+                if (fp.second.action != Library::Container::Action::NO_ACTION)
+                    action = " action=\"" + Library::Container::toString(fp.second.action) + "\"";
+                if (fp.second.yield != Library::Container::Yield::NO_YIELD)
+                    yield = " yield=\"" + Library::Container::toString(fp.second.yield) + "\"";
+                if (!action.empty() || !yield.empty())
+                    outs += "      <f name=\"" + fp.first + "\"" + action + yield + "/>\n";
+            }
+            outs += "    </container>\n";
         }
         outs += "  </containers>";
         outs += '\n';
@@ -7721,8 +7739,11 @@ void Tokenizer::simplifyInitVar()
             continue;
 
         if (Token::Match(tok, "%type% *|&| %name% (|{")) {
+            bool isNamespace = Token::simpleMatch(tok, "namespace");
             while (tok && !Token::Match(tok, "(|{"))
                 tok = tok->next();
+            if (isNamespace)
+                continue;
             if (tok)
                 tok->isInitBracket(true);
             /* tok = initVar(tok);
@@ -8033,7 +8054,7 @@ bool Tokenizer::simplifyRedundantParentheses()
             while (Token::Match(tok2, "%type%|static|const|extern") && tok2->str() != "operator") {
                 tok2 = tok2->previous();
             }
-            if (tok2 && !Token::Match(tok2, "[;,{]")) {
+            if (tok2 && !Token::Match(tok2, "[;{]")) {
                 // Not a variable declaration
             } else {
                 tok->deleteThis();
@@ -8571,7 +8592,7 @@ void Tokenizer::findGarbageCode() const
             unknownMacroError(tok->linkAt(1)->previous());
 
         // UNKNOWN_MACRO(return)
-        else if (!tok->isKeyword() && Token::Match(tok, "%name% throw|return"))
+        else if (!tok->isKeyword() && (Token::Match(tok, "%name% return") || (isCPP() && Token::Match(tok, "%name% throw"))))
             unknownMacroError(tok);
 
         // Assign/increment/decrement literal
@@ -8814,7 +8835,7 @@ void Tokenizer::findGarbageCode() const
             syntaxError(tok);
         if (Token::Match(tok, "[;([{] %comp%|%oror%|%or%|%|/"))
             syntaxError(tok);
-        if (Token::Match(tok, "%cop%|= ]") && !(cpp && Token::Match(tok->previous(), "%type%|[|,|%num% &|=|> ]")))
+        if (Token::Match(tok, "%cop%|= ]") && !Token::simpleMatch(tok, "*") && !(cpp && Token::Match(tok->previous(), "%type%|[|,|%num% &|=|> ]")))
             syntaxError(tok);
         if (Token::Match(tok, "[+-] [;,)]}]") && !(cpp && Token::simpleMatch(tok->previous(), "operator")))
             syntaxError(tok);
@@ -10288,7 +10309,7 @@ void Tokenizer::simplifyBorland()
 void Tokenizer::createSymbolDatabase()
 {
     if (!mSymbolDatabase)
-        mSymbolDatabase = new SymbolDatabase(*this, mSettings, mErrorLogger);
+        mSymbolDatabase = new SymbolDatabase(*this);
     mSymbolDatabase->validate();
 }
 

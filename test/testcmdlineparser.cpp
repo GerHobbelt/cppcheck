@@ -234,6 +234,7 @@ private:
         TEST_CASE(premiumOptions3);
         TEST_CASE(premiumOptions4);
         TEST_CASE(premiumOptions5);
+        TEST_CASE(premiumOptionsMetrics);
         TEST_CASE(premiumOptionsCertCIntPrecision);
         TEST_CASE(premiumOptionsLicenseFile);
         TEST_CASE(premiumOptionsInvalid1);
@@ -1437,6 +1438,17 @@ private:
         ASSERT_EQUALS(false, settings->severity.isEnabled(Severity::warning));
     }
 
+    void premiumOptionsMetrics() {
+        REDIRECT;
+        asPremium();
+        const char * const argv[] = {"cppcheck", "--premium=metrics", "file.c"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parseFromArgs(argv));
+        ASSERT_EQUALS("--metrics", settings->premiumArgs);
+        ASSERT(settings->severity.isEnabled(Severity::error));
+        ASSERT_EQUALS(false, settings->severity.isEnabled(Severity::warning));
+        ASSERT_EQUALS(false, settings->severity.isEnabled(Severity::portability));
+    }
+
     void premiumOptionsCertCIntPrecision() {
         REDIRECT;
         asPremium();
@@ -1664,6 +1676,7 @@ private:
         ASSERT(settings->platform.set(Platform::Type::Unspecified));
         ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parseFromArgs(argv));
         ASSERT_EQUALS(Platform::Type::Unix32, settings->platform.type);
+        ASSERT_EQUALS("cppcheck: The platform 'unix32-unsigned' has been deprecated and will be removed in Cppcheck 2.19. Please use '--platform=unix32 --funsigned-char' instead\n", logger->str());
     }
 
     void platformUnix64() {
@@ -1680,6 +1693,7 @@ private:
         ASSERT(settings->platform.set(Platform::Type::Unspecified));
         ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parseFromArgs(argv));
         ASSERT_EQUALS(Platform::Type::Unix64, settings->platform.type);
+        ASSERT_EQUALS("cppcheck: The platform 'unix64-unsigned' has been deprecated and will be removed in Cppcheck 2.19. Please use '--platform=unix64 --funsigned-char' instead\n", logger->str());
     }
 
     void platformNative() {
@@ -3124,6 +3138,7 @@ private:
         const char * const argv[] = {"cppcheck", "--analyze-all-vs-configs", "file.cpp"};
         ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parseFromArgs(argv));
         ASSERT_EQUALS(true, settings->analyzeAllVsConfigs);
+        ASSERT(parser->mAnalyzeAllVsConfigsSetOnCmdLine);
     }
 
     void noAnalyzeAllVsConfigs() {
@@ -3131,6 +3146,7 @@ private:
         const char * const argv[] = {"cppcheck", "--no-analyze-all-vs-configs", "file.cpp"};
         ASSERT_EQUALS_ENUM(CmdLineParser::Result::Fail, parseFromArgs(argv));
         ASSERT_EQUALS("cppcheck: error: --no-analyze-all-vs-configs has no effect - no Visual Studio project provided.\n", logger->str());
+        ASSERT(parser->mAnalyzeAllVsConfigsSetOnCmdLine);
     }
 
     void noAnalyzeAllVsConfigs2() {
@@ -3138,6 +3154,7 @@ private:
         const char * const argv[] = {"cppcheck", "--analyze-all-vs-configs", "--no-analyze-all-vs-configs", "file.cpp"};
         ASSERT_EQUALS_ENUM(CmdLineParser::Result::Fail, parseFromArgs(argv));
         ASSERT_EQUALS("cppcheck: error: --no-analyze-all-vs-configs has no effect - no Visual Studio project provided.\n", logger->str());
+        ASSERT(parser->mAnalyzeAllVsConfigsSetOnCmdLine);
     }
 
     void debugSymdb() {

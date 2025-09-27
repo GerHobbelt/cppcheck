@@ -81,6 +81,7 @@ private:
         TEST_CASE(tokenize39);  // #9771
         TEST_CASE(tokenize40);  // #13181
         TEST_CASE(tokenize41);  // #13847
+        TEST_CASE(tokenize42);  // #13861
 
         TEST_CASE(validate);
 
@@ -400,6 +401,7 @@ private:
         TEST_CASE(astnoexcept);
         TEST_CASE(astvardecl);
         TEST_CASE(astnewscoped);
+        TEST_CASE(astdecltypescope);
 
         TEST_CASE(startOfExecutableScope);
 
@@ -435,6 +437,8 @@ private:
         TEST_CASE(checkConfiguration);
 
         TEST_CASE(unknownMacroBeforeReturn);
+
+        TEST_CASE(cppKeywordInCSource);
 
         TEST_CASE(cppcast);
 
@@ -482,6 +486,8 @@ private:
         TEST_CASE(simplifyPlatformTypes);
 
         TEST_CASE(dumpFallthrough);
+
+        TEST_CASE(simplifyRedundantParentheses);
     }
 
 #define tokenizeAndStringify(...) tokenizeAndStringify_(__FILE__, __LINE__, __VA_ARGS__)
@@ -869,6 +875,22 @@ private:
         ASSERT_EQUALS("int main ( ) {\n"
                       "\n"
                       "b = x :: a + 2 ;\n"
+                      "}", tokenizeAndStringify(code));
+        (void)errout_str();
+    }
+
+    void tokenize42() { // #13861
+        const char code[] = "struct AB { int a; int b; };\n"
+                            "namespace ns { typedef AB S[10]; }\n"
+                            "void foo(void) {\n"
+                            "    ns::S x = {0};\n"
+                            "    x[1].a = 2;\n"
+                            "}\n";
+        ASSERT_EQUALS("struct AB { int a ; int b ; } ;\n"
+                      "\n"
+                      "void foo ( ) {\n"
+                      "AB x [ 10 ] = { 0 } ;\n"
+                      "x [ 1 ] . a = 2 ;\n"
                       "}", tokenizeAndStringify(code));
         (void)errout_str();
     }
@@ -4516,6 +4538,14 @@ private:
             ASSERT_EQUALS("{ return doSomething ( X ) , 0 ; }", tokenizeAndStringify(code));
             ASSERT_EQUALS("", errout_str());
         }
+
+        {
+            // 13893
+            const char code[] = "namespace test { bool foo; }";
+            SimpleTokenizer tokenizer(settings0, *this);
+            ASSERT(tokenizer.tokenize(code));
+            ASSERT(!tokenizer.tokens()->tokAt(2)->isInitBracket());
+        }
     }
 
     void simplifyInitVar2() {
@@ -7058,6 +7088,23 @@ private:
                                              "}\n"));
         ASSERT_EQUALS("", errout_str());
 
+        ASSERT_NO_THROW(tokenizeAndStringify("int foo() {\n"
+                                             "    connect([]( const int& f ) {\n"
+                                             "                switch( f )\n"
+                                             "                {\n"
+                                             "                    case (int)1:\n"
+                                             "                    {\n"
+                                             "                        A r(f);\n"
+                                             "                        if (1) {}\n"
+                                             "                    }\n"
+                                             "                    break;\n"
+                                             "                }\n"
+                                             "                return 0;\n"
+                                             "             });\n"
+                                             "    return 0;\n"
+                                             "}\n"));
+        ASSERT_EQUALS("", errout_str());
+
         // #11378
         ASSERT_EQUALS("gT{(&[{= 0return", testAst("auto g = T{ [&]() noexcept -> int { return 0; } };"));
 
@@ -7116,6 +7163,10 @@ private:
         ASSERT_EQUALS("(return (new (:: (:: (:: A B) C) D)))", testAst("return new A::B::C::D;", AstStyle::Z3));
         ASSERT_EQUALS("(return (new (( (:: (:: (:: A B) C) D))))", testAst("return new A::B::C::D();", AstStyle::Z3));
         ASSERT_EQUALS("(return (new (( (:: (:: (:: A B) C) D) true)))", testAst("return new A::B::C::D(true);", AstStyle::Z3));
+    }
+
+    void astdecltypescope() {
+        ASSERT_EQUALS("sizedecltypethism_P.(XSize::::{", testAst("size { decltype(this->m_P)::X::Size };"));
     }
 
 #define isStartOfExecutableScope(offset, code) isStartOfExecutableScope_(offset, code, __FILE__, __LINE__)
@@ -7940,6 +7991,10 @@ private:
         ASSERT_THROW_INTERNAL(tokenizeAndStringify("int f() { X return 0; }"), UNKNOWN_MACRO);
     }
 
+    void cppKeywordInCSource() {
+        ASSERT_NO_THROW(tokenizeAndStringify("int throw() {}", true, Platform::Type::Native, false));
+    }
+
     void cppcast() {
         const char code[] = "a = const_cast<int>(x);\n"
                             "a = dynamic_cast<int>(x);\n"
@@ -8555,6 +8610,14 @@ private:
         tokenizer.dump(ostr);
         const std::string dump = ostr.str();
         ASSERT(dump.find(" isAttributeFallthrough=\"true\"") != std::string::npos);
+    }
+
+    void simplifyRedundantParentheses() {
+        const char *code = "int f(struct S s) {\n"
+                           "    return g(1, &(int){ s.i });\n"
+                           "}\n";
+        SimpleTokenizer tokenizer(settingsDefault, *this, false);
+        ASSERT_NO_THROW(tokenizer.tokenize(code));
     }
 };
 

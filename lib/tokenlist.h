@@ -50,8 +50,7 @@ struct TokensFrontBack {
 
 class CPPCHECKLIB TokenList {
 public:
-    // TODO: pass settings as reference
-    explicit TokenList(const Settings* settings);
+    explicit TokenList(const Settings& settings, Standards::Language lang);
     ~TokenList();
 
     TokenList(const TokenList &) = delete;
@@ -67,9 +66,6 @@ public:
 
     /** @return true if the code is C++ */
     bool isCPP() const;
-
-    // TODO: get rid of this
-    void setLang(Standards::Language lang, bool force = false);
 
     /**
      * Delete all tokens in given token list
@@ -103,9 +99,8 @@ public:
      * - UTF in the code are not handled.
      * - comments are not handled.
      * @param code input stream for code
-     * @param lang the language of the code
      */
-    bool createTokens(std::istream &code, Standards::Language lang);
+    bool createTokens(std::istream &code);
 
     void createTokens(simplecpp::TokenList&& tokenList);
 
@@ -208,9 +203,11 @@ public:
      */
     static const Token * isFunctionHead(const Token *tok, const std::string &endsWith);
 
-private:
-    void determineCppC();
+    const Settings& getSettings() const {
+        return mSettings;
+    }
 
+private:
     bool createTokensInternal(std::istream &code, const std::string& file0);
 
     /** Token list */
@@ -223,7 +220,7 @@ private:
     std::vector<std::string> mOrigFiles;
 
     /** settings */
-    const Settings* const mSettings{};
+    const Settings& mSettings;
 
     /** File is known to be C/C++ code */
     Standards::Language mLang{Standards::Language::None};

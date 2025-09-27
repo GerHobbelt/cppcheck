@@ -71,6 +71,7 @@ private:
         TEST_CASE(simplifyUsing33);
         TEST_CASE(simplifyUsing34);
         TEST_CASE(simplifyUsing35);
+        TEST_CASE(simplifyUsing36);
 
         TEST_CASE(simplifyUsing8970);
         TEST_CASE(simplifyUsing8971);
@@ -91,6 +92,7 @@ private:
         TEST_CASE(simplifyUsing10173);
         TEST_CASE(simplifyUsing10335);
         TEST_CASE(simplifyUsing10720);
+        TEST_CASE(simplifyUsing13873); // function declaration
 
         TEST_CASE(scopeInfo1);
         TEST_CASE(scopeInfo2);
@@ -872,6 +874,14 @@ private:
         ASSERT_EQUALS("", errout_str());
     }
 
+    void simplifyUsing36() {
+        const char code[] = "using A::a;\n"
+                            "int c = B<int>::a;\n";
+        const char expected[] = "int c ; c = B < int > :: a ;";
+        ASSERT_EQUALS(expected, tok(code));
+        ASSERT_EQUALS("", errout_str());
+    }
+
     void simplifyUsing8970() {
         const char code[] = "using V = std::vector<int>;\n"
                             "struct A {\n"
@@ -1584,6 +1594,20 @@ private:
                             "STAMP(C, B);\n";
         (void)tok(code, dinit(TokOptions, $.preprocess = true));
         TODO_ASSERT(startsWith(errout_str(), "[test.cpp:6]: (debug) Failed to parse 'using C = S < S < S < int"));
+    }
+
+    void simplifyUsing13873() { // function declaration
+        const char code1[] = "using NS1::f;\n"
+                             "namespace NS1 { void f(); }\n";
+        ASSERT_EQUALS("namespace NS1 { void f ( ) ; }", tok(code1));
+
+        const char code2[] = "using NS1::f;\n"
+                             "void bar() { f(); }\n";
+        ASSERT_EQUALS("void bar ( ) { NS1 :: f ( ) ; }", tok(code2));
+
+        const char code3[] = "using NS1::f;\n"
+                             "namespace NS1 { void* f(); }\n";
+        ASSERT_EQUALS("namespace NS1 { void * f ( ) ; }", tok(code3));
     }
 
     void scopeInfo1() {

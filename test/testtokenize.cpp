@@ -80,6 +80,7 @@ private:
         TEST_CASE(tokenize38);  // #9569
         TEST_CASE(tokenize39);  // #9771
         TEST_CASE(tokenize40);  // #13181
+        TEST_CASE(tokenize41);  // #13847
 
         TEST_CASE(validate);
 
@@ -433,8 +434,6 @@ private:
         // --check-config
         TEST_CASE(checkConfiguration);
 
-        TEST_CASE(unknownType); // #8952
-
         TEST_CASE(unknownMacroBeforeReturn);
 
         TEST_CASE(cppcast);
@@ -457,6 +456,8 @@ private:
         TEST_CASE(simplifyIfSwitchForInit3);
         TEST_CASE(simplifyIfSwitchForInit4);
         TEST_CASE(simplifyIfSwitchForInit5);
+
+        TEST_CASE(newPlacementArgsCppInit); // #13775
 
         TEST_CASE(cpp20_default_bitfield_initializer);
 
@@ -552,15 +553,15 @@ private:
     }
 
     void directiveDump(const char filedata[], const char filename[], const Settings& settings, std::ostream& ostr) {
-        Preprocessor preprocessor(settings, *this);
         std::istringstream istr(filedata);
         simplecpp::OutputList outputList;
         std::vector<std::string> files;
         const simplecpp::TokenList tokens1(istr, files, filename, &outputList);
+        Preprocessor preprocessor(settings, *this, Path::identify(tokens1.getFiles()[0], false));
         std::list<Directive> directives = preprocessor.createDirectives(tokens1);
 
-        TokenList tokenlist{&settings};
-        Tokenizer tokenizer(std::move(tokenlist), settings, *this);
+        TokenList tokenlist{settings, Path::identify(filename, false)};
+        Tokenizer tokenizer(std::move(tokenlist), *this);
         tokenizer.setDirectives(std::move(directives));
 
         tokenizer.dump(ostr);
@@ -860,6 +861,18 @@ private:
         ASSERT_EQUALS("", errout_str());
     }
 
+    void tokenize41() { // #13847
+        const char code[] = "int main() {\n"
+                            "     using x::a;\n"
+                            "     b = a + 2;\n"
+                            "}\n";
+        ASSERT_EQUALS("int main ( ) {\n"
+                      "\n"
+                      "b = x :: a + 2 ;\n"
+                      "}", tokenizeAndStringify(code));
+        (void)errout_str();
+    }
+
     void validate() {
         // C++ code in C file
         ASSERT_THROW_INTERNAL(tokenizeAndStringify(";using namespace std;",false,Platform::Type::Native,false), SYNTAX);
@@ -867,12 +880,12 @@ private:
         ASSERT_THROW_INTERNAL(tokenizeAndStringify(";template<class T> class X { };",false,Platform::Type::Native,false), SYNTAX);
         ASSERT_THROW_INTERNAL(tokenizeAndStringify("int X<Y>() {};",false,Platform::Type::Native,false), SYNTAX);
         {
-            TokenList tokenlist{&settings1};
+            TokenList tokenlist{settings1, Standards::Language::C}; // headers are treated as C files
             const char code[] = "void foo(int i) { reinterpret_cast<char>(i) };";
             std::istringstream istr(code);
             tokenlist.appendFileIfNew("test.h");
-            ASSERT(tokenlist.createTokens(istr, Path::identify("test.h", false)));
-            Tokenizer tokenizer(std::move(tokenlist), settings1, *this);
+            ASSERT(tokenlist.createTokens(istr));
+            Tokenizer tokenizer(std::move(tokenlist), *this);
             ASSERT_THROW_INTERNAL(tokenizer.simplifyTokens1(""), SYNTAX);
         }
     }
@@ -3690,8 +3703,8 @@ private:
     }
 
     void simplifyString() {
-        TokenList tokenlist{&settings0};
-        Tokenizer tokenizer(std::move(tokenlist), settings0, *this);
+        TokenList tokenlist{settings0, Standards::Language::CPP};
+        Tokenizer tokenizer(std::move(tokenlist), *this);
         ASSERT_EQUALS("\"abc\"", tokenizer.simplifyString("\"abc\""));
         ASSERT_EQUALS("\"\n\"", tokenizer.simplifyString("\"\\xa\""));
         ASSERT_EQUALS("\"3\"", tokenizer.simplifyString("\"\\x33\""));
@@ -4198,11 +4211,11 @@ private:
                             "struct S\n"
                             "{};\n"
                             "S<int> s;\n";
-        ASSERT_EQUALS("struct S<int,(int)0> ;\n"
+        ASSERT_EQUALS("struct S<int,0> ;\n"
                       "\n"
                       "\n"
-                      "S<int,(int)0> s ;\n"
-                      "struct S<int,(int)0>\n"
+                      "S<int,0> s ;\n"
+                      "struct S<int,0>\n"
                       "{ } ;",
                       tokenizeAndStringify(code));
     }
@@ -6139,13 +6152,13 @@ private:
 
     std::string testAst(const char code[], AstStyle style = AstStyle::Simple) {
         // tokenize given code..
-        TokenList tokenlist{&settings0};
+        TokenList tokenlist{settings0, Standards::Language::CPP};
         std::istringstream istr(code);
         tokenlist.appendFileIfNew("test.cpp");
-        if (!tokenlist.createTokens(istr,Path::identify("test.cpp", false)))
+        if (!tokenlist.createTokens(istr))
             return "ERROR";
 
-        Tokenizer tokenizer(std::move(tokenlist), settings0, *this);
+        Tokenizer tokenizer(std::move(tokenlist), *this);
         tokenizer.combineStringAndCharLiterals();
         tokenizer.combineOperators();
         tokenizer.simplifySpaceshipOperator();
@@ -6853,9 +6866,10 @@ private:
 
     void astrequires()
     {
-        ASSERT_EQUALS("requires{ac::||= ac::", testAst("template <class a> concept b = requires { a::c; } || a::c;"));
-        ASSERT_EQUALS("requires{ac::||= a{b{||",
+        ASSERT_EQUALS("brequires{ac::||= ac::", testAst("template <class a> concept b = requires { a::c; } || a::c;"));
+        ASSERT_EQUALS("crequires{ac::||= a{b{||",
                       testAst("template <class a, class b> concept c = requires { a{} || b{}; } || a::c;"));
+        ASSERT_EQUALS("ifrequires{(", testAst("if (requires { true; }) {}")); // #13308
     }
 
     void astcast() {
@@ -7922,25 +7936,6 @@ private:
                                      "There is an unknown macro here somewhere. Configuration is required. If DEBUG is a macro then please configure it.");
     }
 
-    void unknownType() { // #8952
-        const Settings settings = settingsBuilder().debugwarnings().build();
-
-        char code[] = "class A {\n"
-                      "public:\n"
-                      "    enum Type { Null };\n"
-                      "};\n"
-                      "using V = A;\n"
-                      "V::Type value;";
-
-        // Tokenize..
-        SimpleTokenizer tokenizer(settings, *this);
-        ASSERT(tokenizer.tokenize(code));
-
-        tokenizer.printUnknownTypes();
-
-        ASSERT_EQUALS("", errout_str());
-    }
-
     void unknownMacroBeforeReturn() {
         ASSERT_THROW_INTERNAL(tokenizeAndStringify("int f() { X return 0; }"), UNKNOWN_MACRO);
     }
@@ -8089,6 +8084,18 @@ private:
         const Settings settings = settingsBuilder().cpp(Standards::CPP20).build();
         const char code[] = "void f() { if ([] { ; }) {} }";
         ASSERT_EQUALS("void f ( ) { if ( [ ] { ; } ) { } }", tokenizeAndStringify(code, settings));
+    }
+
+    void newPlacementArgsCppInit() { // #13775
+        const char code[] = "::new(nullptr) int {};";
+        SimpleTokenizer tokenizer(settings1, *this);
+        tokenizer.tokenize(code);
+        const Token *inttok = Token::findsimplematch(tokenizer.tokens(), "int");
+        ASSERT(inttok);
+        const Token *brace = inttok->next();
+        ASSERT(brace);
+        ASSERT_EQUALS(brace->astOperand1(), inttok);
+        ASSERT_EQUALS(brace->astOperand2(), static_cast<const Token*>(nullptr));
     }
 
     void cpp20_default_bitfield_initializer() {
@@ -8594,7 +8601,7 @@ private:
         std::vector<std::string> files;
         const simplecpp::TokenList tokens1(fin, files, "", &outputList);
         const std::string filedata = tokens1.stringify();
-        const std::string code = PreprocessorHelper::getcode(settingsDefault, *this, filedata, "", "");
+        const std::string code = PreprocessorHelper::getcode(settingsDefault, *this, filedata, "", "test.c");
 
         ASSERT_THROW_INTERNAL_EQUALS(tokenizeAndStringify(code), AST, "maximum AST depth exceeded");
     }

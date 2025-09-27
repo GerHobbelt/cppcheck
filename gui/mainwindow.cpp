@@ -35,6 +35,7 @@
 #include "helpdialog.h"
 #include "importproject.h"
 #include "librarydialog.h"
+#include "path.h"
 #include "platform.h"
 #include "projectfile.h"
 #include "projectfiledialog.h"
@@ -702,7 +703,7 @@ void MainWindow::analyzeCode(const QString& code, const QString& filename)
     checkLockDownUI();
     clearResults();
     mUI->mResults->checkingStarted(1);
-    cppcheck.check(FileWithDetails(filename.toStdString()), code.toStdString());
+    cppcheck.check(FileWithDetails(filename.toStdString(), Path::identify(filename.toStdString(), false), 0), code.toStdString());
     analysisDone();
 
     // Expand results
@@ -1009,10 +1010,7 @@ QString MainWindow::loadAddon(Settings &settings, const QString &filesDir, const
         if (!misraFile.isEmpty()) {
             QString arg;
             picojson::array arr;
-            if (misraFile.endsWith(".pdf", Qt::CaseInsensitive))
-                arg = "--misra-pdf=" + misraFile;
-            else
-                arg = "--rule-texts=" + misraFile;
+            arg = "--rule-texts=" + misraFile;
             arr.emplace_back(arg.toStdString());
             obj["args"] = picojson::value(arr);
         }
@@ -1038,6 +1036,7 @@ bool MainWindow::getCppcheckSettings(Settings& settings, Suppressions& supprs)
     Settings::terminate(true);
 
     settings.exename = QCoreApplication::applicationFilePath().toStdString();
+    settings.templateFormat = "{file}:{line}:{column}: {severity}:{inconclusive:inconclusive:} {message} [{id}]";
 
     // default to --check-level=normal for GUI for now
     settings.setCheckLevel(Settings::CheckLevel::normal);
@@ -1156,6 +1155,8 @@ bool MainWindow::getCppcheckSettings(Settings& settings, Suppressions& supprs)
             settings.checkUnknownFunctionReturn.insert(s.toStdString());
 
         for (const QString& addon : mProjectFile->getAddons()) {
+            if (isCppcheckPremium() && addon == "misra")
+                continue;
             const QString addonError = loadAddon(settings, filesDir, pythonCmd, addon);
             if (!addonError.isEmpty()) {
                 QMessageBox::critical(this, tr("Error"), tr("%1\n\nAnalysis is aborted.").arg(addonError));
@@ -1171,7 +1172,7 @@ bool MainWindow::getCppcheckSettings(Settings& settings, Suppressions& supprs)
                 premiumArgs += " --cert-c-int-precision=" + QString::number(mProjectFile->getCertIntPrecision());
             for (const QString& c: mProjectFile->getCodingStandards())
                 premiumArgs += " --" + c;
-            if (!premiumArgs.contains("misra") && mProjectFile->getAddons().contains("misra"))
+            if (!premiumArgs.contains("--misra-c-") && mProjectFile->getAddons().contains("misra"))
                 premiumArgs += " --misra-c-2012";
             settings.premiumArgs = premiumArgs.mid(1).toStdString();
             settings.setMisraRuleTexts(CheckThread::executeCommand);

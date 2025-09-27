@@ -232,6 +232,7 @@ bool CmdLineParser::fillSettingsFromArgs(int argc, const char* const argv[])
             {
                 if (mSettings.library.markupFile(fs.filename()))
                     continue;
+                assert(fs.file.lang() == Standards::Language::None);
                 bool header = false;
                 fs.file.setLang(Path::identify(fs.filename(), mSettings.cppHeaderProbe, &header));
                 // unknown extensions default to C++
@@ -244,6 +245,7 @@ bool CmdLineParser::fillSettingsFromArgs(int argc, const char* const argv[])
         for (auto& fs : fileSettings)
         {
             if (mSettings.library.markupFile(fs.filename())) {
+                assert(fs.file.lang() == Standards::Language::None);
                 fs.file.setLang(Standards::Language::C);
             }
         }
@@ -306,9 +308,7 @@ bool CmdLineParser::fillSettingsFromArgs(int argc, const char* const argv[])
 
         std::list<FileWithDetails> files;
         if (!mSettings.fileFilters.empty()) {
-            std::copy_if(filesResolved.cbegin(), filesResolved.cend(), std::inserter(files, files.end()), [&](const FileWithDetails& entry) {
-                return matchglobs(mSettings.fileFilters, entry.path());
-            });
+            files = filterFiles(mSettings.fileFilters, filesResolved);
             if (files.empty()) {
                 mLogger.printError("could not find any files matching the filter.");
                 return false;
@@ -544,6 +544,9 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
         else if (std::strncmp(argv[i],"--addon-python=", 15) == 0)
             mSettings.addonPython.assign(argv[i]+15);
 
+        else if (std::strcmp(argv[i],"--analyze-all-vs-configs") == 0)
+            mSettings.analyzeAllVsConfigs = true;
+
         // Check configuration
         else if (std::strcmp(argv[i], "--check-config") == 0)
             mSettings.checkConfiguration = true;
@@ -642,6 +645,9 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
             mSettings.cppHeaderProbe = true;
         }
 
+        else if (std::strcmp(argv[i], "--debug-ast") == 0)
+            mSettings.debugast = true;
+
         // Show debug warnings for lookup for configuration files
         else if (std::strcmp(argv[i], "--debug-clang-output") == 0)
             mSettings.debugClangOutput = true;
@@ -682,9 +688,15 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
         else if (std::strcmp(argv[i], "--debug-simplified") == 0)
             mSettings.debugSimplified = true;
 
+        else if (std::strcmp(argv[i], "--debug-symdb") == 0)
+            mSettings.debugsymdb = true;
+
         // Show template information
         else if (std::strcmp(argv[i], "--debug-template") == 0)
             mSettings.debugtemplate = true;
+
+        else if (std::strcmp(argv[i], "--debug-valueflow") == 0)
+            mSettings.debugvalueflow = true;
 
         // Show debug warnings
         else if (std::strcmp(argv[i], "--debug-warnings") == 0)
@@ -1018,6 +1030,9 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
                 return Result::Fail;
         }
 
+        else if (std::strcmp(argv[i],"--no-analyze-all-vs-configs") == 0)
+            mSettings.analyzeAllVsConfigs = false;
+
         else if (std::strcmp(argv[i], "--no-check-headers") == 0)
             mSettings.checkHeaders = false;
 
@@ -1128,7 +1143,8 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
                 "misra-c++-2023",
                 "misra-cpp-2023",
                 "bughunting",
-                "safety"};
+                "safety",
+                "debug-progress"};
             // valid options --premium-..=
             const std::set<std::string> valid2{
                 "cert-c-int-precision",
@@ -1150,8 +1166,6 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
                 return Result::Fail;
             }
             mSettings.premiumArgs += "--" + p;
-            if (p == "misra-c-2012" || p == "misra-c-2023")
-                mSettings.addons.emplace("misra");
             if (startsWith(p, "autosar") || startsWith(p, "cert") || startsWith(p, "misra")) {
                 // All checkers related to the coding standard should be enabled. The coding standards
                 // do not all undefined behavior or portability issues.
@@ -1202,8 +1216,6 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
                 }
             }
             if (projectType == ImportProject::Type::VS_SLN || projectType == ImportProject::Type::VS_VCXPROJ) {
-                if (project.guiProject.analyzeAllVsConfigs == "false")
-                    project.selectOneVsConfig(mSettings.platform.type);
                 mSettings.libraries.emplace_back("windows");
             }
             if (projectType == ImportProject::Type::MISSING) {
@@ -1605,8 +1617,20 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
         return Result::Fail;
     }
 
+    // TODO: conflicts with analyzeAllVsConfigs
     if (!vsConfig.empty()) {
+        // TODO: bail out when this does nothing
         project.ignoreOtherConfigs(vsConfig);
+    }
+
+    if (!mSettings.analyzeAllVsConfigs) {
+        if (projectType != ImportProject::Type::VS_SLN && projectType != ImportProject::Type::VS_VCXPROJ) {
+            mLogger.printError("--no-analyze-all-vs-configs has no effect - no Visual Studio project provided.");
+            return Result::Fail;
+        }
+
+        // TODO: bail out when this does nothing
+        project.selectOneVsConfig(mSettings.platform.type);
     }
 
     if (!mSettings.buildDir.empty() && !Path::isDirectory(mSettings.buildDir)) {
@@ -2159,3 +2183,16 @@ bool CmdLineParser::loadCppcheckCfg()
     return true;
 }
 
+std::list<FileWithDetails> CmdLineParser::filterFiles(const std::vector<std::string>& fileFilters,
+                                                      const std::list<FileWithDetails>& filesResolved) {
+    std::list<FileWithDetails> files;
+#ifdef _WIN32
+    constexpr bool caseInsensitive = true;
+#else
+    constexpr bool caseInsensitive = false;
+#endif
+    std::copy_if(filesResolved.cbegin(), filesResolved.cend(), std::inserter(files, files.end()), [&](const FileWithDetails& entry) {
+        return matchglobs(fileFilters, entry.path(), caseInsensitive) || matchglobs(fileFilters, entry.spath(), caseInsensitive);
+    });
+    return files;
+}

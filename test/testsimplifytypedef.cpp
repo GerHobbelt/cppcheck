@@ -249,8 +249,8 @@ private:
         TEST_CASE(simplifyTypedefTokenColumn3);
 
         TEST_CASE(typedefInfo1);
-
         TEST_CASE(typedefInfo2);
+        TEST_CASE(typedefInfo3);
     }
 
     struct TokOptions
@@ -273,11 +273,11 @@ private:
     }
 
     std::string simplifyTypedef(const char code[]) {
-        TokenList tokenlist{&settings1};
+        TokenList tokenlist{settings1, Standards::Language::CPP};
         std::istringstream istr(code);
-        if (!tokenlist.createTokens(istr, Standards::Language::CPP))
+        if (!tokenlist.createTokens(istr))
             return "";
-        Tokenizer tokenizer(std::move(tokenlist), settings1, *this);
+        Tokenizer tokenizer(std::move(tokenlist), *this);
         tokenizer.createLinks();
         tokenizer.simplifyTypedef();
 
@@ -307,12 +307,12 @@ private:
 
 
     std::string simplifyTypedefC(const char code[]) {
-        TokenList tokenlist{&settings1};
+        TokenList tokenlist{settings1, Standards::Language::C};
 
         std::istringstream istr(code);
         if (!TokenListHelper::createTokens(tokenlist, istr, "file.c"))
             return "";
-        Tokenizer tokenizer(std::move(tokenlist), settings1, *this);
+        Tokenizer tokenizer(std::move(tokenlist), *this);
         tokenizer.createLinks();
         tokenizer.simplifyTypedef();
         try {
@@ -324,11 +324,11 @@ private:
     }
 
     std::string dumpTypedefInfo(const char code[]) {
-        TokenList tokenlist{&settings1};
+        TokenList tokenlist{settings1, Standards::Language::C};
         std::istringstream istr(code);
         if (!TokenListHelper::createTokens(tokenlist, istr, "file.c"))
             return {};
-        Tokenizer tokenizer(std::move(tokenlist), settings1, *this);
+        Tokenizer tokenizer(std::move(tokenlist), *this);
         tokenizer.createLinks();
         tokenizer.simplifyTypedef();
         try {
@@ -4453,10 +4453,10 @@ private:
                             "uint8_t t;"
                             "void test(rFunctionPointer_fp functionPointer);";
 
-        TokenList tokenlist{&settings1};
+        TokenList tokenlist{settings1, Standards::Language::C};
         std::istringstream istr(code);
         ASSERT(TokenListHelper::createTokens(tokenlist, istr, "file.c"));
-        Tokenizer tokenizer(std::move(tokenlist), settings1, *this);
+        Tokenizer tokenizer(std::move(tokenlist), *this);
         tokenizer.createLinks();
         tokenizer.simplifyTypedef();
 
@@ -4496,10 +4496,10 @@ private:
                             "    MY_INT x = 0;\n"
                             "}";
 
-        TokenList tokenlist{&settings1};
+        TokenList tokenlist{settings1, Standards::Language::C};
         std::istringstream istr(code);
         ASSERT(TokenListHelper::createTokens(tokenlist, istr, "file.c"));
-        Tokenizer tokenizer(std::move(tokenlist), settings1, *this);
+        Tokenizer tokenizer(std::move(tokenlist), *this);
         tokenizer.createLinks();
         tokenizer.simplifyTypedef();
 
@@ -4515,10 +4515,10 @@ private:
                             "    F x = 0;\n"
                             "}";
 
-        TokenList tokenlist{&settings1};
+        TokenList tokenlist{settings1, Standards::Language::C};
         std::istringstream istr(code);
         ASSERT(TokenListHelper::createTokens(tokenlist, istr, "file.c"));
-        Tokenizer tokenizer(std::move(tokenlist), settings1, *this);
+        Tokenizer tokenizer(std::move(tokenlist), *this);
         tokenizer.createLinks();
         tokenizer.simplifyTypedef();
 
@@ -4561,6 +4561,14 @@ private:
                       "    <info name=\"int16_t\" file=\"file.c\" line=\"1\" column=\"1\" used=\"1\" isFunctionPointer=\"0\"/>\n"
                       "    <info name=\"pfp16\" file=\"file.c\" line=\"4\" column=\"20\" used=\"0\" isFunctionPointer=\"1\"/>\n"
                       "  </typedef-info>\n",xml);
+    }
+
+    void typedefInfo3() {
+        const std::string xml = dumpTypedefInfo("int main() {\n"
+                                                "     using x::a;\n"
+                                                "     b = a + 2;\n"
+                                                "}\n");
+        ASSERT_EQUALS("",xml);
     }
 };
 

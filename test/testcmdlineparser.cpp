@@ -204,6 +204,8 @@ private:
         TEST_CASE(exitcodeSuppressionsOld);
         TEST_CASE(exitcodeSuppressions);
         TEST_CASE(exitcodeSuppressionsNoFile);
+        TEST_CASE(fileFilterFileWithDetailsSimplifiedPath);
+        TEST_CASE(fileFilterFileWithDetailsCase);
         TEST_CASE(fileFilterStdin);
         TEST_CASE(fileList);
         TEST_CASE(fileListNoFile);
@@ -237,6 +239,7 @@ private:
         TEST_CASE(premiumOptionsInvalid1);
         TEST_CASE(premiumOptionsInvalid2);
         TEST_CASE(premiumSafety);
+        TEST_CASE(premiumDebugProgress);
         TEST_CASE(reportProgress1);
         TEST_CASE(reportProgress2);
         TEST_CASE(reportProgress3);
@@ -452,6 +455,12 @@ private:
         TEST_CASE(clangTidyCustom);
         TEST_CASE(projectConfigurationNoProject);
         TEST_CASE(projectConfigurationEmpty);
+        TEST_CASE(analyzeAllVsConfigs);
+        TEST_CASE(noAnalyzeAllVsConfigs);
+        TEST_CASE(noAnalyzeAllVsConfigs2);
+        TEST_CASE(debugSymdb);
+        TEST_CASE(debugAst);
+        TEST_CASE(debugValueflow);
 
         TEST_CASE(ignorepaths1);
         TEST_CASE(ignorepaths2);
@@ -1178,6 +1187,26 @@ private:
         ASSERT_EQUALS("cppcheck: error: unrecognized command line option: \"--exitcode-suppressions\".\n", logger->str());
     }
 
+    void fileFilterFileWithDetailsSimplifiedPath() const {
+        // match against simplified path
+        const std::vector<std::string> fileFilters{"m1.c"};
+        const std::list<FileWithDetails> filesResolved{ FileWithDetails("./m1.c", Standards::Language::C, 123) };
+        const std::list<FileWithDetails> files = CmdLineParser::filterFiles(fileFilters, filesResolved);
+        ASSERT_EQUALS(1U, files.size());
+    }
+
+    void fileFilterFileWithDetailsCase() {
+        // in windows, paths are case insensitive
+        const std::vector<std::string> fileFilters{"m1.c"};
+        const std::list<FileWithDetails> filesResolved{ FileWithDetails("M1.C", Standards::Language::C, 123) };
+        const std::list<FileWithDetails> files = CmdLineParser::filterFiles(fileFilters, filesResolved);
+#ifdef _WIN32
+        ASSERT_EQUALS(1U, files.size());
+#else
+        ASSERT_EQUALS(0U, files.size());
+#endif
+    }
+
     void fileFilterStdin() {
         REDIRECT;
         RedirectInput input("file1.c\nfile2.cpp\n");
@@ -1446,6 +1475,14 @@ private:
         const char * const argv[] = {"cppcheck", "--premium=safety", "file.cpp"};
         ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parseFromArgs(argv));
         ASSERT_EQUALS(true, settings->safety);
+    }
+
+    void premiumDebugProgress() {
+        REDIRECT;
+        asPremium();
+        const char * const argv[] = {"cppcheck", "--premium=debug-progress", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parseFromArgs(argv));
+        ASSERT_EQUALS("--debug-progress", settings->premiumArgs);
     }
 
     void reportProgress1() {
@@ -3080,6 +3117,48 @@ private:
         const char * const argv[] = {"cppcheck", "--project-configuration=", "file.cpp"};
         ASSERT_EQUALS_ENUM(CmdLineParser::Result::Fail, parseFromArgs(argv));
         ASSERT_EQUALS("cppcheck: error: --project-configuration parameter is empty.\n", logger->str());
+    }
+
+    void analyzeAllVsConfigs() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--analyze-all-vs-configs", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parseFromArgs(argv));
+        ASSERT_EQUALS(true, settings->analyzeAllVsConfigs);
+    }
+
+    void noAnalyzeAllVsConfigs() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--no-analyze-all-vs-configs", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Fail, parseFromArgs(argv));
+        ASSERT_EQUALS("cppcheck: error: --no-analyze-all-vs-configs has no effect - no Visual Studio project provided.\n", logger->str());
+    }
+
+    void noAnalyzeAllVsConfigs2() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--analyze-all-vs-configs", "--no-analyze-all-vs-configs", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Fail, parseFromArgs(argv));
+        ASSERT_EQUALS("cppcheck: error: --no-analyze-all-vs-configs has no effect - no Visual Studio project provided.\n", logger->str());
+    }
+
+    void debugSymdb() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--debug-symdb", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parseFromArgs(argv));
+        ASSERT_EQUALS(true, settings->debugsymdb);
+    }
+
+    void debugAst() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--debug-ast", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parseFromArgs(argv));
+        ASSERT_EQUALS(true, settings->debugast);
+    }
+
+    void debugValueflow() {
+        REDIRECT;
+        const char * const argv[] = {"cppcheck", "--debug-valueflow", "file.cpp"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parseFromArgs(argv));
+        ASSERT_EQUALS(true, settings->debugvalueflow);
     }
 
     void ignorepaths1() {

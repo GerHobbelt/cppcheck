@@ -1955,8 +1955,8 @@ const ValueFlow::Value * Token::getInvalidValue(const Token *ftok, nonneg int ar
     for (auto it = mImpl->mValues->begin(); it != mImpl->mValues->end(); ++it) {
         if (it->isImpossible())
             continue;
-        if ((it->isIntValue() && !settings.library.isIntArgValid(ftok, argnr, it->intvalue)) ||
-            (it->isFloatValue() && !settings.library.isFloatArgValid(ftok, argnr, it->floatValue))) {
+        if ((it->isIntValue() && !settings.library.isIntArgValid(ftok, argnr, it->intvalue, settings)) ||
+            (it->isFloatValue() && !settings.library.isFloatArgValid(ftok, argnr, it->floatValue, settings))) {
             if (!ret || ret->isInconclusive() || (ret->condition && !it->isInconclusive()))
                 ret = &(*it);
             if (!ret->isInconclusive() && !ret->condition)
@@ -2542,7 +2542,7 @@ bool Token::hasKnownSymbolicValue(const Token* tok) const
     return mImpl->mValues &&
            std::any_of(mImpl->mValues->begin(), mImpl->mValues->end(), [&](const ValueFlow::Value& value) {
         return value.isKnown() && value.isSymbolicValue() && value.tokvalue &&
-        value.tokvalue->exprId() == tok->exprId();
+               value.tokvalue->exprId() == tok->exprId();
     });
 }
 
@@ -2615,7 +2615,7 @@ const ValueFlow::Value* Token::getMovedValue() const
         return nullptr;
     const auto it = std::find_if(mImpl->mValues->begin(), mImpl->mValues->end(), [](const ValueFlow::Value& value) {
         return value.isMovedValue() && !value.isImpossible() &&
-        value.moveKind != ValueFlow::Value::MoveKind::NonMovedVariable;
+               value.moveKind != ValueFlow::Value::MoveKind::NonMovedVariable;
     });
     return it == mImpl->mValues->end() ? nullptr : &*it;
 }

@@ -21,13 +21,13 @@ jobs:
 
   build:
 
-    runs-on: windows-2022
+    runs-on: windows-2025
     if: ${{ github.repository_owner == 'danmar' }}
 
     env:
       # see https://www.pcre.org/original/changelog.txt
       PCRE_VERSION: 8.45
-      QT_VERSION: 6.8.2
+      QT_VERSION: 6.9.0
 
     steps:
       - uses: actions/checkout@v4

@@ -123,6 +123,9 @@ public:
     /** @brief Path to the python interpreter to be used to run addons. */
     std::string addonPython;
 
+    /** @brief Analyze all configuration in Visual Studio project. */
+    bool analyzeAllVsConfigs{true};
+
     /** @brief Paths used as base for conversion to relative paths. */
     std::vector<std::string> basePaths;
 
@@ -185,6 +188,9 @@ public:
     /** @brief Are we running from DACA script? */
     bool daca{};
 
+    /** @brief Is --debug-ast given? */
+    bool debugast{};
+
     /** @brief Is --debug-clang-output given? */
     bool debugClangOutput{};
 
@@ -212,8 +218,14 @@ public:
     /** @brief Is --debug-simplified given? */
     bool debugSimplified{};
 
+    /** @brief Is --debug-symdb given? */
+    bool debugsymdb{};
+
     /** @brief Is --debug-template given? */
     bool debugtemplate{};
+
+    /** @brief Is --debug-valueflow given? */
+    bool debugvalueflow{};
 
     /** @brief Is --debug-warnings given? */
     bool debugwarnings{};

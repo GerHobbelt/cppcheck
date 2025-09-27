@@ -1647,6 +1647,12 @@ void TemplateSimplifier::expandTemplate(
 
     std::vector<newInstantiation> newInstantiations;
 
+    for (const Token* tok = templateInstantiation.token()->next()->findClosingBracket();
+         tok && tok != templateInstantiation.token(); tok = tok->previous()) {
+        if (tok->isName())
+            mUsedVariables[newName].insert(tok->str());
+    }
+
     // add forward declarations
     if (copy && isClass) {
         templateDeclaration.token()->insertTokenBefore(templateDeclarationToken->strAt(1));
@@ -2097,6 +2103,27 @@ void TemplateSimplifier::expandTemplate(
                         continue;
                     if (isVariadicTemplateArg && Token::Match(tok3, "%name% ... %name%"))
                         tok3 = tok3->tokAt(2);
+                    if (!isVariadicTemplateArg && copy && Token::Match(mTypesUsedInTemplateInstantiation[itype].token(), "%num% ,|>|>>") &&
+                        Token::Match(tok3->previous(), "%assign%|%cop%|( %name% %cop%|;|)")) {
+                        const Token* declTok = typeParametersInDeclaration[itype];
+                        while (Token::Match(declTok->previous(), "%name%|::|*"))
+                            declTok = declTok->previous();
+                        if (Token::Match(declTok->previous(), "[<,]")) {
+                            const Token* typetok = mTypesUsedInTemplateInstantiation[itype].token();
+                            mTokenList.addtoken("(", declTok);
+                            Token* const par1 = mTokenList.back();
+                            while (declTok != typeParametersInDeclaration[itype]) {
+                                mTokenList.addtoken(declTok);
+                                declTok = declTok->next();
+                            }
+                            mTokenList.addtoken(")", declTok);
+                            Token::createMutualLinks(par1, mTokenList.back());
+                            mTokenList.addtoken(typetok, tok3);
+                            for (Token* t = par1; t; t = t->next())
+                                t->isTemplateArg(true);
+                            continue;
+                        }
+                    }
                     const std::string endStr(isVariadicTemplateArg ? ">" : ",>");
                     for (Token *typetok = mTypesUsedInTemplateInstantiation[itype].token();
                          typetok && (typeindentlevel > 0 || endStr.find(typetok->str()[0]) == std::string::npos);
@@ -2551,6 +2578,10 @@ void TemplateSimplifier::simplifyTemplateArgs(Token *start, const Token *end, st
                     again = true;
                     tok = tok->previous();
                 }
+            } else if (Token::Match(tok, "( %type% ) %num%")) {
+                tok = tok->previous();
+                again = true;
+                tok->deleteNext(3);
             }
         }
 

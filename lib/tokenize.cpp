@@ -860,6 +860,10 @@ namespace {
                     Token::createMutualLinks(tok3->next(), after->previous());
                 }
             }
+            if (!after) {
+                mReplaceFailed = true;
+                return;
+            }
 
             bool useAfterVarRange = true;
             if (Token::simpleMatch(mRangeAfterVar.first, "[")) {
@@ -905,6 +909,9 @@ namespace {
                 throw InternalError(tok, "Failed to simplify typedef. Is the code valid?");
 
             Token* const tok4 = useAfterVarRange ? insertTokens(after->previous(), mRangeAfterVar)->next() : tok3->next();
+
+            if (tok->next() == tok4)
+                throw InternalError(tok, "Failed to simplify typedef. Is the code valid?");
 
             tok->deleteThis();
 
@@ -1124,7 +1131,9 @@ void Tokenizer::simplifyTypedef()
     {
         // remove typedefs
         for (auto &t: typedefs) {
-            if (!t.second.replaceFailed()) {
+            if (t.second.replaceFailed()) {
+                syntaxError(t.second.getTypedefToken());
+            } else {
                 const Token* const typedefToken = t.second.getTypedefToken();
                 TypedefInfo typedefInfo;
                 typedefInfo.name = t.second.name();
@@ -4319,7 +4328,7 @@ static bool setVarIdParseDeclaration(Token*& tok, const VariableMap& variableMap
         }
         if (Token::Match(tok3, "= %num%"))
             return false;
-        if (bracket && Token::Match(tok1->previous(), "[(,]") && Token::Match(tok3, "[,)]"))
+        if (bracket && Token::Match(tok1->previous(), "[(,]") && Token::Match(tok3, ",|)|%cop%"))
             return false;
     }
 
@@ -4838,7 +4847,7 @@ void Tokenizer::setVarIdPass1()
             }
 
             // function declaration inside executable scope? Function declaration is of form: type name "(" args ")"
-            if (scopeStack.top().isExecutable && Token::Match(tok, "%name% [,)[]")) {
+            if (scopeStack.top().isExecutable && !scopeStack.top().isStructInit && Token::Match(tok, "%name% [,)[]")) {
                 bool par = false;
                 const Token* start;
                 Token* end;
@@ -5959,7 +5968,19 @@ void Tokenizer::dump(std::ostream &out) const
         // could result in invalid XML, so run it through toxml().
         outs += "str=\"";
         outs += ErrorLogger::toxml(dir.str);
-        outs +="\"/>";
+        outs +="\">";
+        outs += '\n';
+        for (const auto & strToken : dir.strTokens) {
+            outs += "      <token ";
+            outs += "column=\"";
+            outs += std::to_string(strToken.column);
+            outs += "\" ";
+            outs += "str=\"";
+            outs += ErrorLogger::toxml(strToken.tokStr);
+            outs +="\"/>";
+            outs += '\n';
+        }
+        outs += "    </directive>";
         outs += '\n';
     }
     outs += "  </directivelist>";
@@ -8677,9 +8698,15 @@ void Tokenizer::findGarbageCode() const
         }
         if (Token::Match(tok, "%num%|%bool%|%char%|%str% %num%|%bool%|%char%|%str%") && !Token::Match(tok, "%str% %str%"))
             syntaxError(tok);
+        if (Token::Match(tok, "%num%|%bool%|%char%|%str% {") &&
+            !(tok->tokType() == Token::Type::eString && Token::simpleMatch(tok->tokAt(-1), "extern")) &&
+            !(tok->tokType() == Token::Type::eBoolean && cpp && Token::simpleMatch(tok->tokAt(-1), "requires")))
+            syntaxError(tok);
         if (Token::Match(tok, "%assign% typename|class %assign%"))
             syntaxError(tok);
         if (Token::Match(tok, "%assign% [;)}]") && (!cpp || !Token::simpleMatch(tok->previous(), "operator")))
+            syntaxError(tok);
+        if (Token::Match(tok, "; %assign%"))
             syntaxError(tok);
         if (Token::Match(tok, "%cop%|=|,|[ %or%|%oror%|/|%"))
             syntaxError(tok);

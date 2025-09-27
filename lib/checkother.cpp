@@ -519,8 +519,17 @@ void CheckOther::checkRedundantAssignment()
                         tokenToCheck = tempToken;
                 }
 
+                if (start->hasKnownSymbolicValue(tokenToCheck) && Token::simpleMatch(start->astParent(), "=") && !diag(tok)) {
+                    const ValueFlow::Value* val = start->getKnownValue(ValueFlow::Value::ValueType::SYMBOLIC);
+                    if (val->intvalue == 0) // no offset
+                        redundantAssignmentSameValueError(tokenToCheck, val, tok->astOperand1()->expressionString());
+                }
+
                 // Get next assignment..
                 const Token *nextAssign = fwdAnalysis.reassign(tokenToCheck, start, scope->bodyEnd);
+                // extra check for union
+                if (nextAssign && tokenToCheck != tok->astOperand1())
+                    nextAssign = fwdAnalysis.reassign(tok->astOperand1(), start, scope->bodyEnd);
 
                 if (!nextAssign)
                     continue;
@@ -541,8 +550,10 @@ void CheckOther::checkRedundantAssignment()
                     redundantAssignmentInSwitchError(tok, nextAssign, tok->astOperand1()->expressionString());
                 else if (isInitialization)
                     redundantInitializationError(tok, nextAssign, tok->astOperand1()->expressionString(), inconclusive);
-                else
+                else {
+                    diag(nextAssign);
                     redundantAssignmentError(tok, nextAssign, tok->astOperand1()->expressionString(), inconclusive);
+                }
             }
         }
     }
@@ -585,6 +596,15 @@ void CheckOther::redundantAssignmentInSwitchError(const Token *tok1, const Token
     reportError(errorPath, Severity::style, "redundantAssignInSwitch",
                 "$symbol:" + var + "\n"
                 "Variable '$symbol' is reassigned a value before the old one has been used. 'break;' missing?", CWE563, Certainty::normal);
+}
+
+void CheckOther::redundantAssignmentSameValueError(const Token *tok, const ValueFlow::Value* val, const std::string &var)
+{
+    auto errorPath = val->errorPath;
+    errorPath.emplace_back(tok, "");
+    reportError(errorPath, Severity::style, "redundantAssignment",
+                "$symbol:" + var + "\n"
+                "Variable '$symbol' is assigned an expression that holds the same value.", CWE563, Certainty::normal);
 }
 
 
@@ -1149,6 +1169,9 @@ bool CheckOther::checkInnerScope(const Token *tok, const Variable* var, bool& us
                     }
                 }
             }
+            const auto yield = astContainerYield(tok);
+            if (yield == Library::Container::Yield::BUFFER || yield == Library::Container::Yield::BUFFER_NT)
+                return false;
         }
     }
 
@@ -2482,7 +2505,8 @@ void CheckOther::checkDuplicateExpression()
                         tok->astOperand2()->expressionString() == nextAssign->astOperand2()->expressionString()) {
                         bool differentDomain = false;
                         const Scope * varScope = var1->scope() ? var1->scope() : scope;
-                        for (const Token *assignTok = Token::findsimplematch(var2, ";"); assignTok && assignTok != varScope->bodyEnd; assignTok = assignTok->next()) {
+                        const Token* assignTok = Token::findsimplematch(var2, ";");
+                        for (; assignTok && assignTok != varScope->bodyEnd; assignTok = assignTok->next()) {
                             if (!Token::Match(assignTok, "%assign%|%comp%"))
                                 continue;
                             if (!assignTok->astOperand1())
@@ -2513,8 +2537,10 @@ void CheckOther::checkDuplicateExpression()
                         }
                         if (!differentDomain && !isUniqueExpression(tok->astOperand2()))
                             duplicateAssignExpressionError(var1, var2, false);
-                        else if (mSettings->certainty.isEnabled(Certainty::inconclusive))
+                        else if (mSettings->certainty.isEnabled(Certainty::inconclusive)) {
+                            diag(assignTok);
                             duplicateAssignExpressionError(var1, var2, true);
+                        }
                     }
                 }
             }
@@ -2887,7 +2913,7 @@ void CheckOther::checkRedundantCopy()
 
     for (const Variable* var : symbolDatabase->variableList()) {
         if (!var || var->isReference() || var->isPointer() ||
-            (!var->type() && !var->isStlType()) || // bailout if var is of standard type, if it is a pointer or non-const
+            (!var->type() && !var->isStlType() && !(var->valueType() && var->valueType()->container)) || // bailout if var is of standard type, if it is a pointer or non-const
             (!var->isConst() && isVariableChanged(var, *mSettings)))
             continue;
 
@@ -2973,7 +2999,7 @@ void CheckOther::checkNegativeBitwiseShift()
         // don't warn if lhs is a class. this is an overloaded operator then
         if (tok->isCpp()) {
             const ValueType * lhsType = tok->astOperand1()->valueType();
-            if (!lhsType || !lhsType->isIntegral())
+            if (!lhsType || !lhsType->isIntegral() || lhsType->pointer)
                 continue;
         }
 
@@ -3678,7 +3704,7 @@ void CheckOther::checkShadowVariables()
                 continue;
 
             if (functionScope && functionScope->type == Scope::ScopeType::eFunction && functionScope->function) {
-                const auto argList = functionScope->function->argumentList;
+                const auto & argList = functionScope->function->argumentList;
                 auto it = std::find_if(argList.cbegin(), argList.cend(), [&](const Variable& arg) {
                     return arg.nameToken() && var.name() == arg.name();
                 });

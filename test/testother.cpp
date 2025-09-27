@@ -58,6 +58,7 @@ private:
         TEST_CASE(zeroDiv17); // #9931
         TEST_CASE(zeroDiv18);
         TEST_CASE(zeroDiv19);
+        TEST_CASE(zeroDiv20); // #11175
 
         TEST_CASE(zeroDivCond); // division by zero / useless condition
 
@@ -203,6 +204,7 @@ private:
         TEST_CASE(redundantVarAssignment);
         TEST_CASE(redundantVarAssignment_trivial);
         TEST_CASE(redundantVarAssignment_struct);
+        TEST_CASE(redundantVarAssignment_union);
         TEST_CASE(redundantVarAssignment_7133);
         TEST_CASE(redundantVarAssignment_stackoverflow);
         TEST_CASE(redundantVarAssignment_lambda);
@@ -214,6 +216,7 @@ private:
         TEST_CASE(redundantVarAssignment_switch_break);
         TEST_CASE(redundantInitialization);
         TEST_CASE(redundantMemWrite);
+        TEST_CASE(redundantAssignmentSameValue);
 
         TEST_CASE(varFuncNullUB);
 
@@ -659,6 +662,16 @@ private:
               "        int j = 10 / i;\n"
               "}\n");
         ASSERT_EQUALS("[test.cpp:3]: (error) Division by zero.\n", errout_str());
+    }
+
+    void zeroDiv20()
+    {
+        check("uint16_t f(void)\n" // #11175
+              "{\n"
+              "    uint16_t x = 0xFFFFU;\n" // UINT16_MAX=0xFFFF
+              "    return 42/(++x);\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:4]: (error) Division by zero.\n", errout_str());
     }
 
     void zeroDivCond() {
@@ -4479,96 +4492,6 @@ private:
               "  case 1: x = 6; goto a;\n"
               "  }\n"
               "}");
-        ASSERT_EQUALS("", errout_str());
-
-        // Ticket #5115 "redundantAssignment when using a union"
-        check("void main(void)\n"
-              "{\n"
-              "    short lTotal = 0;\n"
-              "    union\n"
-              "    {\n"
-              "        short l1;\n"
-              "        struct\n"
-              "        {\n"
-              "            unsigned char b1;\n"
-              "            unsigned char b2;\n"
-              "        } b;\n"
-              "    } u;\n"
-              "    u.l1 = 1;\n"
-              "    lTotal += u.b.b1;\n"
-              "    u.l1 = 2;\n" //Should not show RedundantAssignment
-              "}", true, false, false);
-        ASSERT_EQUALS("", errout_str());
-
-        // Ticket #5115 "redundantAssignment when using a union"
-        check("void main(void)\n"
-              "{\n"
-              "    short lTotal = 0;\n"
-              "    union\n"
-              "    {\n"
-              "        short l1;\n"
-              "        struct\n"
-              "        {\n"
-              "            unsigned char b1;\n"
-              "            unsigned char b2;\n"
-              "        } b;\n"
-              "    } u;\n"
-              "    u.l1 = 1;\n"
-              "    u.l1 = 2;\n"
-              "}", true, false, false);
-        ASSERT_EQUALS("[test.cpp:13] -> [test.cpp:14]: (style) Variable 'u.l1' is reassigned a value before the old one has been used.\n", errout_str());
-
-        // Ticket #10093 "redundantAssignment when using a union"
-        check("typedef union fixed32_union {\n"
-              "    struct {\n"
-              "        unsigned32 abcd;\n"
-              "    } u32;\n"
-              "    struct {\n"
-              "        unsigned16 ab;\n"
-              "        unsigned16 cd;\n"
-              "    } u16;"
-              "    struct {\n"
-              "        unsigned8 a;\n"
-              "        unsigned8 b;\n"
-              "        unsigned8 c;\n"
-              "        unsigned8 d;\n"
-              "        } b;\n"
-              "} fixed32;\n"
-              "void func1(void) {\n"
-              "    fixed32 m;\n"
-              "    m.u16.ab = 47;\n"
-              "    m.u16.cd = 0;\n"
-              "    m.u16.ab = m.u32.abcd / 53;\n"
-              "}", true, false, false);
-        ASSERT_EQUALS("", errout_str());
-
-        // Ticket #10093 "redundantAssignment when using a union"
-        check("typedef union{\n"
-              "    char as_char[4];\n"
-              "    int as_int;\n"
-              "} union_t;\n"
-              "void fn(char *data, int len) {\n"
-              "    int i;\n"
-              "    for (i = 0; i < len; i++)\n"
-              "        data[i] = 'a';\n"
-              "}\n"
-              "int main(int argc, char *argv[]) {\n"
-              "    union_t u;\n"
-              "    u.as_int = 42;\n"
-              "    fn(&u.as_char[0], 4);\n"
-              "    u.as_int = 0;\n"
-              "}", true, false, false);
-        ASSERT_EQUALS("", errout_str());
-
-        // Ticket #5115 "redundantAssignment when using a union"
-        check("void foo(char *ptr) {\n"
-              "    union {\n"
-              "        char * s8;\n"
-              "        unsigned long long u64;\n"
-              "    } addr;\n"
-              "    addr.s8 = ptr;\n"
-              "    addr.u64 += 8;\n"
-              "}", true, false, false);
         ASSERT_EQUALS("", errout_str());
     }
 
@@ -9123,6 +9046,16 @@ private:
         TODO_ASSERT_EQUALS("",
                            "[test.cpp:16] -> [test.cpp:18]: (style) The comparison 'c == m->get()' is always true because 'c' and 'm->get()' represent the same value.\n",
                            errout_str());
+
+        check("struct T {\n"
+              "    std::string s;\n"
+              "    const std::string& get() const { return s; }\n"
+              "};\n"
+              "void f(const T& t) {\n"
+              "    const auto s = t.get();\n"
+              "    if (s.empty()) {}\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:6]: (performance, inconclusive) Use const reference for 's' to avoid unnecessary data copying.\n", errout_str());
     }
 
     void checkNegativeShift() {
@@ -9190,6 +9123,13 @@ private:
                       "[test.cpp:2]: (error) Shifting by a negative value is undefined behaviour\n"
                       "[test.cpp:3]: (portability) Shifting a negative value is technically undefined behaviour\n"
                       "[test.cpp:4]: (portability) Shifting a negative value is technically undefined behaviour\n", errout_str());
+
+        check("void f(int i) {\n" // #12916
+              "    if (i < 0) {\n"
+              "        g(\"abc\" << i);\n"
+              "    }\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
     }
 
     void incompleteArrayFill() {
@@ -9778,6 +9718,110 @@ private:
         ASSERT_EQUALS("", errout_str());
     }
 
+    void redundantVarAssignment_union() {
+        // Ticket #5115 "redundantAssignment when using a union"
+        check("void main(void)\n"
+              "{\n"
+              "    short lTotal = 0;\n"
+              "    union\n"
+              "    {\n"
+              "        short l1;\n"
+              "        struct\n"
+              "        {\n"
+              "            unsigned char b1;\n"
+              "            unsigned char b2;\n"
+              "        } b;\n"
+              "    } u;\n"
+              "    u.l1 = 1;\n"
+              "    lTotal += u.b.b1;\n"
+              "    u.l1 = 2;\n" //Should not show RedundantAssignment
+              "}", true, false, false);
+        ASSERT_EQUALS("", errout_str());
+
+        // Ticket #5115 "redundantAssignment when using a union"
+        check("void main(void)\n"
+              "{\n"
+              "    short lTotal = 0;\n"
+              "    union\n"
+              "    {\n"
+              "        short l1;\n"
+              "        struct\n"
+              "        {\n"
+              "            unsigned char b1;\n"
+              "            unsigned char b2;\n"
+              "        } b;\n"
+              "    } u;\n"
+              "    u.l1 = 1;\n"
+              "    u.l1 = 2;\n"
+              "}", true, false, false);
+        ASSERT_EQUALS("[test.cpp:13] -> [test.cpp:14]: (style) Variable 'u.l1' is reassigned a value before the old one has been used.\n", errout_str());
+
+        // Ticket #10093 "redundantAssignment when using a union"
+        check("typedef union fixed32_union {\n"
+              "    struct {\n"
+              "        unsigned32 abcd;\n"
+              "    } u32;\n"
+              "    struct {\n"
+              "        unsigned16 ab;\n"
+              "        unsigned16 cd;\n"
+              "    } u16;"
+              "    struct {\n"
+              "        unsigned8 a;\n"
+              "        unsigned8 b;\n"
+              "        unsigned8 c;\n"
+              "        unsigned8 d;\n"
+              "        } b;\n"
+              "} fixed32;\n"
+              "void func1(void) {\n"
+              "    fixed32 m;\n"
+              "    m.u16.ab = 47;\n"
+              "    m.u16.cd = 0;\n"
+              "    m.u16.ab = m.u32.abcd / 53;\n"
+              "}", true, false, false);
+        ASSERT_EQUALS("", errout_str());
+
+        // Ticket #10093 "redundantAssignment when using a union"
+        check("typedef union{\n"
+              "    char as_char[4];\n"
+              "    int as_int;\n"
+              "} union_t;\n"
+              "void fn(char *data, int len) {\n"
+              "    int i;\n"
+              "    for (i = 0; i < len; i++)\n"
+              "        data[i] = 'a';\n"
+              "}\n"
+              "int main(int argc, char *argv[]) {\n"
+              "    union_t u;\n"
+              "    u.as_int = 42;\n"
+              "    fn(&u.as_char[0], 4);\n"
+              "    u.as_int = 0;\n"
+              "}", true, false, false);
+        ASSERT_EQUALS("", errout_str());
+
+        // Ticket #5115 "redundantAssignment when using a union"
+        check("void foo(char *ptr) {\n"
+              "    union {\n"
+              "        char * s8;\n"
+              "        unsigned long long u64;\n"
+              "    } addr;\n"
+              "    addr.s8 = ptr;\n"
+              "    addr.u64 += 8;\n"
+              "}", true, false, false);
+        ASSERT_EQUALS("", errout_str());
+
+        check("struct S {\n" // #12895
+              "    int x, y;\n"
+              "};\n"
+              "union U {\n"
+              "    S* s;\n"
+              "};\n"
+              "void f(const U& Src, const U& Dst) {\n"
+              "    Dst.s->x = Src.s->x;\n"
+              "    Dst.s->y = Src.s->y;\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+    }
+
     void redundantVarAssignment_7133() {
         // #7133
         check("sal_Int32 impl_Export() {\n"
@@ -10176,6 +10220,43 @@ private:
               "    strcpy(buf, x);\n"
               "}");
         TODO_ASSERT_EQUALS("error", "", errout_str());
+    }
+
+    void redundantAssignmentSameValue() {
+        check("int main() {\n" // #11642
+              "    int a = 0;\n"
+              "    int b = a;\n"
+              "    int c = 1;\n"
+              "    a = b;\n"
+              "    return a * b * c;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:5]: (style) Variable 'a' is assigned an expression that holds the same value.\n", errout_str());
+
+        check("int main() {\n"
+              "    int a = 0;\n"
+              "    int b = a;\n"
+              "    int c = 1;\n"
+              "    a = b + 1;\n"
+              "    return a * b * c;\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        check("int main() {\n"
+              "    int a = 0;\n"
+              "    int b = a;\n"
+              "    int c = 1;\n"
+              "    a = b = 5;\n"
+              "    return a * b * c;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:5]: (style) Redundant initialization for 'b'. The initialized value is overwritten before it is read.\n", errout_str());
+
+        check("int f(int i) {\n" // #12874
+              "    int j = i + 1;\n"
+              "    if (i > 5)\n"
+              "        j = i;\n"
+              "    return j;\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
     }
 
     void varFuncNullUB() { // #4482

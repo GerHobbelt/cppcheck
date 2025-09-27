@@ -82,6 +82,9 @@ private:
         TEST_CASE(entrypointsUnix);
 
         TEST_CASE(includes);
+        TEST_CASE(virtualFunc);
+        TEST_CASE(parensInit);
+        TEST_CASE(typeInCast);
     }
 
 #define check(...) check_(__FILE__, __LINE__, __VA_ARGS__)
@@ -541,6 +544,15 @@ private:
         ASSERT_EQUALS("[test.cpp:4]: (style) The function 'Break' is never used.\n"
                       "[test.cpp:5]: (style) The function 'Break1' is never used.\n",
                       errout_str());
+
+        check("struct S {\n" // #12899
+              "    void f() {}\n"
+              "};\n"
+              "enum E { f };\n"
+              "int main() {\n"
+              "    E e{ f };\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:2]: (style) The function 'f' is never used.\n", errout_str());
     }
 
     void recursive() {
@@ -710,6 +722,52 @@ private:
         const std::string processed = PreprocessorHelper::getcode(settings, *this, code, "", "test.cpp");
         check(processed);
         TODO_ASSERT_EQUALS("[test.h:3]: (style) The function 'f' is never used.\n", "[test.cpp:3]: (style) The function 'f' is never used.\n", errout_str());
+    }
+
+    void virtualFunc()
+    {
+        check("struct D : public B {\n" // #10660
+              "    virtual void f() {}\n"
+              "    void g() override {}\n"
+              "    void h() final {}\n"
+              "};\n");
+        ASSERT_EQUALS("", errout_str());
+
+        check("struct B {\n"
+              "    virtual void f() = 0;\n"
+              "    void g();\n"
+              "};\n"
+              "struct D : B {\n"
+              "    void f() override {}\n"
+              "};\n"
+              "int main() {\n"
+              "    D d;\n"
+              "    d.g();\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+    }
+
+    void parensInit()
+    {
+        check("struct S {\n" // #12898
+              "    void url() {}\n"
+              "};\n"
+              "int main() {\n"
+              "    const int url(0);\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:2]: (style) The function 'url' is never used.\n", errout_str());
+    }
+
+    void typeInCast()
+    {
+        check("struct S {\n" // #12901
+              "    void Type() {}\n"
+              "};\n"
+              "int main() {\n"
+              "    struct Type {} t;\n"
+              "    Type t2{ (Type)t };\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:2]: (style) The function 'Type' is never used.\n", errout_str());
     }
 };
 

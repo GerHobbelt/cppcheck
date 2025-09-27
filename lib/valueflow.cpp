@@ -411,16 +411,6 @@ void ValueFlow::combineValueProperties(const ValueFlow::Value &value1, const Val
         result.path = value1.path;
 }
 
-static long long truncateIntValue(long long value, size_t value_size, const ValueType::Sign dst_sign)
-{
-    const MathLib::biguint unsignedMaxValue = (1ULL << (value_size * 8)) - 1ULL;
-    const MathLib::biguint signBit = 1ULL << (value_size * 8 - 1);
-    value &= unsignedMaxValue;
-    if (dst_sign == ValueType::Sign::SIGNED && (value & signBit))
-        value |= ~unsignedMaxValue;
-
-    return value;
-}
 
 template<class F>
 static size_t accumulateStructMembers(const Scope* scope, F f)
@@ -1187,8 +1177,8 @@ static void valueFlowGlobalStaticVar(TokenList &tokenList, const Settings &setti
     }
 }
 
-static ValuePtr<Analyzer> makeAnalyzer(const Token* exprTok, ValueFlow::Value value, const TokenList& tokenlist, const Settings& settings);
-static ValuePtr<Analyzer> makeReverseAnalyzer(const Token* exprTok, ValueFlow::Value value, const TokenList& tokenlist, const Settings& settings);
+static ValuePtr<Analyzer> makeAnalyzer(const Token* exprTok, ValueFlow::Value value, const Settings& settings);
+static ValuePtr<Analyzer> makeReverseAnalyzer(const Token* exprTok, ValueFlow::Value value, const Settings& settings);
 
 static Analyzer::Result valueFlowForward(Token* startToken,
                                          const Token* endToken,
@@ -1203,7 +1193,7 @@ static Analyzer::Result valueFlowForward(Token* startToken,
         setSourceLocation(value, loc, startToken);
     return valueFlowGenericForward(startToken,
                                    endToken,
-                                   makeAnalyzer(exprTok, std::move(value), tokenlist, settings),
+                                   makeAnalyzer(exprTok, std::move(value), settings),
                                    tokenlist,
                                    errorLogger,
                                    settings);
@@ -1256,7 +1246,7 @@ static Analyzer::Result valueFlowForwardRecursive(Token* top,
         if (settings.debugnormal)
             setSourceLocation(v, loc, top);
         result.update(
-            valueFlowGenericForward(top, makeAnalyzer(exprTok, std::move(v), tokenlist, settings), tokenlist, errorLogger, settings));
+            valueFlowGenericForward(top, makeAnalyzer(exprTok, std::move(v), settings), tokenlist, errorLogger, settings));
     }
     return result;
 }
@@ -1273,7 +1263,7 @@ static void valueFlowReverse(Token* tok,
     for (ValueFlow::Value& v : values) {
         if (settings.debugnormal)
             setSourceLocation(v, loc, tok);
-        valueFlowGenericReverse(tok, endToken, makeReverseAnalyzer(varToken, std::move(v), tokenlist, settings), tokenlist, errorLogger, settings);
+        valueFlowGenericReverse(tok, endToken, makeReverseAnalyzer(varToken, std::move(v), settings), tokenlist, errorLogger, settings);
     }
 }
 
@@ -1537,11 +1527,10 @@ static bool bifurcate(const Token* tok, const std::set<nonneg int>& varids, cons
 }
 
 struct ValueFlowAnalyzer : Analyzer {
-    const TokenList& tokenlist;
     const Settings& settings;
     ProgramMemoryState pms;
 
-    explicit ValueFlowAnalyzer(const TokenList& t, const Settings& s) : tokenlist(t), settings(s), pms(&settings) {}
+    explicit ValueFlowAnalyzer(const Settings& s) : settings(s), pms(&settings) {}
 
     virtual const ValueFlow::Value* getValue(const Token* tok) const = 0;
     virtual ValueFlow::Value* getValue(const Token* tok) = 0;
@@ -1577,10 +1566,6 @@ struct ValueFlowAnalyzer : Analyzer {
     }
     virtual bool isVariable() const {
         return false;
-    }
-
-    bool isCPP() const {
-        return tokenlist.isCPP();
     }
 
     const Settings& getSettings() const {
@@ -1879,7 +1864,7 @@ struct ValueFlowAnalyzer : Analyzer {
             if (dst) {
                 const size_t sz = ValueFlow::getSizeOf(*dst, settings);
                 if (sz > 0 && sz < sizeof(MathLib::biguint)) {
-                    long long newvalue = truncateIntValue(value->intvalue, sz, dst->sign);
+                    long long newvalue = ValueFlow::truncateIntValue(value->intvalue, sz, dst->sign);
 
                     /* Handle overflow/underflow for value bounds */
                     if (value->bound != ValueFlow::Value::Bound::Point) {
@@ -2194,7 +2179,7 @@ struct SingleValueFlowAnalyzer : ValueFlowAnalyzer {
     std::unordered_map<nonneg int, const Variable*> aliases;
     ValueFlow::Value value;
 
-    SingleValueFlowAnalyzer(ValueFlow::Value v, const TokenList& t, const Settings& s) : ValueFlowAnalyzer(t, s), value(std::move(v)) {}
+    SingleValueFlowAnalyzer(ValueFlow::Value v, const Settings& s) : ValueFlowAnalyzer(s), value(std::move(v)) {}
 
     const std::unordered_map<nonneg int, const Variable*>& getVars() const {
         return varids;
@@ -2315,7 +2300,7 @@ struct SingleValueFlowAnalyzer : ValueFlowAnalyzer {
     ValuePtr<Analyzer> reanalyze(Token* tok, const std::string& msg) const override {
         ValueFlow::Value newValue = value;
         newValue.errorPath.emplace_back(tok, msg);
-        return makeAnalyzer(tok, std::move(newValue), tokenlist, settings);
+        return makeAnalyzer(tok, std::move(newValue), settings);
     }
 };
 
@@ -2326,8 +2311,8 @@ struct ExpressionAnalyzer : SingleValueFlowAnalyzer {
     bool dependOnThis{};
     bool uniqueExprId{};
 
-    ExpressionAnalyzer(const Token* e, ValueFlow::Value val, const TokenList& t, const Settings& s)
-        : SingleValueFlowAnalyzer(std::move(val), t, s),
+    ExpressionAnalyzer(const Token* e, ValueFlow::Value val, const Settings& s)
+        : SingleValueFlowAnalyzer(std::move(val), s),
         expr(e)
     {
 
@@ -2430,8 +2415,8 @@ struct ExpressionAnalyzer : SingleValueFlowAnalyzer {
 };
 
 struct SameExpressionAnalyzer : ExpressionAnalyzer {
-    SameExpressionAnalyzer(const Token* e, ValueFlow::Value val, const TokenList& t, const Settings& s)
-        : ExpressionAnalyzer(e, std::move(val), t, s)
+    SameExpressionAnalyzer(const Token* e, ValueFlow::Value val, const Settings& s)
+        : ExpressionAnalyzer(e, std::move(val), s)
     {}
 
     bool skipUniqueExprIds() const override {
@@ -2447,8 +2432,8 @@ struct SameExpressionAnalyzer : ExpressionAnalyzer {
 struct OppositeExpressionAnalyzer : ExpressionAnalyzer {
     bool isNot{};
 
-    OppositeExpressionAnalyzer(bool pIsNot, const Token* e, ValueFlow::Value val, const TokenList& t, const Settings& s)
-        : ExpressionAnalyzer(e, std::move(val), t, s), isNot(pIsNot)
+    OppositeExpressionAnalyzer(bool pIsNot, const Token* e, ValueFlow::Value val, const Settings& s)
+        : ExpressionAnalyzer(e, std::move(val), s), isNot(pIsNot)
     {}
 
     bool skipUniqueExprIds() const override {
@@ -2465,8 +2450,8 @@ struct SubExpressionAnalyzer : ExpressionAnalyzer {
     // A shared_ptr is used so partial reads can be captured even after forking
     std::shared_ptr<PartialReadContainer> partialReads;
 
-    SubExpressionAnalyzer(const Token* e, ValueFlow::Value val, const TokenList& t, const Settings& s)
-        : ExpressionAnalyzer(e, std::move(val), t, s), partialReads(std::make_shared<PartialReadContainer>())
+    SubExpressionAnalyzer(const Token* e, ValueFlow::Value val, const Settings& s)
+        : ExpressionAnalyzer(e, std::move(val), s), partialReads(std::make_shared<PartialReadContainer>())
     {}
 
     virtual bool submatch(const Token* tok, bool exact = true) const = 0;
@@ -2500,8 +2485,8 @@ struct SubExpressionAnalyzer : ExpressionAnalyzer {
 struct MemberExpressionAnalyzer : SubExpressionAnalyzer {
     std::string varname;
 
-    MemberExpressionAnalyzer(std::string varname, const Token* e, ValueFlow::Value val, const TokenList& t, const Settings& s)
-        : SubExpressionAnalyzer(e, std::move(val), t, s), varname(std::move(varname))
+    MemberExpressionAnalyzer(std::string varname, const Token* e, ValueFlow::Value val, const Settings& s)
+        : SubExpressionAnalyzer(e, std::move(val), s), varname(std::move(varname))
     {}
 
     bool submatch(const Token* tok, bool exact) const override
@@ -4496,11 +4481,11 @@ static void valueFlowConditionExpressions(const TokenList &tokenlist, const Symb
                 for (const Token* condTok2 : getConditions(condTok, "&&")) {
                     if (is1) {
                         const bool isBool = astIsBool(condTok2) || Token::Match(condTok2, "%comp%|%oror%|&&");
-                        SameExpressionAnalyzer a1(condTok2, makeConditionValue(1, condTok2, /*assume*/ true, !isBool, settings), tokenlist, settings); // don't set '1' for non-boolean expressions
+                        SameExpressionAnalyzer a1(condTok2, makeConditionValue(1, condTok2, /*assume*/ true, !isBool, settings), settings); // don't set '1' for non-boolean expressions
                         valueFlowGenericForward(startTok, startTok->link(), a1, tokenlist, errorLogger, settings);
                     }
 
-                    OppositeExpressionAnalyzer a2(true, condTok2, makeConditionValue(0, condTok2, true, false, settings), tokenlist, settings);
+                    OppositeExpressionAnalyzer a2(true, condTok2, makeConditionValue(0, condTok2, true, false, settings), settings);
                     valueFlowGenericForward(startTok, startTok->link(), a2, tokenlist, errorLogger, settings);
                 }
             }
@@ -4511,11 +4496,11 @@ static void valueFlowConditionExpressions(const TokenList &tokenlist, const Symb
             if (Token::simpleMatch(startTok->link(), "} else {")) {
                 startTok = startTok->link()->tokAt(2);
                 for (const Token* condTok2:conds) {
-                    SameExpressionAnalyzer a1(condTok2, makeConditionValue(0, condTok2, false, false, settings), tokenlist, settings);
+                    SameExpressionAnalyzer a1(condTok2, makeConditionValue(0, condTok2, false, false, settings), settings);
                     valueFlowGenericForward(startTok, startTok->link(), a1, tokenlist, errorLogger, settings);
 
                     if (is1) {
-                        OppositeExpressionAnalyzer a2(true, condTok2, makeConditionValue(1, condTok2, false, false, settings), tokenlist, settings);
+                        OppositeExpressionAnalyzer a2(true, condTok2, makeConditionValue(1, condTok2, false, false, settings), settings);
                         valueFlowGenericForward(startTok, startTok->link(), a2, tokenlist, errorLogger, settings);
                     }
                 }
@@ -4531,11 +4516,11 @@ static void valueFlowConditionExpressions(const TokenList &tokenlist, const Symb
                         continue;
                 }
                 for (const Token* condTok2:conds) {
-                    SameExpressionAnalyzer a1(condTok2, makeConditionValue(0, condTok2, false, false, settings), tokenlist, settings);
+                    SameExpressionAnalyzer a1(condTok2, makeConditionValue(0, condTok2, false, false, settings), settings);
                     valueFlowGenericForward(startTok->link()->next(), scope2->bodyEnd, a1, tokenlist, errorLogger, settings);
 
                     if (is1) {
-                        OppositeExpressionAnalyzer a2(true, condTok2, makeConditionValue(1, condTok2, false, false, settings), tokenlist, settings);
+                        OppositeExpressionAnalyzer a2(true, condTok2, makeConditionValue(1, condTok2, false, false, settings), settings);
                         valueFlowGenericForward(startTok->link()->next(), scope2->bodyEnd, a2, tokenlist, errorLogger, settings);
                     }
                 }
@@ -5105,7 +5090,7 @@ static std::list<ValueFlow::Value> truncateValues(std::list<ValueFlow::Value> va
         }
 
         if (value.isIntValue() && sz > 0 && sz < sizeof(MathLib::biguint))
-            value.intvalue = truncateIntValue(value.intvalue, sz, dst->sign);
+            value.intvalue = ValueFlow::truncateIntValue(value.intvalue, sz, dst->sign);
     }
     return values;
 }
@@ -6481,8 +6466,8 @@ struct MultiValueFlowAnalyzer : ValueFlowAnalyzer {
     std::unordered_map<nonneg int, ValueFlow::Value> values;
     std::unordered_map<nonneg int, const Variable*> vars;
 
-    MultiValueFlowAnalyzer(const std::unordered_map<const Variable*, ValueFlow::Value>& args, const TokenList& t, const Settings& set)
-        : ValueFlowAnalyzer(t, set) {
+    MultiValueFlowAnalyzer(const std::unordered_map<const Variable*, ValueFlow::Value>& args, const Settings& set)
+        : ValueFlowAnalyzer(set) {
         for (const auto& p:args) {
             values[p.first->declarationId()] = p.second;
             vars[p.first->declarationId()] = p.first;
@@ -6684,14 +6669,14 @@ static bool productParams(const Settings& settings, const std::unordered_map<Key
     return !bail;
 }
 
-static void valueFlowInjectParameter(TokenList& tokenlist,
+static void valueFlowInjectParameter(const TokenList& tokenlist,
                                      ErrorLogger& errorLogger,
                                      const Settings& settings,
                                      const Scope* functionScope,
                                      const std::unordered_map<const Variable*, std::list<ValueFlow::Value>>& vars)
 {
     const bool r = productParams(settings, vars, [&](const std::unordered_map<const Variable*, ValueFlow::Value>& arg) {
-        MultiValueFlowAnalyzer a(arg, tokenlist, settings);
+        MultiValueFlowAnalyzer a(arg, settings);
         valueFlowGenericForward(const_cast<Token*>(functionScope->bodyStart), functionScope->bodyEnd, a, tokenlist, errorLogger, settings);
     });
     if (!r) {
@@ -6863,7 +6848,7 @@ static IteratorRange<Iterator> MakeIteratorRange(Iterator start, Iterator last)
     return {start, last};
 }
 
-static void valueFlowSubFunction(TokenList& tokenlist, SymbolDatabase& symboldatabase,  ErrorLogger& errorLogger, const Settings& settings)
+static void valueFlowSubFunction(const TokenList& tokenlist, SymbolDatabase& symboldatabase,  ErrorLogger& errorLogger, const Settings& settings)
 {
     int id = 0;
     for (const Scope* scope : MakeIteratorRange(symboldatabase.functionScopes.crbegin(), symboldatabase.functionScopes.crend())) {
@@ -6956,7 +6941,7 @@ static void valueFlowFunctionDefaultParameter(const TokenList& tokenlist, const 
             continue;
         for (std::size_t arg = function->minArgCount(); arg < function->argCount(); arg++) {
             const Variable* var = function->getArgumentVar(arg);
-            if (var && var->hasDefault() && Token::Match(var->nameToken(), "%var% = %num%|%str% [,)]")) {
+            if (var && var->hasDefault() && Token::Match(var->nameToken(), "%var% = %num%|%str%|%char%|%name% [,)]")) {
                 const std::list<ValueFlow::Value> &values = var->nameToken()->tokAt(2)->values();
                 std::list<ValueFlow::Value> argvalues;
                 for (const ValueFlow::Value &value : values) {
@@ -7225,7 +7210,7 @@ static void valueFlowUninit(TokenList& tokenlist, ErrorLogger& errorLogger, cons
                         partial = true;
                     continue;
                 }
-                MemberExpressionAnalyzer analyzer(memVar.nameToken()->str(), tok, uninitValue, tokenlist, settings);
+                MemberExpressionAnalyzer analyzer(memVar.nameToken()->str(), tok, uninitValue, settings);
                 valueFlowGenericForward(start, tok->scope()->bodyEnd, analyzer, tokenlist, errorLogger, settings);
 
                 for (auto&& p : *analyzer.partialReads) {
@@ -7327,8 +7312,8 @@ static bool isContainerSizeChangedByFunction(const Token* tok,
 }
 
 struct ContainerExpressionAnalyzer : ExpressionAnalyzer {
-    ContainerExpressionAnalyzer(const Token* expr, ValueFlow::Value val, const TokenList& t, const Settings& s)
-        : ExpressionAnalyzer(expr, std::move(val), t, s)
+    ContainerExpressionAnalyzer(const Token* expr, ValueFlow::Value val, const Settings& s)
+        : ExpressionAnalyzer(expr, std::move(val), s)
     {}
 
     bool match(const Token* tok) const override {
@@ -7512,19 +7497,19 @@ static const Token* solveExprValue(const Token* expr, ValueFlow::Value& value)
         value);
 }
 
-static ValuePtr<Analyzer> makeAnalyzer(const Token* exprTok, ValueFlow::Value value, const TokenList& tokenlist, const Settings& settings)
+static ValuePtr<Analyzer> makeAnalyzer(const Token* exprTok, ValueFlow::Value value, const Settings& settings)
 {
     if (value.isContainerSizeValue())
-        return ContainerExpressionAnalyzer(exprTok, std::move(value), tokenlist, settings);
+        return ContainerExpressionAnalyzer(exprTok, std::move(value), settings);
     const Token* expr = solveExprValue(exprTok, value);
-    return ExpressionAnalyzer(expr, std::move(value), tokenlist, settings);
+    return ExpressionAnalyzer(expr, std::move(value), settings);
 }
 
-static ValuePtr<Analyzer> makeReverseAnalyzer(const Token* exprTok, ValueFlow::Value value, const TokenList& tokenlist, const Settings& settings)
+static ValuePtr<Analyzer> makeReverseAnalyzer(const Token* exprTok, ValueFlow::Value value, const Settings& settings)
 {
     if (value.isContainerSizeValue())
-        return ContainerExpressionAnalyzer(exprTok, std::move(value), tokenlist, settings);
-    return ExpressionAnalyzer(exprTok, std::move(value), tokenlist, settings);
+        return ContainerExpressionAnalyzer(exprTok, std::move(value), settings);
+    return ExpressionAnalyzer(exprTok, std::move(value), settings);
 }
 
 bool ValueFlow::isContainerSizeChanged(const Token* tok, int indirect, const Settings& settings, int depth)

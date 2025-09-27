@@ -413,6 +413,14 @@ static bool reportClangErrors(std::istream &is, const std::function<void(const E
     return false;
 }
 
+std::string CppCheck::getLibraryDumpData() const {
+    std::string out;
+    for (const std::string &s : mSettings.libraries) {
+        out += "  <library lib=\"" + s + "\"/>\n";
+    }
+    return out;
+}
+
 unsigned int CppCheck::checkClang(const FileWithDetails &file)
 {
     if (mSettings.checks.isEnabled(Checks::unusedFunction) && !mUnusedFunctionsCheck)
@@ -520,6 +528,7 @@ unsigned int CppCheck::checkClang(const FileWithDetails &file)
             fdump << "    <c version=\"" << mSettings.standards.getC() << "\"/>\n";
             fdump << "    <cpp version=\"" << mSettings.standards.getCPP() << "\"/>\n";
             fdump << "  </standards>\n";
+            fdump << getLibraryDumpData();
             tokenizer.dump(fdump);
             fdump << "</dump>\n";
             fdump << "</dumps>\n";
@@ -581,6 +590,7 @@ unsigned int CppCheck::check(const FileSettings &fs)
     if (mSettings.clang) {
         temp.mSettings.includePaths.insert(temp.mSettings.includePaths.end(), fs.systemIncludePaths.cbegin(), fs.systemIncludePaths.cend());
         // TODO: propagate back suppressions
+        // TODO: propagate back mFileInfo
         const unsigned int returnValue = temp.check(fs.file);
         if (mUnusedFunctionsCheck)
             mUnusedFunctionsCheck->updateFunctionData(*temp.mUnusedFunctionsCheck);
@@ -590,6 +600,11 @@ unsigned int CppCheck::check(const FileSettings &fs)
     mSettings.supprs.nomsg.addSuppressions(temp.mSettings.supprs.nomsg.getSuppressions());
     if (mUnusedFunctionsCheck)
         mUnusedFunctionsCheck->updateFunctionData(*temp.mUnusedFunctionsCheck);
+    while (!temp.mFileInfo.empty()) {
+        mFileInfo.push_back(temp.mFileInfo.back());
+        temp.mFileInfo.pop_back();
+    }
+    // TODO: propagate back more data?
     return returnValue;
 }
 
@@ -896,6 +911,7 @@ unsigned int CppCheck::checkFile(const FileWithDetails& file, const std::string 
                     fdump << "    <c version=\"" << mSettings.standards.getC() << "\"/>" << std::endl;
                     fdump << "    <cpp version=\"" << mSettings.standards.getCPP() << "\"/>" << std::endl;
                     fdump << "  </standards>" << std::endl;
+                    fdump << getLibraryDumpData();
                     preprocessor.dump(fdump);
                     tokenizer.dump(fdump);
                     fdump << "</dump>" << std::endl;
@@ -1463,7 +1479,7 @@ void CppCheck::executeAddons(const std::vector<std::string>& files, const std::s
     }
 }
 
-void CppCheck::executeAddonsWholeProgram(const std::list<FileWithDetails> &files)
+void CppCheck::executeAddonsWholeProgram(const std::list<FileWithDetails> &files, const std::list<FileSettings>& fileSettings)
 {
     if (mSettings.addons.empty())
         return;
@@ -1471,6 +1487,11 @@ void CppCheck::executeAddonsWholeProgram(const std::list<FileWithDetails> &files
     std::vector<std::string> ctuInfoFiles;
     for (const auto &f: files) {
         const std::string &dumpFileName = getDumpFileName(mSettings, f.path());
+        ctuInfoFiles.push_back(getCtuInfoFileName(dumpFileName));
+    }
+
+    for (const auto &f: fileSettings) {
+        const std::string &dumpFileName = getDumpFileName(mSettings, f.filename());
         ctuInfoFiles.push_back(getCtuInfoFileName(dumpFileName));
     }
 
@@ -1759,11 +1780,14 @@ bool CppCheck::analyseWholeProgram()
     CTU::maxCtuDepth = mSettings.maxCtuDepth;
     // Analyse the tokens
     CTU::FileInfo ctu;
-    for (const Check::FileInfo *fi : mFileInfo) {
-        const auto *fi2 = dynamic_cast<const CTU::FileInfo *>(fi);
-        if (fi2) {
-            ctu.functionCalls.insert(ctu.functionCalls.end(), fi2->functionCalls.cbegin(), fi2->functionCalls.cend());
-            ctu.nestedCalls.insert(ctu.nestedCalls.end(), fi2->nestedCalls.cbegin(), fi2->nestedCalls.cend());
+    if (mSettings.useSingleJob() || !mSettings.buildDir.empty())
+    {
+        for (const Check::FileInfo *fi : mFileInfo) {
+            const auto *fi2 = dynamic_cast<const CTU::FileInfo *>(fi);
+            if (fi2) {
+                ctu.functionCalls.insert(ctu.functionCalls.end(), fi2->functionCalls.cbegin(), fi2->functionCalls.cend());
+                ctu.nestedCalls.insert(ctu.nestedCalls.end(), fi2->nestedCalls.cbegin(), fi2->nestedCalls.cend());
+            }
         }
     }
 
@@ -1779,7 +1803,7 @@ bool CppCheck::analyseWholeProgram()
 
 unsigned int CppCheck::analyseWholeProgram(const std::string &buildDir, const std::list<FileWithDetails> &files, const std::list<FileSettings>& fileSettings)
 {
-    executeAddonsWholeProgram(files); // TODO: pass FileSettings
+    executeAddonsWholeProgram(files, fileSettings);
     if (buildDir.empty()) {
         removeCtuInfoFiles(files, fileSettings);
         return mExitCode;

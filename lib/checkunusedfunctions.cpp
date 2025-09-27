@@ -85,6 +85,15 @@ void CheckUnusedFunctions::parseTokens(const Tokenizer &tokenizer, const Setting
             if (func->isExtern())
                 continue;
 
+            bool foundAllBaseClasses{};
+            if (const Function* ofunc = func->getOverriddenFunction(&foundAllBaseClasses)) {
+                if (!foundAllBaseClasses || ofunc->isPure())
+                    continue;
+            }
+            else if (func->isImplicitlyVirtual()) {
+                continue;
+            }
+
             mFunctionDecl.emplace_back(func);
 
             FunctionUsage &usage = mFunctions[stripTemplateParameters(func->name())];
@@ -233,11 +242,11 @@ void CheckUnusedFunctions::parseTokens(const Tokenizer &tokenizer, const Setting
             while (Token::Match(funcname, "%name% :: %name%"))
                 funcname = funcname->tokAt(2);
 
-            if (!Token::Match(funcname, "%name% [(),;]:}>]") || funcname->varId())
+            if (!Token::Match(funcname, "%name% [(),;]:}>]"))
                 continue;
         }
 
-        if (!funcname || funcname->isKeyword() || funcname->isStandardType())
+        if (!funcname || funcname->isKeyword() || funcname->isStandardType() || funcname->varId() || funcname->enumerator() || funcname->type())
             continue;
 
         // funcname ( => Assert that the end parentheses isn't followed by {

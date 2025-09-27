@@ -58,17 +58,16 @@ namespace {
     };
 }
 
-const std::list<ValueFlow::Value> TokenImpl::mEmptyValueList;
+const std::list<ValueFlow::Value> Token::mEmptyValueList;
 const std::string Token::mEmptyString;
 
 Token::Token(const TokenList& tokenlist, std::shared_ptr<TokensFrontBack> tokensFrontBack)
     : mList(tokenlist)
     , mTokensFrontBack(std::move(tokensFrontBack))
+    , mImpl(new Impl)
     , mIsC(mList.isC())
     , mIsCpp(mList.isCPP())
-{
-    mImpl = new TokenImpl();
-}
+{}
 
 Token::Token(const Token* tok)
     : Token(tok->mList, const_cast<Token*>(tok)->mTokensFrontBack)
@@ -1061,7 +1060,7 @@ void Token::function(const Function *f)
         tokType(eName);
 }
 
-Token* Token::insertToken(const std::string& tokenStr, const std::string& originalNameStr, const std::string& macroNameStr, bool prepend)
+Token* Token::insertToken(const std::string& tokenStr, bool prepend)
 {
     Token *newToken;
     if (mStr.empty())
@@ -1069,10 +1068,6 @@ Token* Token::insertToken(const std::string& tokenStr, const std::string& origin
     else
         newToken = new Token(mList, mTokensFrontBack);
     newToken->str(tokenStr);
-    if (!originalNameStr.empty())
-        newToken->originalName(originalNameStr);
-    if (!macroNameStr.empty())
-        newToken->setMacroName(macroNameStr);
 
     if (newToken != this) {
         newToken->mImpl->mLineNumber = mImpl->mLineNumber;
@@ -1195,6 +1190,22 @@ Token* Token::insertToken(const std::string& tokenStr, const std::string& origin
             }
         }
     }
+    return newToken;
+}
+
+Token* Token::insertToken(const std::string& tokenStr, const std::string& originalNameStr, bool prepend)
+{
+    Token* const newToken = insertToken(tokenStr, prepend);
+    if (!originalNameStr.empty())
+        newToken->originalName(originalNameStr);
+    return newToken;
+}
+
+Token* Token::insertToken(const std::string& tokenStr, const std::string& originalNameStr, const std::string& macroNameStr, bool prepend)
+{
+    Token* const newToken = insertToken(tokenStr, originalNameStr, prepend);
+    if (!macroNameStr.empty())
+        newToken->setMacroName(macroNameStr);
     return newToken;
 }
 
@@ -2630,7 +2641,7 @@ const ValueFlow::Value* Token::getContainerSizeValue(const MathLib::bigint val) 
     return it == mImpl->mValues->end() ? nullptr : &*it;
 }
 
-TokenImpl::~TokenImpl()
+Token::Impl::~Impl()
 {
     delete mMacroName;
     delete mOriginalName;
@@ -2638,8 +2649,8 @@ TokenImpl::~TokenImpl()
     delete mValues;
 
     if (mTemplateSimplifierPointers) {
-        for (auto *templateSimplifierPointer : *mTemplateSimplifierPointers) {
-            templateSimplifierPointer->token(nullptr);
+        for (auto *p : *mTemplateSimplifierPointers) {
+            p->token(nullptr);
         }
     }
     delete mTemplateSimplifierPointers;
@@ -2651,7 +2662,7 @@ TokenImpl::~TokenImpl()
     }
 }
 
-void TokenImpl::setCppcheckAttribute(TokenImpl::CppcheckAttributes::Type type, MathLib::bigint value)
+void Token::Impl::setCppcheckAttribute(CppcheckAttributesType type, MathLib::bigint value)
 {
     CppcheckAttributes *attr = mCppcheckAttributes;
     while (attr && attr->type != type)
@@ -2667,7 +2678,7 @@ void TokenImpl::setCppcheckAttribute(TokenImpl::CppcheckAttributes::Type type, M
     }
 }
 
-bool TokenImpl::getCppcheckAttribute(TokenImpl::CppcheckAttributes::Type type, MathLib::bigint &value) const
+bool Token::Impl::getCppcheckAttribute(CppcheckAttributesType type, MathLib::bigint &value) const
 {
     CppcheckAttributes *attr = mCppcheckAttributes;
     while (attr && attr->type != type)

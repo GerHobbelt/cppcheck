@@ -2972,7 +2972,7 @@ bool Tokenizer::simplifyUsing()
             structEnd = structEnd->link();
 
             // add ';' after end of struct
-            structEnd->insertToken(";", emptyString);
+            structEnd->insertToken(";");
 
             // add name for anonymous struct
             if (!hasName) {
@@ -2982,8 +2982,8 @@ bool Tokenizer::simplifyUsing()
                 else
                     newName = "Unnamed" + std::to_string(mUnnamedCount++);
                 TokenList::copyTokens(structEnd->next(), tok, start);
-                structEnd->tokAt(5)->insertToken(newName, emptyString);
-                start->insertToken(newName, emptyString);
+                structEnd->tokAt(5)->insertToken(newName);
+                start->insertToken(newName);
             } else
                 TokenList::copyTokens(structEnd->next(), tok, start->next());
 
@@ -6339,9 +6339,15 @@ void Tokenizer::simplifyHeadersAndUnusedTemplates()
     }
 
     const std::set<std::string> functionStart{"static", "const", "unsigned", "signed", "void", "bool", "char", "short", "int", "long", "float", "*"};
+    bool goBack = false;
 
     for (Token *tok = list.front(); tok; tok = tok->next()) {
         const bool isIncluded = (tok->fileIndex() != 0);
+
+        if (goBack) {
+            tok = tok->previous();
+        }
+        goBack = false;
 
         // Remove executable code
         if (isIncluded && !mSettings.checkHeaders && tok->str() == "{") {
@@ -6408,6 +6414,7 @@ void Tokenizer::simplifyHeadersAndUnusedTemplates()
                         const Token *endToken = closingBracket->linkAt(3)->linkAt(1)->next();
                         Token::eraseTokens(tok, endToken);
                         tok->deleteThis();
+                        goBack = true;
                     }
                 }
             }
@@ -6801,6 +6808,7 @@ Token *Tokenizer::simplifyAddBracesPair(Token *tok, bool commandWithCondition)
         }
         tokEnd->insertToken("}");
         Token * tokCloseBrace = tokEnd->next();
+        tokCloseBrace->column(tokEnd->column());
 
         Token::createMutualLinks(tokOpenBrace, tokCloseBrace);
         tokBracesEnd = tokCloseBrace;
@@ -6835,6 +6843,7 @@ Token *Tokenizer::simplifyAddBracesPair(Token *tok, bool commandWithCondition)
 
         tokEnd->insertToken("}");
         Token * tokCloseBrace=tokEnd->next();
+        tokCloseBrace->column(tokEnd->column());
 
         Token::createMutualLinks(tokOpenBrace,tokCloseBrace);
         tokBracesEnd=tokCloseBrace;
@@ -9462,10 +9471,10 @@ void Tokenizer::simplifyCppcheckAttribute()
 
         if (vartok->isName()) {
             if (Token::Match(tok->previous(), "__cppcheck_low__ ( %num% )"))
-                vartok->setCppcheckAttribute(TokenImpl::CppcheckAttributes::Type::LOW,
+                vartok->setCppcheckAttribute(Token::CppcheckAttributesType::LOW,
                                              MathLib::toBigNumber(tok->tokAt(1)));
             else if (Token::Match(tok->previous(), "__cppcheck_high__ ( %num% )"))
-                vartok->setCppcheckAttribute(TokenImpl::CppcheckAttributes::Type::HIGH,
+                vartok->setCppcheckAttribute(Token::CppcheckAttributesType::HIGH,
                                              MathLib::toBigNumber(tok->tokAt(1)));
         }
 
@@ -9553,16 +9562,16 @@ void Tokenizer::simplifyCPPAttribute()
                 }
                 if (argtok && argtok->str() == vartok->str()) {
                     if (vartok->strAt(1) == ">=")
-                        argtok->setCppcheckAttribute(TokenImpl::CppcheckAttributes::Type::LOW,
+                        argtok->setCppcheckAttribute(Token::CppcheckAttributesType::LOW,
                                                      MathLib::toBigNumber(vartok->tokAt(2)));
                     else if (vartok->strAt(1) == ">")
-                        argtok->setCppcheckAttribute(TokenImpl::CppcheckAttributes::Type::LOW,
+                        argtok->setCppcheckAttribute(Token::CppcheckAttributesType::LOW,
                                                      MathLib::toBigNumber(vartok->tokAt(2)) + 1);
                     else if (vartok->strAt(1) == "<=")
-                        argtok->setCppcheckAttribute(TokenImpl::CppcheckAttributes::Type::HIGH,
+                        argtok->setCppcheckAttribute(Token::CppcheckAttributesType::HIGH,
                                                      MathLib::toBigNumber(vartok->tokAt(2)));
                     else if (vartok->strAt(1) == "<")
-                        argtok->setCppcheckAttribute(TokenImpl::CppcheckAttributes::Type::HIGH,
+                        argtok->setCppcheckAttribute(Token::CppcheckAttributesType::HIGH,
                                                      MathLib::toBigNumber(vartok->tokAt(2)) - 1);
                 }
             }
@@ -9825,7 +9834,7 @@ void Tokenizer::simplifyAsm()
             Token::eraseTokens(tok, tok->linkAt(1)->next());
         }
 
-        else if (Token::Match(tok, "asm|__asm|__asm__ volatile|__volatile|__volatile__| (")) {
+        else if (Token::Match(tok, "asm|__asm|__asm__ volatile|__volatile|__volatile__|goto|inline| (")) {
             // Goto "("
             Token *partok = tok->next();
             if (partok->str() != "(")
@@ -10016,7 +10025,7 @@ void Tokenizer::simplifyBitfields()
         }
 
         const auto tooLargeError = [this](const Token *tok) {
-            const MathLib::bigint max = std::numeric_limits<short>::max();
+            const auto max = std::numeric_limits<short>::max();
             reportError(tok,
                         Severity::warning,
                         "tooLargeBitField",
@@ -10347,7 +10356,7 @@ bool Tokenizer::operatorEnd(const Token * tok)
             return true;
 
         tok = tok->next();
-        while (tok && !Token::Match(tok, "[=;{),]")) {
+        while (tok && !Token::Match(tok, "[=;{}),]")) {
             if (Token::Match(tok, "const|volatile|override")) {
                 tok = tok->next();
             } else if (tok->str() == "noexcept") {

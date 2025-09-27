@@ -124,7 +124,6 @@
 #include <memory>
 #include <numeric>
 #include <set>
-#include <sstream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -445,7 +444,7 @@ static Result accumulateStructMembers(const Scope* scope, F f, ValueFlow::Accura
         if (const ValueType* vt = var.valueType()) {
             if (vt->type == ValueType::Type::RECORD && vt->typeScope == scope)
                 return {0, false};
-            const MathLib::bigint dim = std::accumulate(var.dimensions().cbegin(), var.dimensions().cend(), 1LL, [](MathLib::bigint i1, const Dimension& dim) {
+            const MathLib::bigint dim = std::accumulate(var.dimensions().cbegin(), var.dimensions().cend(), MathLib::bigint(1), [](MathLib::bigint i1, const Dimension& dim) {
                 return i1 * dim.num;
             });
             if (var.nameToken()->scope() != scope && var.nameToken()->scope()->definedType) { // anonymous union
@@ -1997,8 +1996,7 @@ static bool isNotEqual(std::pair<const Token*, const Token*> x, std::pair<const 
 static bool isNotEqual(std::pair<const Token*, const Token*> x, const std::string& y, bool cpp, const Settings& settings)
 {
     TokenList tokenList(settings, cpp ? Standards::Language::CPP : Standards::Language::C);
-    std::istringstream istr(y);
-    tokenList.createTokens(istr); // TODO: check result?
+    tokenList.createTokensFromBuffer(y.data(), y.size()); // TODO: check result?
     return isNotEqual(x, std::make_pair(tokenList.front(), tokenList.back()));
 }
 static bool isNotEqual(std::pair<const Token*, const Token*> x, const ValueType* y, bool cpp, const Settings& settings)
@@ -6321,6 +6319,8 @@ const Token* ValueFlow::solveExprValue(const Token* expr,
                                        const std::function<std::vector<MathLib::bigint>(const Token*)>& eval,
                                        ValueFlow::Value& value)
 {
+    if (!expr)
+        return nullptr;
     if (!value.isIntValue() && !value.isIteratorValue() && !value.isSymbolicValue())
         return expr;
     if (value.isSymbolicValue() && !Token::Match(expr, "+|-"))
@@ -7115,8 +7115,8 @@ static bool getMinMaxValues(const std::string& typestr,
                             MathLib::bigint& maxvalue)
 {
     TokenList typeTokens(settings, cpp ? Standards::Language::CPP : Standards::Language::C);
-    std::istringstream istr(typestr + ";");
-    if (!typeTokens.createTokens(istr))
+    const std::string str(typestr + ";");
+    if (!typeTokens.createTokensFromBuffer(str.data(), str.size()))
         return false;
     typeTokens.simplifyPlatformTypes();
     typeTokens.simplifyStdType();
@@ -7158,8 +7158,8 @@ static void valueFlowSafeFunctions(const TokenList& tokenlist, const SymbolDatab
             }
 
             MathLib::bigint low, high;
-            bool isLow = arg.nameToken()->getCppcheckAttribute(TokenImpl::CppcheckAttributes::Type::LOW, low);
-            bool isHigh = arg.nameToken()->getCppcheckAttribute(TokenImpl::CppcheckAttributes::Type::HIGH, high);
+            bool isLow = arg.nameToken()->getCppcheckAttribute(Token::CppcheckAttributesType::LOW, low);
+            bool isHigh = arg.nameToken()->getCppcheckAttribute(Token::CppcheckAttributesType::HIGH, high);
 
             if (!isLow && !isHigh && !all)
                 continue;

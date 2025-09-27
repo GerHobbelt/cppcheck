@@ -20,7 +20,7 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-22.04, macos-13, macos-15]
+        os: [ubuntu-22.04, macos-15]
       fail-fast: false # Prefer quick result
 
     runs-on: ${{ matrix.os }}
@@ -75,7 +75,7 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-22.04, macos-13, macos-15]
+        os: [ubuntu-22.04, macos-15]
       fail-fast: false # Prefer quick result
 
     runs-on: ${{ matrix.os }}
@@ -195,7 +195,7 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-22.04, macos-13, macos-15]
+        os: [ubuntu-22.04, macos-15]
       fail-fast: false # Prefer quick result
 
     runs-on: ${{ matrix.os }}
@@ -229,7 +229,7 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-22.04, macos-13, macos-15]
+        os: [ubuntu-22.04, macos-15]
       fail-fast: false # Prefer quick result
 
     runs-on: ${{ matrix.os }}
@@ -253,17 +253,17 @@ jobs:
       - name: Build with TEST_MATHLIB_VALUE
         run: |
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
-          make -j$(nproc) CPPFLAGS=-DTEST_MATHLIB_VALUE all
+          make -j$(nproc) CPPOPTS=-DTEST_MATHLIB_VALUE all
 
       - name: Test with TEST_MATHLIB_VALUE
         run: |
-          make -j$(nproc) CPPFLAGS=-DTEST_MATHLIB_VALUE check
+          make -j$(nproc) CPPOPTS=-DTEST_MATHLIB_VALUE check
 
   check_nonneg:
 
     strategy:
       matrix:
-        os: [ubuntu-22.04, macos-13, macos-15]
+        os: [ubuntu-22.04, macos-15]
       fail-fast: false # Prefer quick result
 
     runs-on: ${{ matrix.os }}
@@ -287,7 +287,7 @@ jobs:
 
     strategy:
       matrix:
-        os: [macos-13, macos-15]  # non-macos platforms are already built with Boost in other contexts
+        os: [macos-15]  # non-macos platforms are already built with Boost in other contexts
       fail-fast: false # Prefer quick result
 
     runs-on: ${{ matrix.os }}
@@ -348,12 +348,10 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-22.04, macos-13, macos-15]
+        os: [ubuntu-22.04, macos-15]
         include:
           - xdist_n: auto
           # FIXME: test_color_tty fails with xdist - see #13278
-          - os: macos-13
-            xdist_n: '1'
           - os: macos-15
             xdist_n: '1'
       fail-fast: false # Prefer quick result
@@ -419,11 +417,11 @@ jobs:
       - name: Build test
         run: |
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
-          make -j$(nproc) testrunner HAVE_RULES=yes
+          make -j$(nproc) HAVE_RULES=yes testrunner
 
       - name: Run test
         run: |
-          make -j$(nproc) check HAVE_RULES=yes
+          make -j$(nproc) HAVE_RULES=yes check
 
       # requires "gnu-sed" installed on macos
       - name: Run extra tests
@@ -611,7 +609,7 @@ jobs:
         run: |
           export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
           # compile with verification and ast matchers
-          make -j$(nproc) -s CPPFLAGS="-DCHECK_INTERNAL" CXXOPTS="-g -O2 -w -DHAVE_BOOST" MATCHCOMPILER=yes VERIFY=1
+          make -j$(nproc) CXXOPTS="-g -O2 -w" CPPOPTS="-DCHECK_INTERNAL -DHAVE_BOOST" MATCHCOMPILER=yes VERIFY=1
 
       - name: CMake
         run: |

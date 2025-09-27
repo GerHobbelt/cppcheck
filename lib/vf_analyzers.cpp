@@ -838,6 +838,8 @@ static bool bifurcate(const Token* tok, const std::set<nonneg int>& varids, cons
         const Variable* var = tok->variable();
         if (!var)
             return false;
+        if (!var->isLocal() && !var->isArgument())
+            return false;
         const Token* start = var->declEndToken();
         if (!start)
             return false;
@@ -941,8 +943,11 @@ struct MultiValueFlowAnalyzer : ValueFlowAnalyzer {
     MultiValueFlowAnalyzer(const std::unordered_map<const Variable*, ValueFlow::Value>& args, const Settings& set)
         : ValueFlowAnalyzer(set) {
         for (const auto& p:args) {
-            values[p.first->declarationId()] = p.second;
-            vars[p.first->declarationId()] = p.first;
+            const auto declId = p.first->declarationId();
+            if (declId == 0)
+                continue; // TODO: should never happen?
+            values[declId] = p.second;
+            vars[declId] = p.first;
         }
     }
 
@@ -1075,6 +1080,7 @@ struct MultiValueFlowAnalyzer : ValueFlowAnalyzer {
             const Variable* var = vars.at(p.first);
             if (!var)
                 continue;
+            assert(var->nameToken());
             ps[var->nameToken()] = p.second;
         }
         return ps;

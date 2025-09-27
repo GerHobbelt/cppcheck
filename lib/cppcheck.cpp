@@ -50,7 +50,7 @@
 #include <ctime>
 #include <exception> // IWYU pragma: keep
 #include <fstream>
-#include <iostream> // <- TEMPORARY
+#include <iostream>
 #include <new>
 #include <set>
 #include <sstream>
@@ -430,8 +430,11 @@ unsigned int CppCheck::checkClang(const FileWithDetails &file)
         mErrorLogger.reportOut(std::string("Checking ") + file.spath() + " ...", Color::FgGreen);
 
     // TODO: get language from FileWithDetails object
-    // TODO: this ignores the configured language
-    const bool isCpp = Path::identify(file.spath(), mSettings.cppHeaderProbe) == Standards::Language::CPP;
+    bool isCpp;
+    if (mSettings.enforcedLang != Standards::None)
+        isCpp = (mSettings.enforcedLang == Standards::CPP);
+    else
+        isCpp = Path::identify(file.spath(), mSettings.cppHeaderProbe) == Standards::Language::CPP;
     const std::string langOpt = isCpp ? "-x c++" : "-x c";
     const std::string analyzerInfo = mSettings.buildDir.empty() ? std::string() : AnalyzerInformation::getAnalyzerInfoFile(mSettings.buildDir, file.spath(), emptyString);
     const std::string clangcmd = analyzerInfo + ".clang-cmd";
@@ -446,9 +449,10 @@ unsigned int CppCheck::checkClang(const FileWithDetails &file)
 #endif
 
     std::string flags(langOpt + " ");
-    // TODO: does not apply C standard
-    if (isCpp && !mSettings.standards.stdValue.empty())
-        flags += "-std=" + mSettings.standards.stdValue + " ";
+    if (isCpp && !mSettings.standards.stdValueCPP.empty())
+        flags += "-std=" + mSettings.standards.stdValueCPP + " ";
+    if (!isCpp && !mSettings.standards.stdValueC.empty())
+        flags += "-std=" + mSettings.standards.stdValueC + " ";
 
     for (const std::string &i: mSettings.includePaths)
         flags += "-I" + i + " ";
@@ -512,7 +516,7 @@ unsigned int CppCheck::checkClang(const FileWithDetails &file)
                              mSettings,
                              &s_timerResults);
         if (mSettings.debugnormal)
-            tokenizer.printDebugOutput(1);
+            tokenizer.printDebugOutput(1, std::cout);
         checkNormalTokens(tokenizer);
 
         // create dumpfile
@@ -731,8 +735,7 @@ unsigned int CppCheck::checkFile(const FileWithDetails& file, const std::string 
             mSettings.supprs.nomsg.dump(oss);
             dumpProlog += oss.str();
         }
-        tokens1.removeComments();
-        preprocessor.removeComments();
+        preprocessor.removeComments(tokens1);
 
         if (!mSettings.buildDir.empty()) {
             // Get toolinfo
@@ -772,9 +775,9 @@ unsigned int CppCheck::checkFile(const FileWithDetails& file, const std::string 
 
         // Get directives
         std::list<Directive> directives = preprocessor.createDirectives(tokens1);
-        preprocessor.simplifyPragmaAsm(&tokens1);
+        preprocessor.simplifyPragmaAsm(tokens1);
 
-        preprocessor.setPlatformInfo(&tokens1);
+        Preprocessor::setPlatformInfo(tokens1, mSettings);
 
         // Get configurations..
         std::set<std::string> configurations;

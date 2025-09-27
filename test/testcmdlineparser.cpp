@@ -213,6 +213,8 @@ private:
         TEST_CASE(premiumOptions3);
         TEST_CASE(premiumOptions4);
         TEST_CASE(premiumOptions5);
+        TEST_CASE(premiumOptionsCertCIntPrecision);
+        TEST_CASE(premiumOptionsLicenseFile);
         TEST_CASE(premiumOptionsInvalid1);
         TEST_CASE(premiumOptionsInvalid2);
         TEST_CASE(premiumSafety);
@@ -876,8 +878,7 @@ private:
         ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(3, argv));
         ASSERT(settings->severity.isEnabled(Severity::error));
         ASSERT(settings->severity.isEnabled(Severity::information));
-        ASSERT(settings->checks.isEnabled(Checks::missingInclude));
-        ASSERT_EQUALS("cppcheck: '--enable=information' will no longer implicitly enable 'missingInclude' starting with 2.16. Please enable it explicitly if you require it.\n", logger->str());
+        ASSERT(!settings->checks.isEnabled(Checks::missingInclude));
     }
 
     void enabledUnusedFunction() {
@@ -1289,6 +1290,22 @@ private:
         ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(3, argv));
         ASSERT(settings->severity.isEnabled(Severity::error));
         ASSERT_EQUALS(false, settings->severity.isEnabled(Severity::warning));
+    }
+
+    void premiumOptionsCertCIntPrecision() {
+        REDIRECT;
+        asPremium();
+        const char * const argv[] = {"cppcheck", "--premium-cert-c-int-precision=12", "file.c"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS("--cert-c-int-precision=12", settings->premiumArgs);
+    }
+
+    void premiumOptionsLicenseFile() {
+        REDIRECT;
+        asPremium();
+        const char * const argv[] = {"cppcheck", "--premium-license-file=file.lic", "file.c"};
+        ASSERT_EQUALS_ENUM(CmdLineParser::Result::Success, parser->parseFromArgs(3, argv));
+        ASSERT_EQUALS("--license-file=file.lic", settings->premiumArgs);
     }
 
     void premiumOptionsInvalid1() {

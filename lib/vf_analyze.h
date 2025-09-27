@@ -23,6 +23,7 @@
 #include "vf_arraybool.h" // IWYU pragma: export
 #include "vf_arrayelement.h" // IWYU pragma: export
 #include "vf_bitand.h" // IWYU pragma: export
+#include "vf_conditionexpressions.h" // IWYU pragma: export
 #include "vf_debug.h" // IWYU pragma: export
 #include "vf_enumvalue.h" // IWYU pragma: export
 #include "vf_functionreturn.h" // IWYU pragma: export
@@ -37,6 +38,7 @@
 #include "vf_rightshift.h" // IWYU pragma: export
 #include "vf_sameexpressions.h" // IWYU pragma: export
 #include "vf_string.h" // IWYU pragma: export
+#include "vf_switchvariable.h" // IWYU pragma: export
 #include "vf_symbolicinfer.h" // IWYU pragma: export
 #include "vf_unknownfunctionreturn.h" // IWYU pragma: export
 

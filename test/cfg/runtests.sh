@@ -35,7 +35,6 @@ CPPCHECK_OPT=(
     "--force"
     "--check-level=exhaustive"
     "--error-exitcode=-1"
-    "--disable=missingInclude"
     "--inline-suppr"
     "--template=\"{file}:{line}:{severity}:{id}:{message}\""
     "--debug-warnings"
@@ -45,7 +44,7 @@ CPPCHECK_OPT=(
 CXX=g++
 CXX_OPT=("-fsyntax-only" "-w" "-std=c++2a")
 CC=gcc
-CC_OPT=("-fsyntax-only" "-w" "-std=c11")
+CC_OPT=("-fsyntax-only" "-w" "-Wno-implicit-function-declaration" "-std=c11") # TODO: remove -Wno-implicit-function-declaration when warnings are fixed on MacOS
 
 function get_pkg_config_cflags {
     # TODO: get rid of the error enabling/disabling?
@@ -66,12 +65,14 @@ function get_pkg_config_cflags {
 
 # posix.c
 function posix_fn {
+    echo "POSIX assumed to be present, checking syntax with ${CC} now."
     ${CC} "${CC_OPT[@]}" ${DIR}posix.c
 }
 
 # gnu.c
 function gnu_fn {
-    ${CC} "${CC_OPT[@]}" -D_GNU_SOURCE ${DIR}gnu.c
+    echo "GNU assumed to be present, checking syntax with ${CC} now."
+    ${CC} "${CC_OPT[@]}" ${DIR}gnu.c
 }
 
 # qt.cpp
@@ -102,23 +103,26 @@ function qt_fn {
 
 # bsd.c
 function bsd_fn {
-  true
+    # TODO: add syntax check
+    true
 }
 
 # std.c
 function std_c_fn {
+    echo "C standard library assumed to be present, checking syntax with ${CC} now."
     ${CC} "${CC_OPT[@]}" "${DIR}"std.c
 }
 
 # std.cpp
 function std_cpp_fn {
+    echo "C++ standard library assumed to be present, checking syntax with ${CXX} now."
     ${CXX} "${CXX_OPT[@]}" "${DIR}"std.cpp
 }
 
 # windows.cpp
 function windows_fn {
     # TODO: Syntax check via g++ does not work because it can not find a valid windows.h
-    #${CXX} "${CXX_OPT[@]}"  ${DIR}windows.cpp
+    #${CXX} "${CXX_OPT[@]}" ${DIR}windows.cpp
     true
 }
 
@@ -225,6 +229,7 @@ function sqlite3_fn {
 function openmp_fn {
     # MacOS compiler has no OpenMP by default
     if ! command -v sw_vers; then
+      echo "OpenMP assumed to be present, checking syntax with ${CC} now."
       ${CC} "${CC_OPT[@]}" -fopenmp ${DIR}openmp.c
     fi
 }
@@ -327,6 +332,7 @@ function cairo_fn {
 
 # googletest.cpp
 function googletest_fn {
+    # TODO: add syntax check
     true
 }
 
@@ -456,6 +462,7 @@ function emscripten_fn {
 
 # selinux.c
 function selinux_fn {
+    # TODO: add syntax check
     true
 }
 

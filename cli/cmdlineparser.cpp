@@ -42,7 +42,6 @@
 #include <algorithm>
 #include <cassert>
 #include <climits>
-#include <cstdint>
 #include <cstdio>
 #include <cstdlib> // EXIT_FAILURE
 #include <cstring>
@@ -370,7 +369,6 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
     ImportProject project;
 
     bool executorAuto = true;
-    int8_t logMissingInclude{0};
 
     for (int i = 1; i < argc; i++) {
         if (argv[i][0] == '-') {
@@ -593,9 +591,6 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
                     mLogger.printError(errmsg);
                     return Result::Fail;
                 }
-                if (std::string(argv[i] + 10).find("missingInclude") != std::string::npos) {
-                    --logMissingInclude;
-                }
             }
 
             // dump cppcheck data
@@ -614,13 +609,6 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
                     mSettings.addEnabled("warning");
                     mSettings.addEnabled("performance");
                     mSettings.addEnabled("portability");
-                }
-                if (enable_arg.find("information") != std::string::npos && logMissingInclude == 0) {
-                    ++logMissingInclude;
-                    mSettings.addEnabled("missingInclude");
-                }
-                if (enable_arg.find("missingInclude") != std::string::npos) {
-                    --logMissingInclude;
                 }
             }
 
@@ -981,7 +969,8 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
             }
 
             // Special Cppcheck Premium options
-            else if (std::strncmp(argv[i], "--premium=", 10) == 0 && isCppcheckPremium()) {
+            else if ((std::strncmp(argv[i], "--premium=", 10) == 0 || std::strncmp(argv[i], "--premium-", 10) == 0) && isCppcheckPremium()) {
+                // valid options --premium=..
                 const std::set<std::string> valid{
                     "autosar",
                     "cert-c-2016",
@@ -995,6 +984,11 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
                     "misra-cpp-2023",
                     "bughunting",
                     "safety"};
+                // valid options --premium-..=
+                const std::set<std::string> valid2{
+                    "cert-c-int-precision",
+                    "license-file"
+                };
 
                 if (std::strcmp(argv[i], "--premium=safety-off") == 0) {
                     mSettings.safety = false;
@@ -1005,8 +999,9 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
                 if (!mSettings.premiumArgs.empty())
                     mSettings.premiumArgs += " ";
                 const std::string p(argv[i] + 10);
-                if (!valid.count(p) && !startsWith(p, "cert-c-int-precision=")) {
-                    mLogger.printError("invalid --premium option '" + p + "'.");
+                const std::string p2(p.find('=') != std::string::npos ? p.substr(0, p.find('=')) : "");
+                if (!valid.count(p) && !valid2.count(p2)) {
+                    mLogger.printError("invalid --premium option '" + (p2.empty() ? p : p2) + "'.");
                     return Result::Fail;
                 }
                 mSettings.premiumArgs += "--" + p;
@@ -1263,12 +1258,7 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
             // --std
             else if (std::strncmp(argv[i], "--std=", 6) == 0) {
                 const std::string std = argv[i] + 6;
-                Standards tmp;
-                if (tmp.setC(std)) {
-                    mSettings.standards.c = tmp.c;
-                } else if (tmp.setCPP(std)) {
-                    mSettings.standards.cpp = tmp.cpp;
-                } else {
+                if (!mSettings.standards.setStd(std)) {
                     mLogger.printError("unknown --std value '" + std + "'");
                     return Result::Fail;
                 }
@@ -1405,9 +1395,6 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
             mPathNames.emplace_back(Path::fromNativeSeparators(Path::removeQuotationMarks(argv[i])));
         }
     }
-
-    if (logMissingInclude == 1)
-        mLogger.printMessage("'--enable=information' will no longer implicitly enable 'missingInclude' starting with 2.16. Please enable it explicitly if you require it.");
 
     if (!loadCppcheckCfg())
         return Result::Fail;

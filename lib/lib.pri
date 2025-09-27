@@ -87,6 +87,7 @@ HEADERS += $${PWD}/addoninfo.h \
            $${PWD}/vf_bailout.h \
            $${PWD}/vf_bitand.h \
            $${PWD}/vf_common.h \
+           $${PWD}/vf_conditionexpressions.h \
            $${PWD}/vf_debug.h \
            $${PWD}/vf_enumvalue.h \
            $${PWD}/vf_functionreturn.h \
@@ -98,10 +99,12 @@ HEADERS += $${PWD}/addoninfo.h \
            $${PWD}/vf_iterators.h \
            $${PWD}/vf_number.h \
            $${PWD}/vf_pointeralias.h \
+           $${PWD}/vf_reverse.h \
            $${PWD}/vf_rightshift.h \
            $${PWD}/vf_sameexpressions.h \
            $${PWD}/vf_settokenvalue.h \
            $${PWD}/vf_string.h \
+           $${PWD}/vf_switchvariable.h \
            $${PWD}/vf_symbolicinfer.h \
            $${PWD}/vf_unknownfunctionreturn.h \
            $${PWD}/vfvalue.h \
@@ -176,6 +179,7 @@ SOURCES += $${PWD}/valueflow.cpp \
            $${PWD}/vf_bailout.cpp \
            $${PWD}/vf_bitand.cpp \
            $${PWD}/vf_common.cpp \
+           $${PWD}/vf_conditionexpressions.cpp \
            $${PWD}/vf_debug.cpp \
            $${PWD}/vf_enumvalue.cpp \
            $${PWD}/vf_functionreturn.cpp \
@@ -187,10 +191,12 @@ SOURCES += $${PWD}/valueflow.cpp \
            $${PWD}/vf_iterators.cpp \
            $${PWD}/vf_number.cpp \
            $${PWD}/vf_pointeralias.cpp \
+           $${PWD}/vf_reverse.cpp \
            $${PWD}/vf_rightshift.cpp \
            $${PWD}/vf_sameexpressions.cpp \
            $${PWD}/vf_settokenvalue.cpp \
            $${PWD}/vf_string.cpp \
+           $${PWD}/vf_switchvariable.cpp \
            $${PWD}/vf_symbolicinfer.cpp \
            $${PWD}/vf_unknownfunctionreturn.cpp \
            $${PWD}/vfvalue.cpp

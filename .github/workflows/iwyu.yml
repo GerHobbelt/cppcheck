@@ -24,7 +24,7 @@ jobs:
       image: ${{ matrix.image }}
 
     env:
-      QT_VERSION: 6.7.2
+      QT_VERSION: 6.7.3
 
     steps:
       - uses: actions/checkout@v4
@@ -35,6 +35,7 @@ jobs:
           apt-get update
           apt-get install -y cmake clang make libpcre3-dev
           apt-get install -y libgl-dev  # fixes missing dependency for Qt in CMake
+          apt-get install -y libcups2-dev  # required for Qt6PrintSupport in CMake since Qt 6.7.3
           apt-get install -y iwyu
 
       - name: Install missing software on archlinux
@@ -60,6 +61,7 @@ jobs:
           dnf install -y cmake clang pcre-devel
           dnf install -y libglvnd-devel  # fixes missing dependency for Qt in CMake
           dnf install -y p7zip-plugins  # required as fallback for py7zr in Qt installation
+          dnf install -y cups-devel  # required for Qt6PrintSupport in CMake since Qt 6.7.3
           dnf install -y iwyu
           ln -s iwyu_tool.py /usr/bin/iwyu_tool
 
@@ -131,7 +133,7 @@ jobs:
     if: ${{ github.repository_owner == 'danmar' }}
 
     env:
-      QT_VERSION: 6.7.2
+      QT_VERSION: 6.7.3
 
     steps:
       - uses: actions/checkout@v4
@@ -140,6 +142,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake make libpcre3-dev
+          sudo apt-get install -y libcups2-dev  # required for Qt6PrintSupport in CMake since Qt 6.7.3
           sudo apt-get install -y libgl-dev  # missing dependency for using Qt in CMake
 
       - name: Install clang

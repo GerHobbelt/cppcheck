@@ -38,6 +38,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstring>
 #include <functional>
 #include <initializer_list>
 #include <iterator>
@@ -107,6 +108,21 @@ static int getArgumentPos(const Token* ftok, const Token* tokToFind){
     return findArgumentPos(startTok, tokToFind);
 }
 
+template<class T, class OuputIterator, REQUIRES("T must be a Token class", std::is_convertible<T*, const Token*> )>
+static void astFlattenCopy(T* tok, const char* op, OuputIterator out, nonneg int depth = 100)
+{
+    --depth;
+    if (!tok || depth < 0)
+        return;
+    if (strcmp(tok->str().c_str(), op) == 0) {
+        astFlattenCopy(tok->astOperand1(), op, out, depth);
+        astFlattenCopy(tok->astOperand2(), op, out, depth);
+    } else {
+        *out = tok;
+        ++out;
+    }
+}
+
 std::vector<const Token*> astFlatten(const Token* tok, const char* op)
 {
     std::vector<const Token*> result;
@@ -126,7 +142,7 @@ nonneg int astCount(const Token* tok, const char* op, int depth)
     --depth;
     if (!tok || depth < 0)
         return 0;
-    if (tok->str() == op)
+    if (strcmp(tok->str().c_str(), op) == 0)
         return astCount(tok->astOperand1(), op, depth) + astCount(tok->astOperand2(), op, depth);
     return 1;
 }
@@ -3647,4 +3663,62 @@ bool isGlobalData(const Token *expr)
 bool isUnevaluated(const Token *tok)
 {
     return Token::Match(tok, "alignof|_Alignof|_alignof|__alignof|__alignof__|decltype|offsetof|sizeof|typeid|typeof|__typeof__ (");
+}
+
+static std::set<MathLib::bigint> getSwitchValues(const Token *startbrace, bool &hasDefault)
+{
+    std::set<MathLib::bigint> values;
+    const Token *endbrace = startbrace->link();
+    if (!endbrace)
+        return values;
+
+    hasDefault = false;
+    for (const Token *tok = startbrace->next(); tok && tok != endbrace; tok = tok->next()) {
+        if (Token::simpleMatch(tok, "{") && tok->scope()->type == Scope::ScopeType::eSwitch) {
+            tok = tok->link();
+            continue;
+        }
+        if (Token::simpleMatch(tok, "default")) {
+            hasDefault = true;
+            break;
+        }
+        if (Token::simpleMatch(tok, "case")) {
+            const Token *valueTok = tok->astOperand1();
+            if (valueTok->hasKnownIntValue())
+                values.insert(valueTok->getKnownIntValue());
+            continue;
+        }
+    }
+
+    return values;
+}
+
+bool isExhaustiveSwitch(const Token *startbrace)
+{
+    if (!startbrace || !Token::simpleMatch(startbrace->previous(), ") {") || startbrace->scope()->type != Scope::ScopeType::eSwitch)
+        return false;
+    const Token *rpar = startbrace->previous();
+    const Token *lpar = rpar->link();
+
+    const Token *condition = lpar->astOperand2();
+    if (!condition->valueType())
+        return true;
+
+    bool hasDefault = false;
+    const std::set<MathLib::bigint> switchValues = getSwitchValues(startbrace, hasDefault);
+
+    if (hasDefault)
+        return true;
+
+    if (condition->valueType()->type == ValueType::Type::BOOL)
+        return switchValues.count(0) && switchValues.count(1);
+
+    if (condition->valueType()->isEnum()) {
+        const std::vector<Enumerator> &enumList = condition->valueType()->typeScope->enumeratorList;
+        return std::all_of(enumList.cbegin(), enumList.cend(), [&](const Enumerator &e) {
+            return !e.value_known || switchValues.count(e.value);
+        });
+    }
+
+    return false;
 }

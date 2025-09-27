@@ -90,7 +90,6 @@
 #include "mathlib.h"
 #include "platform.h"
 #include "programmemory.h"
-#include "reverseanalyzer.h"
 #include "settings.h"
 #include "smallvector.h"
 #include "sourcelocation.h"
@@ -107,6 +106,7 @@
 #include "vf_analyzers.h"
 #include "vf_bailout.h"
 #include "vf_common.h"
+#include "vf_reverse.h"
 #include "vf_settokenvalue.h"
 
 #include <algorithm>
@@ -333,20 +333,6 @@ const Token *ValueFlow::parseCompareInt(const Token *tok, ValueFlow::Value &true
             return {t->values().front().intvalue};
         return std::vector<MathLib::bigint>{};
     });
-}
-
-static bool isEscapeScope(const Token* tok, const Settings& settings, bool unknown = false)
-{
-    if (!Token::simpleMatch(tok, "{"))
-        return false;
-    // TODO this search for termTok in all subscopes. It should check the end of the scope.
-    const Token * termTok = Token::findmatch(tok, "return|continue|break|throw|goto", tok->link());
-    if (termTok && termTok->scope() == tok->scope())
-        return true;
-    std::string unknownFunction;
-    if (settings.library.isScopeNoReturn(tok->link(), &unknownFunction))
-        return unknownFunction.empty() || unknown;
-    return false;
 }
 
 void ValueFlow::combineValueProperties(const ValueFlow::Value &value1, const ValueFlow::Value &value2, ValueFlow::Value &result)
@@ -591,34 +577,6 @@ static Analyzer::Result valueFlowForwardRecursive(Token* top,
             valueFlowGenericForward(top, makeAnalyzer(exprTok, std::move(v), settings), tokenlist, errorLogger, settings));
     }
     return result;
-}
-
-static void valueFlowReverse(Token* tok,
-                             const Token* const endToken,
-                             const Token* const varToken,
-                             std::list<ValueFlow::Value> values,
-                             const TokenList& tokenlist,
-                             ErrorLogger& errorLogger,
-                             const Settings& settings,
-                             SourceLocation loc = SourceLocation::current())
-{
-    for (ValueFlow::Value& v : values) {
-        if (settings.debugnormal)
-            setSourceLocation(v, loc, tok);
-        valueFlowGenericReverse(tok, endToken, makeReverseAnalyzer(varToken, std::move(v), settings), tokenlist, errorLogger, settings);
-    }
-}
-
-// Deprecated
-static void valueFlowReverse(const TokenList& tokenlist,
-                             Token* tok,
-                             const Token* const varToken,
-                             ValueFlow::Value val,
-                             ErrorLogger& errorLogger,
-                             const Settings& settings,
-                             SourceLocation loc = SourceLocation::current())
-{
-    valueFlowReverse(tok, nullptr, varToken, {std::move(val)}, tokenlist, errorLogger, settings, loc);
 }
 
 static bool isConditionKnown(const Token* tok, bool then)
@@ -2507,167 +2465,6 @@ static void valueFlowAfterMove(const TokenList& tokenlist, const SymbolDatabase&
     }
 }
 
-static const Token* findIncompleteVar(const Token* start, const Token* end)
-{
-    for (const Token* tok = start; tok != end; tok = tok->next()) {
-        if (tok->isIncompleteVar())
-            return tok;
-    }
-    return nullptr;
-}
-
-static ValueFlow::Value makeConditionValue(long long val,
-                                           const Token* condTok,
-                                           bool assume,
-                                           bool impossible,
-                                           const Settings& settings,
-                                           SourceLocation loc = SourceLocation::current())
-{
-    ValueFlow::Value v(val);
-    v.setKnown();
-    if (impossible) {
-        v.intvalue = !v.intvalue;
-        v.setImpossible();
-    }
-    v.condition = condTok;
-    if (assume)
-        v.errorPath.emplace_back(condTok, "Assuming condition '" + condTok->expressionString() + "' is true");
-    else
-        v.errorPath.emplace_back(condTok, "Assuming condition '" + condTok->expressionString() + "' is false");
-    if (settings.debugnormal)
-        setSourceLocation(v, loc, condTok);
-    return v;
-}
-
-static std::vector<const Token*> getConditions(const Token* tok, const char* op)
-{
-    std::vector<const Token*> conds = {tok};
-    if (tok->str() == op) {
-        std::vector<const Token*> args = astFlatten(tok, op);
-        std::copy_if(args.cbegin(), args.cend(), std::back_inserter(conds), [&](const Token* tok2) {
-            if (tok2->exprId() == 0)
-                return false;
-            if (tok2->hasKnownIntValue())
-                return false;
-            if (Token::Match(tok2, "%var%|.") && !astIsBool(tok2))
-                return false;
-            return true;
-        });
-    }
-    return conds;
-}
-
-static bool isBreakOrContinueScope(const Token* endToken)
-{
-    if (!Token::simpleMatch(endToken, "}"))
-        return false;
-    return Token::Match(endToken->tokAt(-2), "break|continue ;");
-}
-
-static const Scope* getLoopScope(const Token* tok)
-{
-    if (!tok)
-        return nullptr;
-    const Scope* scope = tok->scope();
-    while (scope && scope->type != Scope::eWhile && scope->type != Scope::eFor && scope->type != Scope::eDo)
-        scope = scope->nestedIn;
-    return scope;
-}
-
-//
-static void valueFlowConditionExpressions(const TokenList &tokenlist, const SymbolDatabase& symboldatabase, ErrorLogger &errorLogger, const Settings &settings)
-{
-    if (!settings.daca && !settings.vfOptions.doConditionExpressionAnalysis)
-    {
-        if (settings.debugwarnings) {
-            ErrorMessage::FileLocation loc(tokenlist.getSourceFilePath(), 0, 0);
-            const ErrorMessage errmsg({std::move(loc)}, tokenlist.getSourceFilePath(), Severity::debug, "Analysis of condition expressions is disabled. Use --check-level=exhaustive to enable it.", "normalCheckLevelConditionExpressions", Certainty::normal);
-            errorLogger.reportErr(errmsg);
-        }
-        return;
-    }
-
-    for (const Scope * scope : symboldatabase.functionScopes) {
-        if (const Token* incompleteTok = findIncompleteVar(scope->bodyStart, scope->bodyEnd)) {
-            if (settings.debugwarnings)
-                bailoutIncompleteVar(tokenlist, errorLogger, incompleteTok, "Skipping function due to incomplete variable " + incompleteTok->str());
-            continue;
-        }
-
-        if (settings.daca && !settings.vfOptions.doConditionExpressionAnalysis)
-            continue;
-
-        for (auto* tok = const_cast<Token*>(scope->bodyStart); tok != scope->bodyEnd; tok = tok->next()) {
-            if (!Token::simpleMatch(tok, "if ("))
-                continue;
-            Token* parenTok = tok->next();
-            if (!Token::simpleMatch(parenTok->link(), ") {"))
-                continue;
-            Token * blockTok = parenTok->link()->tokAt(1);
-            const Token* condTok = parenTok->astOperand2();
-            if (condTok->exprId() == 0)
-                continue;
-            if (condTok->hasKnownIntValue())
-                continue;
-            if (!isConstExpression(condTok, settings.library))
-                continue;
-            const bool isOp = condTok->isComparisonOp() || condTok->tokType() == Token::eLogicalOp;
-            const bool is1 = isOp || astIsBool(condTok);
-
-            Token* startTok = blockTok;
-            // Inner condition
-            {
-                for (const Token* condTok2 : getConditions(condTok, "&&")) {
-                    if (is1) {
-                        const bool isBool = astIsBool(condTok2) || Token::Match(condTok2, "%comp%|%oror%|&&");
-                        auto a1 = makeSameExpressionAnalyzer(condTok2, makeConditionValue(1, condTok2, /*assume*/ true, !isBool, settings), settings); // don't set '1' for non-boolean expressions
-                        valueFlowGenericForward(startTok, startTok->link(), a1, tokenlist, errorLogger, settings);
-                    }
-
-                    auto a2 = makeOppositeExpressionAnalyzer(true, condTok2, makeConditionValue(0, condTok2, true, false, settings), settings);
-                    valueFlowGenericForward(startTok, startTok->link(), a2, tokenlist, errorLogger, settings);
-                }
-            }
-
-            std::vector<const Token*> conds = getConditions(condTok, "||");
-
-            // Check else block
-            if (Token::simpleMatch(startTok->link(), "} else {")) {
-                startTok = startTok->link()->tokAt(2);
-                for (const Token* condTok2:conds) {
-                    auto a1 = makeSameExpressionAnalyzer(condTok2, makeConditionValue(0, condTok2, false, false, settings), settings);
-                    valueFlowGenericForward(startTok, startTok->link(), a1, tokenlist, errorLogger, settings);
-
-                    if (is1) {
-                        auto a2 = makeOppositeExpressionAnalyzer(true, condTok2, makeConditionValue(isOp, condTok2, false, false, settings), settings);
-                        valueFlowGenericForward(startTok, startTok->link(), a2, tokenlist, errorLogger, settings);
-                    }
-                }
-            }
-
-            // Check if the block terminates early
-            if (isEscapeScope(blockTok, settings)) {
-                const Scope* scope2 = scope;
-                // If escaping a loop then only use the loop scope
-                if (isBreakOrContinueScope(blockTok->link())) {
-                    scope2 = getLoopScope(blockTok->link());
-                    if (!scope2)
-                        continue;
-                }
-                for (const Token* condTok2:conds) {
-                    auto a1 = makeSameExpressionAnalyzer(condTok2, makeConditionValue(0, condTok2, false, false, settings), settings);
-                    valueFlowGenericForward(startTok->link()->next(), scope2->bodyEnd, a1, tokenlist, errorLogger, settings);
-
-                    if (is1) {
-                        auto a2 = makeOppositeExpressionAnalyzer(true, condTok2, makeConditionValue(1, condTok2, false, false, settings), settings);
-                        valueFlowGenericForward(startTok->link()->next(), scope2->bodyEnd, a2, tokenlist, errorLogger, settings);
-                    }
-                }
-            }
-        }
-    }
-}
-
 static bool isTruncated(const ValueType* src, const ValueType* dst, const Settings& settings)
 {
     if (src->pointer > 0 || dst->pointer > 0)
@@ -4009,8 +3806,8 @@ struct ConditionHandler {
                 const bool isKnown = std::any_of(values.cbegin(), values.cend(), [&](const ValueFlow::Value& v) {
                     return v.isKnown() || v.isImpossible();
                 });
-                if (isKnown && isBreakOrContinueScope(after)) {
-                    const Scope* loopScope = getLoopScope(cond.vartok);
+                if (isKnown && ValueFlow::isBreakOrContinueScope(after)) {
+                    const Scope* loopScope = ValueFlow::getLoopScope(cond.vartok);
                     if (loopScope) {
                         Analyzer::Result r = forward(after, loopScope->bodyEnd, cond.vartok, values, tokenlist, errorLogger, settings);
                         if (r.terminate != Analyzer::Terminate::None)
@@ -4550,78 +4347,6 @@ static void valueFlowInjectParameter(const TokenList& tokenlist,
                      tokenlist,
                      errorLogger,
                      settings);
-}
-
-static void valueFlowSwitchVariable(const TokenList &tokenlist, const SymbolDatabase& symboldatabase, ErrorLogger &errorLogger, const Settings &settings)
-{
-    for (const Scope &scope : symboldatabase.scopeList) {
-        if (scope.type != Scope::ScopeType::eSwitch)
-            continue;
-        if (!Token::Match(scope.classDef, "switch ( %var% ) {"))
-            continue;
-        const Token *vartok = scope.classDef->tokAt(2);
-        const Variable *var = vartok->variable();
-        if (!var)
-            continue;
-
-        // bailout: global non-const variables
-        if (!(var->isLocal() || var->isArgument()) && !var->isConst()) {
-            if (settings.debugwarnings)
-                bailout(tokenlist, errorLogger, vartok, "switch variable " + var->name() + " is global");
-            continue;
-        }
-
-        for (const Token *tok = scope.bodyStart->next(); tok != scope.bodyEnd; tok = tok->next()) {
-            if (tok->str() == "{") {
-                tok = tok->link();
-                continue;
-            }
-            if (Token::Match(tok, "case %num% :")) {
-                std::list<ValueFlow::Value> values;
-                values.emplace_back(MathLib::toBigNumber(tok->strAt(1)));
-                values.back().condition = tok;
-                values.back().errorPath.emplace_back(tok, "case " + tok->strAt(1) + ": " + vartok->str() + " is " + tok->strAt(1) + " here.");
-                bool known = false;
-                if ((Token::simpleMatch(tok->previous(), "{") || Token::simpleMatch(tok->tokAt(-2), "break ;")) && !Token::Match(tok->tokAt(3), ";| case"))
-                    known = true;
-                while (Token::Match(tok->tokAt(3), ";| case %num% :")) {
-                    known = false;
-                    tok = tok->tokAt(3);
-                    if (!tok->isName())
-                        tok = tok->next();
-                    values.emplace_back(MathLib::toBigNumber(tok->strAt(1)));
-                    values.back().condition = tok;
-                    values.back().errorPath.emplace_back(tok, "case " + tok->strAt(1) + ": " + vartok->str() + " is " + tok->strAt(1) + " here.");
-                }
-                for (auto val = values.cbegin(); val != values.cend(); ++val) {
-                    valueFlowReverse(tokenlist,
-                                     const_cast<Token*>(scope.classDef),
-                                     vartok,
-                                     *val,
-                                     errorLogger,
-                                     settings);
-                }
-                if (vartok->variable()->scope()) {
-                    if (known)
-                        values.back().setKnown();
-
-                    // FIXME We must check if there is a return. See #9276
-                    /*
-                       valueFlowForwardVariable(tok->tokAt(3),
-                                             vartok->variable()->scope()->bodyEnd,
-                                             vartok->variable(),
-                                             vartok->varId(),
-                                             values,
-                                             values.back().isKnown(),
-                                             false,
-                                             tokenlist,
-                                             errorLogger,
-                                             settings);
-                     */
-                }
-            }
-        }
-    }
 }
 
 static std::list<ValueFlow::Value> getFunctionArgumentValues(const Token *argtok)
@@ -5377,6 +5102,8 @@ static std::vector<ValueFlow::Value> getInitListSize(const Token* tok,
                 initList = true;
             else if (args.size() == 1 && valueFlowIsSameContainerType(vt, tok->astOperand2(), settings))
                 initList = false; // copy ctor
+            else if (args.size() == 2 && (!args[0]->valueType() || !args[1]->valueType())) // might be unknown iterators
+                initList = false;
         }
     }
     if (!initList)
@@ -6107,7 +5834,7 @@ void ValueFlow::setValues(TokenList& tokenlist,
         VFA(valueFlowSymbolic(tokenlist, symboldatabase, errorLogger, settings)),
         VFA(analyzeBitAnd(tokenlist, settings)),
         VFA(analyzeSameExpressions(tokenlist, settings)),
-        VFA(valueFlowConditionExpressions(tokenlist, symboldatabase, errorLogger, settings)),
+        VFA(analyzeConditionExpressions(tokenlist, symboldatabase, errorLogger, settings)),
     });
 
     runner.run({
@@ -6122,7 +5849,7 @@ void ValueFlow::setValues(TokenList& tokenlist,
         VFA_CPP(valueFlowAfterSwap(tokenlist, symboldatabase, errorLogger, settings)),
         VFA(valueFlowCondition(SimpleConditionHandler{}, tokenlist, symboldatabase, errorLogger, settings, skippedFunctions)),
         VFA(analyzeInferCondition(tokenlist, settings)),
-        VFA(valueFlowSwitchVariable(tokenlist, symboldatabase, errorLogger, settings)),
+        VFA(analyzeSwitchVariable(tokenlist, symboldatabase, errorLogger, settings)),
         VFA(valueFlowForLoop(tokenlist, symboldatabase, errorLogger, settings)),
         VFA(valueFlowSubFunction(tokenlist, symboldatabase, errorLogger, settings)),
         VFA(analyzeFunctionReturn(tokenlist, errorLogger, settings)),

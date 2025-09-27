@@ -88,6 +88,7 @@ private:
         TEST_CASE(deallocuse13);
         TEST_CASE(deallocuse14);
         TEST_CASE(deallocuse15);
+        TEST_CASE(deallocuse16); // #8109: delete with comma operator
 
         TEST_CASE(doublefree1);
         TEST_CASE(doublefree2);
@@ -105,6 +106,7 @@ private:
         TEST_CASE(doublefree14); // #9708
         TEST_CASE(doublefree15);
         TEST_CASE(doublefree16);
+        TEST_CASE(doublefree17); // #8109: delete with comma operator
 
         // exit
         TEST_CASE(exit1);
@@ -1060,6 +1062,25 @@ private:
               "    return fclose(fd) == 0;\n"
               "}\n", /*cpp*/ true);
         ASSERT_EQUALS("", errout_str());
+
+        check("int f(const char* fileName) {\n" // #13136
+              "    FILE* h = fopen(fileName, \"rb\");\n"
+              "    if (fseek(h, 0L, SEEK_END) == -1)\n"
+              "        fclose(h);\n"
+              "    int i = ftell(h);\n"
+              "    return i;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.c:5]: (error) Dereferencing 'h' after it is deallocated / released\n", errout_str());
+    }
+
+    void deallocuse16() {
+        check("void f() {\n"
+              "    int *a = nullptr;\n"
+              "    int *c = new int;\n"
+              "    delete (a, c);\n"
+              "    *c = 10;\n"
+              "}\n", true);
+        ASSERT_EQUALS("[test.cpp:5]: (error) Dereferencing 'c' after it is deallocated / released\n", errout_str());
     }
 
     void doublefree1() {  // #3895
@@ -1739,6 +1760,17 @@ private:
               "    })) {}\n"
               "}\n");
         ASSERT_EQUALS("", errout_str());
+    }
+
+    void doublefree17() {
+        check("void f() {\n"
+              "    int *a = nullptr;\n"
+              "    int *b = nullptr;\n"
+              "    int *c = new int;\n"
+              "    delete (a, c);\n"
+              "    delete (b, c);\n"
+              "}\n", true);
+        ASSERT_EQUALS("[test.cpp:5] -> [test.cpp:6]: (error) Memory pointed to by 'c' is freed twice.\n", errout_str());
     }
 
     void exit1() {
@@ -3334,6 +3366,7 @@ private:
 
     void run() override {
         TEST_CASE(memleak_getline);
+        TEST_CASE(deallocuse_fdopen);
     }
 
     void memleak_getline() {
@@ -3341,6 +3374,21 @@ private:
               "    std::string str;\n"
               "    if (getline(is, str, 'x').good()) {};\n"
               "    if (!getline(is, str, 'x').good()) {};\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+    }
+
+    void deallocuse_fdopen() {
+        check("struct FileCloser {\n" // #13126
+              "    void operator()(std::FILE * ptr) const {\n"
+              "        std::fclose(ptr);\n"
+              "    }\n"
+              "};\n"
+              "void f(char* fileName) {\n"
+              "    std::unique_ptr<std::FILE, FileCloser> out;\n"
+              "    int fd = mkstemps(fileName, 4);\n"
+              "    if (fd != -1)\n"
+              "        out.reset(fdopen(fd, \"w\"));\n"
               "}\n");
         ASSERT_EQUALS("", errout_str());
     }

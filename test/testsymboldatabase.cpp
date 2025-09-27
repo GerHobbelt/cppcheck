@@ -518,7 +518,9 @@ private:
         TEST_CASE(findFunction52);
         TEST_CASE(findFunction53);
         TEST_CASE(findFunction54);
-        TEST_CASE(findFunction55); // #31004
+        TEST_CASE(findFunction55); // #13004
+        TEST_CASE(findFunction56);
+        TEST_CASE(findFunctionRef1);
         TEST_CASE(findFunctionContainer);
         TEST_CASE(findFunctionExternC);
         TEST_CASE(findFunctionGlobalScope); // ::foo
@@ -1838,7 +1840,14 @@ private:
         // three elements: varId 0 also counts via a fake-entry
         ASSERT(v && db->variableList().size() == 3);
 
-        ASSERT_THROW(db->getVariableFromVarId(3), std::out_of_range);
+        // TODO: we should provide our own error message
+#ifdef _MSC_VER
+        ASSERT_THROW_EQUALS_2(db->getVariableFromVarId(3), std::out_of_range, "invalid vector subscript");
+#elif !defined(_LIBCPP_VERSION)
+        ASSERT_THROW_EQUALS_2(db->getVariableFromVarId(3), std::out_of_range, "vector::_M_range_check: __n (which is 3) >= this->size() (which is 3)");
+#else
+        ASSERT_THROW_EQUALS_2(db->getVariableFromVarId(3), std::out_of_range, "vector");
+#endif
     }
 
     void hasRegularFunction() {
@@ -3400,7 +3409,7 @@ private:
         check("::y(){x}");
 
         ASSERT_EQUALS("[test.cpp:1]: (debug) Executable scope 'y' with unknown function.\n"
-                      "[test.cpp:1]: (debug) valueFlowConditionExpressions bailout: Skipping function due to incomplete variable x\n"
+                      "[test.cpp:1]: (debug) analyzeConditionExpressions bailout: Skipping function due to incomplete variable x\n"
                       "[test.cpp:1]: (debug) Executable scope 'y' with unknown function.\n", // duplicate
                       errout_str());
     }
@@ -8327,6 +8336,36 @@ private:
         const Token* f = Token::findsimplematch(tokenizer.tokens(), "f ( args [ 0 ] )");
         ASSERT(f && f->function());
         ASSERT(Token::simpleMatch(f->function()->tokenDef, "f ( const Token * ptr ) ;"));
+    }
+
+    void findFunction56() { // #13125
+        GET_SYMBOL_DB("void f(const char* fn, int i, const char e[], const std::string& a);\n"
+                      "void f(const char* fn, int i, const char e[], const char a[]);\n"
+                      "void g(const char x[], const std::string& s) {\n"
+                      "    f(\"abc\", 65, x, s);\n"
+                      "}\n");
+        const Token* f = Token::findsimplematch(tokenizer.tokens(), "f ( \"abc\"");
+        ASSERT(f && f->function());
+        ASSERT_EQUALS(f->function()->tokenDef->linenr(), 1);
+    }
+
+    void findFunctionRef1() {
+        GET_SYMBOL_DB("struct X {\n"
+                      "    const std::vector<int> getInts() const & { return mInts; }\n"
+                      "    std::vector<int> getInts() && { return mInts; }\n"
+                      "    std::vector<int> mInts;\n"
+                      "}\n"
+                      "\n"
+                      "void foo(X &x) {\n"
+                      "    x.getInts();\n"
+                      "}\n");
+        const Token* x = Token::findsimplematch(tokenizer.tokens(), "x . getInts ( ) ;");
+        ASSERT(x);
+        const Token* f = x->tokAt(2);
+        ASSERT(f);
+        ASSERT(f->function());
+        ASSERT(f->function()->tokenDef);
+        ASSERT_EQUALS(2, f->function()->tokenDef->linenr());
     }
 
     void findFunctionContainer() {

@@ -72,6 +72,7 @@ private:
         TEST_CASE(simplifyUsing30);
         TEST_CASE(simplifyUsing31);
         TEST_CASE(simplifyUsing32);
+        TEST_CASE(simplifyUsing33);
 
         TEST_CASE(simplifyUsing8970);
         TEST_CASE(simplifyUsing8971);
@@ -742,7 +743,7 @@ private:
                                     "cout << std :: string ( c ) << \"abc\" ; "
                                     "}";
             ASSERT_EQUALS(expected, tok(code, Platform::Type::Native, /*debugwarnings*/ true));
-            ASSERT_EQUALS("[test.cpp:3]: (debug) valueFlowConditionExpressions bailout: Skipping function due to incomplete variable cout\n", errout_str());
+            ASSERT_EQUALS("[test.cpp:3]: (debug) analyzeConditionExpressions bailout: Skipping function due to incomplete variable cout\n", errout_str());
         }
         {
             const char code[] = "class T : private std::vector<std::pair<std::string, const int*>> {\n" // #12521
@@ -809,6 +810,25 @@ private:
         TODO_ASSERT_EQUALS("",
                            "[test.cpp:6]: (debug) auto token with no type.\n"
                            "", errout_str());
+    }
+
+    void simplifyUsing33() { // #13090
+        const char code[] = "namespace N {\n"
+                            "    using T = int;\n"
+                            "    T f() { return (T)0; }\n"
+                            "}\n"
+                            "struct S {\n"
+                            "    using U = int;\n"
+                            "    U g() { return (U)0; }\n"
+                            "};\n";
+        const char expected[] = "namespace N { "
+                                "int f ( ) { return ( int ) 0 ; } "
+                                "} "
+                                "struct S { "
+                                "int g ( ) { return ( int ) 0 ; } "
+                                "} ;";
+        ASSERT_EQUALS(expected, tok(code, Platform::Type::Native, /*debugwarnings*/ true));
+        ASSERT_EQUALS("", errout_str());
     }
 
     void simplifyUsing8970() {

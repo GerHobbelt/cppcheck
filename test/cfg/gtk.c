@@ -2,7 +2,7 @@
 // Test library configuration for gtk.cfg
 //
 // Usage:
-// $ cppcheck --check-library --enable=style,information --inconclusive --error-exitcode=1 --disable=missingInclude --inline-suppr --library=gtk test/cfg/gtk.c
+// $ cppcheck --check-library --enable=style,information --inconclusive --error-exitcode=1 --inline-suppr --library=gtk test/cfg/gtk.c
 // =>
 // No warnings about bad library configuration, unmatched suppressions, etc. exitcode=0
 //
@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <gtk/gtk.h>
 #include <glib.h>
+#include <glib/gi18n.h>
 
 
 void validCode(int argInt, GHashTableIter * hash_table_iter, GHashTable * hash_table)

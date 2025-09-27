@@ -123,18 +123,18 @@ static bool isExecutableScope(const Token* tok)
     return false;
 }
 
-static bool isEnumDefinition(const Token* tok)
+const Token* SymbolDatabase::isEnumDefinition(const Token* tok)
 {
-    if (!Token::Match(tok, "enum class| %name% {|:"))
-        return false;
+    if (!Token::Match(tok, "enum class| %name%| {|:"))
+        return nullptr;
     while (!Token::Match(tok, "[{:]"))
         tok = tok->next();
     if (tok->str() == "{")
-        return true;
+        return tok;
     tok = tok->next(); // skip ':'
     while (Token::Match(tok, "%name%|::"))
         tok = tok->next();
-    return Token::simpleMatch(tok, "{");
+    return Token::simpleMatch(tok, "{") ? tok : nullptr;
 }
 
 void SymbolDatabase::createSymbolDatabaseFindAllScopes()
@@ -1587,7 +1587,8 @@ namespace {
                 !((tok->astParent()->astParent() && tok->astParent()->isAssignmentOp() && tok->astParent()->astParent()->isAssignmentOp()) ||
                   isLambdaCaptureList(op2) ||
                   (op2->str() == "(" && isLambdaCaptureList(op2->astOperand1())) ||
-                  Token::simpleMatch(op2, "{ }")))
+                  Token::simpleMatch(op2, "{ }") ||
+                  (Token::simpleMatch(tok->astParent(), "[") && op2->str() == "{")))
                 break;
 
             if (tok->astParent()->isExpandedMacro() || Token::Match(tok->astParent(), "++|--")) {
@@ -5698,7 +5699,7 @@ static bool hasMatchingConstructor(const Scope* classScope, const ValueType* arg
     });
 }
 
-const Function* Scope::findFunction(const Token *tok, bool requireConst) const
+const Function* Scope::findFunction(const Token *tok, bool requireConst, Reference ref) const
 {
     const bool isCall = Token::Match(tok->next(), "(|{");
 
@@ -5713,6 +5714,8 @@ const Function* Scope::findFunction(const Token *tok, bool requireConst) const
         auto range = scope->functionMap.equal_range(tok->str());
         for (std::multimap<std::string, const Function *>::const_iterator it = range.first; it != range.second; ++it) {
             const Function *func = it->second;
+            if (ref == Reference::LValue && func->hasRvalRefQualifier())
+                continue;
             if (!isCall || args == func->argCount() ||
                 (func->isVariadic() && args >= (func->minArgCount() - 1)) ||
                 (args < func->argCount() && args >= func->minArgCount())) {
@@ -6066,7 +6069,7 @@ const Function* SymbolDatabase::findFunction(const Token* const tok) const
     else if (Token::Match(tok->tokAt(-2), "!!this .")) {
         const Token* tok1 = tok->previous()->astOperand1();
         if (tok1 && tok1->valueType() && tok1->valueType()->typeScope)
-            return tok1->valueType()->typeScope->findFunction(tok, tok1->valueType()->constness == 1);
+            return tok1->valueType()->typeScope->findFunction(tok, tok1->valueType()->constness == 1, tok1->valueType()->reference);
         if (tok1 && Token::Match(tok1->previous(), "%name% (") && tok1->previous()->function() &&
             tok1->previous()->function()->retDef) {
             ValueType vt = ValueType::parseDecl(tok1->previous()->function()->retDef, mSettings);
@@ -8278,8 +8281,15 @@ ValueType::MatchResult ValueType::matchParameter(const ValueType *call, const Va
     if (pvt && funcVar->isArray() && !(funcVar->isStlType() && Token::simpleMatch(funcVar->typeStartToken(), "std :: array"))) { // std::array doesn't decay to a pointer
         vt = *pvt;
         if (vt.pointer == 0) // don't bump array of pointers
-            ++vt.pointer;
+            vt.pointer = funcVar->dimensions().size();
         pvt = &vt;
+    }
+    ValueType cvt;
+    if (call && callVar && callVar->isArray() && !(callVar->isStlType() && Token::simpleMatch(callVar->typeStartToken(), "std :: array"))) {
+        cvt = *call;
+        if (cvt.pointer == 0) // don't bump array of pointers
+            cvt.pointer = callVar->dimensions().size();
+        call = &cvt;
     }
     const ValueType::MatchResult res = ValueType::matchParameter(call, pvt);
     if (callVar && ((res == ValueType::MatchResult::SAME && call->container) || res == ValueType::MatchResult::UNKNOWN)) {

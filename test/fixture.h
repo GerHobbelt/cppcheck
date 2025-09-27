@@ -31,6 +31,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <list>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -88,6 +89,14 @@ protected:
             assertEquals(filename, linenr, static_cast<std::uint64_t>(expected), static_cast<std::uint64_t>(actual), msg);
         else
             assertEquals(filename, linenr, static_cast<std::int64_t>(expected), static_cast<std::int64_t>(actual), msg);
+    }
+
+    template<typename T>
+    void todoAssertEqualsEnum(const char* const filename, const unsigned int linenr, const T& wanted, const T& current, const T& actual) const {
+        if (std::is_unsigned<T>())
+            todoAssertEquals(filename, linenr, static_cast<std::uint64_t>(wanted), static_cast<std::uint64_t>(current), static_cast<std::uint64_t>(actual));
+        else
+            todoAssertEquals(filename, linenr, static_cast<std::int64_t>(wanted), static_cast<std::int64_t>(current), static_cast<std::int64_t>(actual));
     }
 
     void assertEquals(const char * filename, unsigned int linenr, const std::string &expected, const std::string &actual, const std::string &msg = emptyString) const;
@@ -308,7 +317,7 @@ protected:
 #define ASSERT_EQUALS_LOC_MSG( EXPECTED, ACTUAL, MSG, FILE_, LINE_ ) assertEquals(FILE_, LINE_, EXPECTED, ACTUAL, MSG)
 #define ASSERT_EQUALS_MSG( EXPECTED, ACTUAL, MSG ) assertEquals(__FILE__, __LINE__, EXPECTED, ACTUAL, MSG)
 #define ASSERT_EQUALS_ENUM( EXPECTED, ACTUAL ) assertEqualsEnum(__FILE__, __LINE__, (EXPECTED), (ACTUAL))
-#define ASSERT_THROW( CMD, EXCEPTION ) do { try { (void)(CMD); assertThrowFail(__FILE__, __LINE__); } catch (const EXCEPTION&) {} catch (...) { assertThrowFail(__FILE__, __LINE__); } } while (false)
+#define TODO_ASSERT_EQUALS_ENUM( WANTED, CURRENT, ACTUAL ) todoAssertEqualsEnum(__FILE__, __LINE__, WANTED, CURRENT, ACTUAL)
 #define ASSERT_THROW_EQUALS( CMD, EXCEPTION, EXPECTED ) do { try { (void)(CMD); assertThrowFail(__FILE__, __LINE__); } catch (const EXCEPTION&e) { assertEquals(__FILE__, __LINE__, EXPECTED, e.errorMessage); } catch (...) { assertThrowFail(__FILE__, __LINE__); } } while (false)
 #define ASSERT_THROW_EQUALS_2( CMD, EXCEPTION, EXPECTED ) do { try { (void)(CMD); assertThrowFail(__FILE__, __LINE__); } catch (const EXCEPTION&e) { assertEquals(__FILE__, __LINE__, EXPECTED, e.what()); } catch (...) { assertThrowFail(__FILE__, __LINE__); } } while (false)
 #define ASSERT_THROW_INTERNAL( CMD, TYPE ) do { try { (void)(CMD); assertThrowFail(__FILE__, __LINE__); } catch (const InternalError& e) { assertEqualsEnum(__FILE__, __LINE__, InternalError::TYPE, e.type); } catch (...) { assertThrowFail(__FILE__, __LINE__); } } while (false)

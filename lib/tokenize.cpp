@@ -698,7 +698,7 @@ namespace {
                     mRangeAfterVar.second = mEndToken;
                     return;
                 }
-                if (Token::Match(type, "%name% ( !!(") && Token::simpleMatch(type->linkAt(1), ") ;") && !type->isStandardType()) {
+                if (type != start && Token::Match(type, "%name% ( !!(") && Token::simpleMatch(type->linkAt(1), ") ;") && !type->isStandardType()) {
                     mNameToken = type;
                     mEndToken = type->linkAt(1)->next();
                     mRangeType.first = start;
@@ -710,7 +710,7 @@ namespace {
             }
             // TODO: handle all typedefs
             if ((false))
-                printTypedef(typedefToken);
+                printTypedef(typedefToken, std::cout);
             mFail = true;
         }
 
@@ -786,6 +786,10 @@ namespace {
                         tok2 = insertTokens(tok2, mRangeTypeQualifiers);
                         Token* tok3 = tok2->insertToken(")");
                         Token::createMutualLinks(tok, tok3);
+                        tok->insertTokenBefore("(");
+                        tok3 = tok3->linkAt(1);
+                        tok3 = tok3->insertToken(")");
+                        Token::createMutualLinks(tok->tokAt(-1), tok3);
                     }
                     return;
                 }
@@ -1077,17 +1081,17 @@ namespace {
             return to;
         }
 
-        static void printTypedef(const Token *tok) {
+        static void printTypedef(const Token *tok, std::ostream& out) {
             int indent = 0;
             while (tok && (indent > 0 || tok->str() != ";")) {
                 if (tok->str() == "{")
                     ++indent;
                 else if (tok->str() == "}")
                     --indent;
-                std::cout << " " << tok->str();
+                out << " " << tok->str();
                 tok = tok->next();
             }
-            std::cout << "\n";
+            out << "\n";
         }
     };
 }
@@ -2619,6 +2623,12 @@ namespace {
                         scopeInfo = scopeInfo->addChild(ScopeInfo3::MemberFunction, scope, tok, tok->link());
                         added = true;
                     }
+                    // inline member function
+                    else if ((scopeInfo->type == ScopeInfo3::Record || scopeInfo->type == ScopeInfo3::Namespace) && tok1 && Token::Match(tok1->tokAt(-1), "%name% (")) {
+                        const std::string scope = scopeInfo->name + "::" + tok1->strAt(-1);
+                        scopeInfo = scopeInfo->addChild(ScopeInfo3::MemberFunction, scope, tok, tok->link());
+                        added = true;
+                    }
                 }
 
                 if (!added)
@@ -3490,7 +3500,7 @@ bool Tokenizer::simplifyTokens1(const std::string &configuration)
         mSymbolDatabase->setArrayDimensionsUsingValueFlow();
     }
 
-    printDebugOutput(1);
+    printDebugOutput(1, std::cout);
 
     return true;
 }
@@ -5909,32 +5919,32 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
 }
 //---------------------------------------------------------------------------
 
-void Tokenizer::printDebugOutput(int simplification) const
+void Tokenizer::printDebugOutput(int simplification, std::ostream &out) const
 {
     const bool debug = (simplification != 1U && mSettings.debugSimplified) ||
                        (simplification != 2U && mSettings.debugnormal);
 
     if (debug && list.front()) {
-        list.front()->printOut(nullptr, list.getFiles());
+        list.front()->printOut(out, nullptr, list.getFiles());
 
         if (mSettings.xml)
-            std::cout << "<debug>" << std::endl;
+            out << "<debug>" << std::endl;
 
         if (mSymbolDatabase) {
             if (mSettings.xml)
-                mSymbolDatabase->printXml(std::cout);
+                mSymbolDatabase->printXml(out);
             else if (mSettings.verbose) {
                 mSymbolDatabase->printOut("Symbol database");
             }
         }
 
         if (mSettings.verbose)
-            list.front()->printAst(mSettings.verbose, mSettings.xml, list.getFiles(), std::cout);
+            list.front()->printAst(mSettings.verbose, mSettings.xml, list.getFiles(), out);
 
-        list.front()->printValueFlow(mSettings.xml, std::cout);
+        list.front()->printValueFlow(mSettings.xml, out);
 
         if (mSettings.xml)
-            std::cout << "</debug>" << std::endl;
+            out << "</debug>" << std::endl;
     }
 
     if (mSymbolDatabase && simplification == 2U && mSettings.debugwarnings) {
@@ -8112,13 +8122,13 @@ bool Tokenizer::isScopeNoReturn(const Token *endScopeToken, bool *unknown) const
 
 void Tokenizer::syntaxError(const Token *tok, const std::string &code) const
 {
-    printDebugOutput(0);
+    printDebugOutput(0, std::cout);
     throw InternalError(tok, code.empty() ? "syntax error" : "syntax error: " + code, InternalError::SYNTAX);
 }
 
 void Tokenizer::unmatchedToken(const Token *tok) const
 {
-    printDebugOutput(0);
+    printDebugOutput(0, std::cout);
     throw InternalError(tok,
                         "Unmatched '" + tok->str() + "'. Configuration: '" + mConfiguration + "'.",
                         InternalError::SYNTAX);
@@ -8126,13 +8136,13 @@ void Tokenizer::unmatchedToken(const Token *tok) const
 
 void Tokenizer::syntaxErrorC(const Token *tok, const std::string &what) const
 {
-    printDebugOutput(0);
+    printDebugOutput(0, std::cout);
     throw InternalError(tok, "Code '"+what+"' is invalid C code.", "Use --std, -x or --language to enforce C++. Or --cpp-header-probe to identify C++ headers via the Emacs marker.", InternalError::SYNTAX);
 }
 
 void Tokenizer::unknownMacroError(const Token *tok1) const
 {
-    printDebugOutput(0);
+    printDebugOutput(0, std::cout);
     throw InternalError(tok1, "There is an unknown macro here somewhere. Configuration is required. If " + tok1->str() + " is a macro then please configure it.", InternalError::UNKNOWN_MACRO);
 }
 
@@ -8158,7 +8168,7 @@ void Tokenizer::macroWithSemicolonError(const Token *tok, const std::string &mac
 
 void Tokenizer::cppcheckError(const Token *tok) const
 {
-    printDebugOutput(0);
+    printDebugOutput(0, std::cout);
     throw InternalError(tok, "Analysis failed. If the code is valid then please report this failure.", InternalError::INTERNAL);
 }
 
@@ -8602,8 +8612,16 @@ void Tokenizer::findGarbageCode() const
                     syntaxError(tok2, "Unexpected token '" + (tok2 ? tok2->str() : "") + "'");
             }
         }
-        if (Token::Match(tok, "enum : %num%| {"))
-            syntaxError(tok->tokAt(2), "Unexpected token '" + tok->strAt(2) + "'");
+        if (tok->str() == "enum") {
+            if (Token::Match(tok->next(), ": %num%| {"))
+                syntaxError(tok->tokAt(2), "Unexpected token '" + tok->strAt(2) + "'");
+            if (const Token* start = SymbolDatabase::isEnumDefinition(tok)) {
+                for (const Token* tok2 = start->next(); tok2 && tok2 != start->link(); tok2 = tok2->next()) {
+                    if (tok2->str() == ";")
+                        syntaxError(tok2);
+                }
+            }
+        }
     }
 
     // Keywords in global scope
@@ -8725,10 +8743,13 @@ void Tokenizer::findGarbageCode() const
         }
         if (Token::Match(tok, "%num%|%bool%|%char%|%str% %num%|%bool%|%char%|%str%") && !Token::Match(tok, "%str% %str%"))
             syntaxError(tok);
-        if (Token::Match(tok, "%num%|%bool%|%char%|%str% {") &&
-            !(tok->tokType() == Token::Type::eString && Token::simpleMatch(tok->tokAt(-1), "extern")) &&
-            !(tok->tokType() == Token::Type::eBoolean && cpp && Token::simpleMatch(tok->tokAt(-1), "requires")))
-            syntaxError(tok);
+        if (Token::Match(tok, "%num%|%bool%|%char%|%str% {|(")) {
+            if (tok->strAt(1) == "(")
+                syntaxError(tok);
+            else if (!(tok->tokType() == Token::Type::eString && Token::simpleMatch(tok->tokAt(-1), "extern")) &&
+                     !(tok->tokType() == Token::Type::eBoolean && cpp && Token::simpleMatch(tok->tokAt(-1), "requires")))
+                syntaxError(tok);
+        }
         if (Token::Match(tok, "%assign% typename|class %assign%"))
             syntaxError(tok);
         if (Token::Match(tok, "%assign% [;)}]") && (!cpp || !Token::simpleMatch(tok->previous(), "operator")))

@@ -259,6 +259,7 @@ LIBOBJ =      $(libcppdir)/valueflow.o \
               $(libcppdir)/vf_bailout.o \
               $(libcppdir)/vf_bitand.o \
               $(libcppdir)/vf_common.o \
+              $(libcppdir)/vf_conditionexpressions.o \
               $(libcppdir)/vf_debug.o \
               $(libcppdir)/vf_enumvalue.o \
               $(libcppdir)/vf_functionreturn.o \
@@ -270,10 +271,12 @@ LIBOBJ =      $(libcppdir)/valueflow.o \
               $(libcppdir)/vf_iterators.o \
               $(libcppdir)/vf_number.o \
               $(libcppdir)/vf_pointeralias.o \
+              $(libcppdir)/vf_reverse.o \
               $(libcppdir)/vf_rightshift.o \
               $(libcppdir)/vf_sameexpressions.o \
               $(libcppdir)/vf_settokenvalue.o \
               $(libcppdir)/vf_string.o \
+              $(libcppdir)/vf_switchvariable.o \
               $(libcppdir)/vf_symbolicinfer.o \
               $(libcppdir)/vf_unknownfunctionreturn.o \
               $(libcppdir)/vfvalue.o
@@ -345,6 +348,7 @@ TESTOBJ =     test/fixture.o \
               test/testsimplifyusing.o \
               test/testsingleexecutor.o \
               test/testsizeof.o \
+              test/teststandards.o \
               test/teststl.o \
               test/teststring.o \
               test/testsummaries.o \
@@ -485,7 +489,7 @@ validateRules:
 
 ###### Build
 
-$(libcppdir)/valueflow.o: lib/valueflow.cpp lib/addoninfo.h lib/analyzer.h lib/astutils.h lib/check.h lib/checkuninitvar.h lib/color.h lib/config.h lib/errorlogger.h lib/errortypes.h lib/findtoken.h lib/forwardanalyzer.h lib/infer.h lib/library.h lib/mathlib.h lib/platform.h lib/programmemory.h lib/reverseanalyzer.h lib/settings.h lib/smallvector.h lib/sourcelocation.h lib/standards.h lib/suppressions.h lib/symboldatabase.h lib/templatesimplifier.h lib/timer.h lib/token.h lib/tokenize.h lib/tokenlist.h lib/utils.h lib/valueflow.h lib/valueptr.h lib/vf_analyze.h lib/vf_analyzers.h lib/vf_array.h lib/vf_arraybool.h lib/vf_arrayelement.h lib/vf_bailout.h lib/vf_bitand.h lib/vf_common.h lib/vf_debug.h lib/vf_enumvalue.h lib/vf_functionreturn.h lib/vf_globalconstvar.h lib/vf_globalstaticvar.h lib/vf_impossiblevalues.h lib/vf_infercondition.h lib/vf_iteratorinfer.h lib/vf_iterators.h lib/vf_number.h lib/vf_pointeralias.h lib/vf_rightshift.h lib/vf_sameexpressions.h lib/vf_settokenvalue.h lib/vf_string.h lib/vf_symbolicinfer.h lib/vf_unknownfunctionreturn.h lib/vfvalue.h
+$(libcppdir)/valueflow.o: lib/valueflow.cpp lib/addoninfo.h lib/analyzer.h lib/astutils.h lib/check.h lib/checkuninitvar.h lib/color.h lib/config.h lib/errorlogger.h lib/errortypes.h lib/findtoken.h lib/forwardanalyzer.h lib/infer.h lib/library.h lib/mathlib.h lib/platform.h lib/programmemory.h lib/settings.h lib/smallvector.h lib/sourcelocation.h lib/standards.h lib/suppressions.h lib/symboldatabase.h lib/templatesimplifier.h lib/timer.h lib/token.h lib/tokenize.h lib/tokenlist.h lib/utils.h lib/valueflow.h lib/valueptr.h lib/vf_analyze.h lib/vf_analyzers.h lib/vf_array.h lib/vf_arraybool.h lib/vf_arrayelement.h lib/vf_bailout.h lib/vf_bitand.h lib/vf_common.h lib/vf_conditionexpressions.h lib/vf_debug.h lib/vf_enumvalue.h lib/vf_functionreturn.h lib/vf_globalconstvar.h lib/vf_globalstaticvar.h lib/vf_impossiblevalues.h lib/vf_infercondition.h lib/vf_iteratorinfer.h lib/vf_iterators.h lib/vf_number.h lib/vf_pointeralias.h lib/vf_reverse.h lib/vf_rightshift.h lib/vf_sameexpressions.h lib/vf_settokenvalue.h lib/vf_string.h lib/vf_switchvariable.h lib/vf_symbolicinfer.h lib/vf_unknownfunctionreturn.h lib/vfvalue.h
 	$(CXX) ${INCLUDE_FOR_LIB} $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $(libcppdir)/valueflow.cpp
 
 $(libcppdir)/tokenize.o: lib/tokenize.cpp externals/simplecpp/simplecpp.h lib/addoninfo.h lib/astutils.h lib/color.h lib/config.h lib/errorlogger.h lib/errortypes.h lib/library.h lib/mathlib.h lib/path.h lib/platform.h lib/preprocessor.h lib/settings.h lib/smallvector.h lib/sourcelocation.h lib/standards.h lib/summaries.h lib/suppressions.h lib/symboldatabase.h lib/templatesimplifier.h lib/timer.h lib/token.h lib/tokenize.h lib/tokenlist.h lib/utils.h lib/valueflow.h lib/vfvalue.h
@@ -692,6 +696,9 @@ $(libcppdir)/vf_bitand.o: lib/vf_bitand.cpp lib/config.h lib/errortypes.h lib/ma
 $(libcppdir)/vf_common.o: lib/vf_common.cpp lib/addoninfo.h lib/astutils.h lib/config.h lib/errortypes.h lib/library.h lib/mathlib.h lib/path.h lib/platform.h lib/settings.h lib/smallvector.h lib/sourcelocation.h lib/standards.h lib/suppressions.h lib/symboldatabase.h lib/templatesimplifier.h lib/token.h lib/tokenlist.h lib/utils.h lib/valueflow.h lib/vf_common.h lib/vf_settokenvalue.h lib/vfvalue.h
 	$(CXX) ${INCLUDE_FOR_LIB} $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $(libcppdir)/vf_common.cpp
 
+$(libcppdir)/vf_conditionexpressions.o: lib/vf_conditionexpressions.cpp lib/addoninfo.h lib/analyzer.h lib/astutils.h lib/color.h lib/config.h lib/errorlogger.h lib/errortypes.h lib/forwardanalyzer.h lib/library.h lib/mathlib.h lib/platform.h lib/settings.h lib/smallvector.h lib/sourcelocation.h lib/standards.h lib/suppressions.h lib/symboldatabase.h lib/templatesimplifier.h lib/token.h lib/tokenlist.h lib/utils.h lib/valueptr.h lib/vf_analyzers.h lib/vf_bailout.h lib/vf_common.h lib/vf_conditionexpressions.h lib/vfvalue.h
+	$(CXX) ${INCLUDE_FOR_LIB} $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $(libcppdir)/vf_conditionexpressions.cpp
+
 $(libcppdir)/vf_debug.o: lib/vf_debug.cpp lib/addoninfo.h lib/color.h lib/config.h lib/errorlogger.h lib/errortypes.h lib/library.h lib/mathlib.h lib/platform.h lib/settings.h lib/sourcelocation.h lib/standards.h lib/suppressions.h lib/symboldatabase.h lib/templatesimplifier.h lib/token.h lib/tokenlist.h lib/utils.h lib/vf_common.h lib/vf_debug.h lib/vfvalue.h
 	$(CXX) ${INCLUDE_FOR_LIB} $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $(libcppdir)/vf_debug.cpp
 
@@ -725,6 +732,9 @@ $(libcppdir)/vf_number.o: lib/vf_number.cpp lib/config.h lib/errortypes.h lib/li
 $(libcppdir)/vf_pointeralias.o: lib/vf_pointeralias.cpp lib/config.h lib/errortypes.h lib/library.h lib/mathlib.h lib/sourcelocation.h lib/standards.h lib/symboldatabase.h lib/templatesimplifier.h lib/token.h lib/tokenlist.h lib/utils.h lib/vf_pointeralias.h lib/vf_settokenvalue.h lib/vfvalue.h
 	$(CXX) ${INCLUDE_FOR_LIB} $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $(libcppdir)/vf_pointeralias.cpp
 
+$(libcppdir)/vf_reverse.o: lib/vf_reverse.cpp lib/addoninfo.h lib/analyzer.h lib/config.h lib/errortypes.h lib/library.h lib/mathlib.h lib/platform.h lib/reverseanalyzer.h lib/settings.h lib/sourcelocation.h lib/standards.h lib/suppressions.h lib/symboldatabase.h lib/templatesimplifier.h lib/token.h lib/utils.h lib/valueptr.h lib/vf_analyzers.h lib/vf_common.h lib/vf_reverse.h lib/vfvalue.h
+	$(CXX) ${INCLUDE_FOR_LIB} $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $(libcppdir)/vf_reverse.cpp
+
 $(libcppdir)/vf_rightshift.o: lib/vf_rightshift.cpp lib/addoninfo.h lib/config.h lib/errortypes.h lib/library.h lib/mathlib.h lib/platform.h lib/settings.h lib/sourcelocation.h lib/standards.h lib/suppressions.h lib/symboldatabase.h lib/templatesimplifier.h lib/token.h lib/tokenlist.h lib/utils.h lib/vf_rightshift.h lib/vf_settokenvalue.h lib/vfvalue.h
 	$(CXX) ${INCLUDE_FOR_LIB} $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $(libcppdir)/vf_rightshift.cpp
 
@@ -736,6 +746,9 @@ $(libcppdir)/vf_settokenvalue.o: lib/vf_settokenvalue.cpp lib/addoninfo.h lib/as
 
 $(libcppdir)/vf_string.o: lib/vf_string.cpp lib/config.h lib/errortypes.h lib/mathlib.h lib/sourcelocation.h lib/standards.h lib/templatesimplifier.h lib/token.h lib/tokenlist.h lib/utils.h lib/vf_settokenvalue.h lib/vf_string.h lib/vfvalue.h
 	$(CXX) ${INCLUDE_FOR_LIB} $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $(libcppdir)/vf_string.cpp
+
+$(libcppdir)/vf_switchvariable.o: lib/vf_switchvariable.cpp lib/addoninfo.h lib/config.h lib/errortypes.h lib/library.h lib/mathlib.h lib/platform.h lib/settings.h lib/sourcelocation.h lib/standards.h lib/suppressions.h lib/symboldatabase.h lib/templatesimplifier.h lib/token.h lib/utils.h lib/vf_bailout.h lib/vf_reverse.h lib/vf_switchvariable.h lib/vfvalue.h
+	$(CXX) ${INCLUDE_FOR_LIB} $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $(libcppdir)/vf_switchvariable.cpp
 
 $(libcppdir)/vf_symbolicinfer.o: lib/vf_symbolicinfer.cpp lib/astutils.h lib/config.h lib/errortypes.h lib/infer.h lib/library.h lib/mathlib.h lib/smallvector.h lib/sourcelocation.h lib/standards.h lib/symboldatabase.h lib/templatesimplifier.h lib/token.h lib/utils.h lib/valueptr.h lib/vf_settokenvalue.h lib/vf_symbolicinfer.h lib/vfvalue.h
 	$(CXX) ${INCLUDE_FOR_LIB} $(CPPFLAGS) $(CXXFLAGS) -c -o $@ $(libcppdir)/vf_symbolicinfer.cpp
@@ -934,6 +947,9 @@ test/testsingleexecutor.o: test/testsingleexecutor.cpp cli/executor.h cli/single
 
 test/testsizeof.o: test/testsizeof.cpp externals/simplecpp/simplecpp.h lib/addoninfo.h lib/check.h lib/checksizeof.h lib/color.h lib/config.h lib/errorlogger.h lib/errortypes.h lib/library.h lib/mathlib.h lib/platform.h lib/preprocessor.h lib/settings.h lib/standards.h lib/suppressions.h lib/tokenize.h lib/tokenlist.h lib/utils.h test/fixture.h test/helpers.h
 	$(CXX) ${INCLUDE_FOR_TEST} $(CPPFLAGS) $(CXXFLAGS) -c -o $@ test/testsizeof.cpp
+
+test/teststandards.o: test/teststandards.cpp lib/addoninfo.h lib/check.h lib/color.h lib/config.h lib/errorlogger.h lib/errortypes.h lib/library.h lib/mathlib.h lib/platform.h lib/settings.h lib/standards.h lib/suppressions.h lib/utils.h test/fixture.h
+	$(CXX) ${INCLUDE_FOR_TEST} $(CPPFLAGS) $(CXXFLAGS) -c -o $@ test/teststandards.cpp
 
 test/teststl.o: test/teststl.cpp externals/simplecpp/simplecpp.h lib/addoninfo.h lib/check.h lib/checkstl.h lib/color.h lib/config.h lib/errorlogger.h lib/errortypes.h lib/library.h lib/mathlib.h lib/platform.h lib/preprocessor.h lib/settings.h lib/standards.h lib/suppressions.h lib/tokenize.h lib/tokenlist.h lib/utils.h lib/vfvalue.h test/fixture.h test/helpers.h
 	$(CXX) ${INCLUDE_FOR_TEST} $(CPPFLAGS) $(CXXFLAGS) -c -o $@ test/teststl.cpp

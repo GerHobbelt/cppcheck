@@ -1154,7 +1154,7 @@ private:
             "}";
 
         ASSERT_EQUALS(expected, tok(code, false));
-        ASSERT_EQUALS("[test.cpp:4]: (debug) valueFlowConditionExpressions bailout: Skipping function due to incomplete variable value\n", errout_str());
+        ASSERT_EQUALS("[test.cpp:4]: (debug) analyzeConditionExpressions bailout: Skipping function due to incomplete variable value\n", errout_str());
     }
 
     void simplifyTypedef28() {
@@ -2014,7 +2014,7 @@ private:
                                 "( ( int * * * ) global [ 6 ] ) ( \"assoc\" , \"eggdrop\" , 106 , 0 ) ; "
                                 "}";
         ASSERT_EQUALS(expected, tok(code));
-        ASSERT_EQUALS("[test.cpp:3]: (debug) valueFlowConditionExpressions bailout: Skipping function due to incomplete variable global\n", errout_str());
+        ASSERT_EQUALS("[test.cpp:3]: (debug) analyzeConditionExpressions bailout: Skipping function due to incomplete variable global\n", errout_str());
     }
 
     void simplifyTypedef68() { // ticket #2355
@@ -3353,8 +3353,8 @@ private:
                                 "    struct S { enum E { E0 }; };\n"
                                 "}\n"
                                 "typedef N::S T;\n"
-                                "enum class E { a = T::E0; };\n";
-            ASSERT_EQUALS("namespace N { struct S { enum E { E0 } ; } ; } enum class E { a = N :: S :: E0 ; } ;", tok(code));
+                                "enum class E { a = T::E0 };\n";
+            ASSERT_EQUALS("namespace N { struct S { enum E { E0 } ; } ; } enum class E { a = N :: S :: E0 } ;", tok(code));
         }
         { // #11494
             const char code[] = "typedef struct S {} KEY;\n"
@@ -3387,7 +3387,7 @@ private:
         // #11430
         const char code3[] = "typedef char* T;\n"
                              "T f() { return T(\"abc\"); }\n";
-        ASSERT_EQUALS("char * f ( ) { return ( char * ) ( \"abc\" ) ; }", tok(code3));
+        ASSERT_EQUALS("char * f ( ) { return ( ( char * ) ( \"abc\" ) ) ; }", tok(code3));
 
         const char code4[] = "typedef struct _a *A;\n" // #13104
                              "typedef struct _b* B;\n"
@@ -3399,6 +3399,17 @@ private:
         ASSERT_EQUALS("extern struct _a * ( * get ) ( struct _b * ) ; "
                       "struct _a * f ( ) { return get ( 0 ) ; }",
                       tok(code4));
+
+        const char code5[] = "struct S { int x; };\n" // #13182
+                             "typedef S* PS;\n"
+                             "void f(void* a[], int i) {\n"
+                             "    PS(a[i])->x = i;\n"
+                             "}\n";
+        ASSERT_EQUALS("struct S { int x ; } ; "
+                      "void f ( void * a [ ] , int i ) { "
+                      "( ( S * ) ( a [ i ] ) ) . x = i ; "
+                      "}",
+                      tok(code5));
     }
 
     void simplifyTypedef143() { // #11506

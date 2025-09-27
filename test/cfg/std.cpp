@@ -2,7 +2,7 @@
 // Test library configuration for std.cfg
 //
 // Usage:
-// $ cppcheck --check-library --library=std --enable=style,information --inconclusive --error-exitcode=1 --disable=missingInclude --inline-suppr test/cfg/std.cpp
+// $ cppcheck --check-library --library=std --enable=style,information --inconclusive --error-exitcode=1 --inline-suppr test/cfg/std.cpp
 // =>
 // No warnings about bad library configuration, unmatched suppressions, etc. exitcode=0
 //
@@ -53,6 +53,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 #include <version>
 #ifdef __cpp_lib_span
@@ -2634,6 +2635,18 @@ void uninitvar_llround(void)
     long double ld;
     // cppcheck-suppress uninitvar
     (void)std::llroundl(ld);
+}
+
+void unusedScopedObject_std_monostate(void)
+{
+    // cppcheck-suppress unusedScopedObject
+    std::monostate{};
+}
+
+void unusedScopedObject_std_logic_error()
+{
+    // cppcheck-suppress unusedScopedObject
+    std::logic_error("abc");
 }
 
 void uninitvar_srand(void)

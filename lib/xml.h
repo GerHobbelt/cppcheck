@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2022 Cppcheck team.
+ * Copyright (C) 2007-2023 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -16,18 +16,21 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef CPPCHECKEXECUTORSIG_H
-#define CPPCHECKEXECUTORSIG_H
+#ifndef xmlH
+#define xmlH
 
 #include "config.h"
 
-#if defined(USE_UNIX_SIGNAL_HANDLING)
+SUPPRESS_WARNING_CLANG_PUSH("-Wzero-as-null-pointer-constant")
+SUPPRESS_WARNING_CLANG_PUSH("-Wextra-semi-stmt")
+SUPPRESS_WARNING_CLANG_PUSH("-Wsuggest-override")
+SUPPRESS_WARNING_CLANG_PUSH("-Wsuggest-destructor-override")
 
-class CppCheckExecutor;
-class CppCheck;
+#include <tinyxml2.h>
 
-int check_wrapper_sig(CppCheckExecutor& executor, int (CppCheckExecutor::*f)(CppCheck&) const, CppCheck& cppcheck);
+SUPPRESS_WARNING_CLANG_POP
+SUPPRESS_WARNING_CLANG_POP
+SUPPRESS_WARNING_CLANG_POP
+SUPPRESS_WARNING_CLANG_POP
 
-#endif // CPPCHECKEXECUTORSIG_H
-
-#endif // CPPCHECKEXECUTORSIG_H
+#endif // xmlH

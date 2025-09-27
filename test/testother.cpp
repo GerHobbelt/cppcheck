@@ -2807,7 +2807,7 @@ private:
         check("struct T : public U { void dostuff() const {}};\n"
               "void a(T& x) {\n"
               "    x.dostuff();\n"
-              "    U * const y = dynamic_cast<U * const>(&x);\n"
+              "    const U const * const * const * const y = dynamic_cast<const U const * const * const * const>(&x);\n"
               "    y->mutate();\n" // to avoid warnings that y can be const
               "}");
         ASSERT_EQUALS("", errout.str());
@@ -2822,13 +2822,6 @@ private:
               "void a(T& x) {\n"
               "    x.dostuff();\n"
               "    const U const * const *  * const y = dynamic_cast<const U const * const *  * const>(&x);\n"
-              "    y->mutate();\n" // to avoid warnings that y can be const
-              "}");
-        ASSERT_EQUALS("", errout.str());
-        check("struct T : public U { void dostuff() const {}};\n"
-              "void a(T& x) {\n"
-              "    x.dostuff();\n"
-              "    my::fancy<typename type const *> const * * const y = dynamic_cast<my::fancy<typename type const *> const * * const>(&x);\n"
               "    y->mutate();\n" // to avoid warnings that y can be const
               "}");
         ASSERT_EQUALS("", errout.str());
@@ -2880,7 +2873,7 @@ private:
               "   x.f();\n"
               "   foo( static_cast<U2>(0) );\n"
               "}");
-        ASSERT_EQUALS("", errout.str());
+        ASSERT_EQUALS("[test.cpp:3]: (style) Parameter 'x' can be declared as reference to const\n", errout.str());
 
         check("class a {\n"
               "    void foo(const int& i) const;\n"
@@ -3372,6 +3365,34 @@ private:
         check("struct S { int x; };\n" // #11818
               "std::istream& f(std::istream& is, S& s) {\n"
               "    return is >> s.x;\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        check("bool f(std::string& s1, std::string& s2) {\n" // #12203
+              "    return &s1 == &s2;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:1]: (style) Parameter 's1' can be declared as reference to const\n"
+                      "[test.cpp:1]: (style) Parameter 's2' can be declared as reference to const\n",
+                      errout.str());
+
+        check("void f(int& r) {\n" // #12214
+              "    (void)(true);\n"
+              "    if (r) {}\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:1]: (style) Parameter 'r' can be declared as reference to const\n", errout.str());
+
+        check("struct S { void f(int&); };\n" // #12216
+              "void g(S& s, int& r, void (S::* p2m)(int&)) {\n"
+              "    (s.*p2m)(r);\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        check("struct S {\n"
+              "    void f(int& r) { p = &r; }\n"
+              "    int* p;\n"
+              "};\n"
+              "void g(std::vector<int>& v1, std::vector<int*>& v2) {\n"
+              "    std::transform(v1.begin(), v1.end(), v2.begin(), [](auto& x) { return &x; });\n"
               "}\n");
         ASSERT_EQUALS("", errout.str());
     }
@@ -3881,6 +3902,13 @@ private:
               "}\n");
         ASSERT_EQUALS("[test.cpp:1]: (style) Parameter 'r' can be declared as pointer to const\n"
                       "[test.cpp:1]: (style) Parameter 'b' can be declared as pointer to const\n",
+                      errout.str());
+
+        check("void f(int i) {\n" // #12185
+              "    void* p = &i;\n"
+              "    std::cout << p << '\\n';\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Variable 'p' can be declared as pointer to const\n",
                       errout.str());
     }
 
@@ -8436,7 +8464,7 @@ private:
               "  ptr = otherPtr;\n"
               "  free(otherPtr - xx - 1);\n"
               "}");
-        ASSERT_EQUALS("", errout.str());
+        ASSERT_EQUALS("[test.cpp:2]: (style) Variable 'ptr' can be declared as pointer to const\n", errout.str());
     }
 
     void checkRedundantCopy() {
@@ -10845,7 +10873,9 @@ private:
               "        for (auto &j : g(std::move(l))) { (void)j; }\n"
               "    }\n"
               "}\n");
-        ASSERT_EQUALS("[test.cpp:4]: (warning) Access of moved variable 'l'.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:4]: (style) Variable 'j' can be declared as reference to const\n"
+                      "[test.cpp:4]: (warning) Access of moved variable 'l'.\n",
+                      errout.str());
     }
 
     void moveCallback()
@@ -11638,6 +11668,12 @@ private:
               "    if (!b)\n"
               "        return;\n"
               "    if (dynamic_cast<D*>(b)) {}\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        check("bool (*ptr)();\n" // #12170
+              "void f() {\n"
+              "    if (!ptr || !ptr()) {}\n"
               "}\n");
         ASSERT_EQUALS("", errout.str());
     }

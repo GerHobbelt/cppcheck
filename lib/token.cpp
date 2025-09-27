@@ -1701,6 +1701,7 @@ void Token::printValueFlow(bool xml, std::ostream &out) const
 {
     std::string outs;
 
+    int fileIndex = -1;
     int line = 0;
     if (xml)
         outs += "  <valueflow>\n";
@@ -1718,11 +1719,20 @@ void Token::printValueFlow(bool xml, std::ostream &out) const
             outs +=  "\">";
             outs += '\n';
         }
-        else if (line != tok->linenr()) {
-            outs += "Line ";
-            outs += std::to_string(tok->linenr());
-            outs += '\n';
+        else {
+            if (fileIndex != tok->fileIndex()) {
+                outs += "File ";
+                outs += tok->mTokensFrontBack->list->getFiles()[tok->fileIndex()];
+                outs += '\n';
+                line = 0;
+            }
+            if (line != tok->linenr()) {
+                outs += "Line ";
+                outs += std::to_string(tok->linenr());
+                outs += '\n';
+            }
         }
+        fileIndex = tok->fileIndex();
         line = tok->linenr();
         if (!xml) {
             ValueFlow::Value::ValueKind valueKind = values->front().valueKind;
@@ -2099,10 +2109,10 @@ static void mergeAdjacent(std::list<ValueFlow::Value>& values)
 
 static void removeOverlaps(std::list<ValueFlow::Value>& values)
 {
-    for (ValueFlow::Value& x : values) {
+    for (const ValueFlow::Value& x : values) {
         if (x.isNonValue())
             continue;
-        values.remove_if([&](ValueFlow::Value& y) {
+        values.remove_if([&](const ValueFlow::Value& y) {
             if (y.isNonValue())
                 return false;
             if (&x == &y)

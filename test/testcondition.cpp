@@ -4609,6 +4609,12 @@ private:
               "}\n");
         ASSERT_EQUALS("[test.cpp:4]: (style) Condition 'q' is always true\n", errout_str());
 
+        check("void f() {\n" // #12786
+              "    const int b[2] = {};\n"
+              "    if (b) {}\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:3]: (style) Condition 'b' is always true\n", errout_str());
+
         check("void f(int i) {\n"
               "    int j = 0;\n"
               "    switch (i) {\n"
@@ -5677,6 +5683,15 @@ private:
               "    if (std::isfinite(d)) {}\n"
               "}\n");
         ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:3]: (style) The if condition is the same as the previous if condition\n", errout_str());
+
+        check("struct S { int x; };\n" // #12391
+              "int f(const struct S* a, const struct S* b) {\n"
+              "    const struct S* p = b;\n"
+              "    if (a->x < p->x) p++;\n"
+              "    if (a->x < p->x) p++;\n"
+              "    return p->x;\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
 
         // do not crash
         check("void assign(const MMA& other) {\n"

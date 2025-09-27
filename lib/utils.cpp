@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstring>
 #include <iterator>
 #include <stack>
 #include <utility>
@@ -146,4 +147,59 @@ void findAndReplace(std::string &source, const std::string &searchFor, const std
         source.replace(index, searchFor.length(), replaceWith);
         index += replaceWith.length();
     }
+}
+
+std::string replaceEscapeSequences(const std::string &source) {
+    std::string result;
+    result.reserve(source.size());
+    for (std::size_t i = 0; i < source.size(); ++i) {
+        if (source[i] != '\\' || i + 1 >= source.size())
+            result += source[i];
+        else {
+            ++i;
+            if (source[i] == 'n') {
+                result += '\n';
+            } else if (source[i] == 'r') {
+                result += '\r';
+            } else if (source[i] == 't') {
+                result += '\t';
+            } else if (source[i] == 'x') {
+                std::string value = "0";
+                if (i + 1 < source.size() && std::isxdigit(source[i+1]))
+                    value += source[i++ + 1];
+                if (i + 1 < source.size() && std::isxdigit(source[i+1]))
+                    value += source[i++ + 1];
+                result += static_cast<char>(std::stoi(value, nullptr, 16));
+            } else if (source[i] == '0') {
+                std::string value = "0";
+                if (i + 1 < source.size() && source[i+1] >= '0' && source[i+1] <= '7')
+                    value += source[i++ + 1];
+                if (i + 1 < source.size() && source[i+1] >= '0' && source[i+1] <= '7')
+                    value += source[i++ + 1];
+                result += static_cast<char>(std::stoi(value, nullptr, 8));
+            } else {
+                result += source[i];
+            }
+        }
+    }
+    return result;
+}
+
+
+std::list<std::string> splitString(const std::string& str, char sep)
+{
+    if (std::strchr(str.c_str(), sep) == nullptr)
+        return {str};
+
+    std::list<std::string> l;
+    std::string p(str);
+    for (;;) {
+        const std::string::size_type pos = p.find(sep);
+        if (pos == std::string::npos)
+            break;
+        l.push_back(p.substr(0,pos));
+        p = p.substr(pos+1);
+    }
+    l.push_back(std::move(p));
+    return l;
 }

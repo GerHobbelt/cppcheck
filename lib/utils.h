@@ -30,6 +30,7 @@
 #include <functional>
 #include <initializer_list>
 #include <limits>
+#include <list>
 #include <stdexcept>
 #include <string>
 #include <type_traits>
@@ -364,6 +365,12 @@ CPPCHECKLIB std::string trim(const std::string& s, const std::string& t = " \t")
  */
 CPPCHECKLIB void findAndReplace(std::string &source, const std::string &searchFor, const std::string &replaceWith);
 
+/**
+ * Replace all escape sequences in the given string.
+ * @param source The string that contains escape sequences
+ */
+CPPCHECKLIB std::string replaceEscapeSequences(const std::string &source);
+
 namespace cppcheck
 {
     NORETURN inline void unreachable()
@@ -383,5 +390,13 @@ static inline T* empty_if_null(T* p)
 {
     return p ? p : "";
 }
+
+/**
+ * Split string by given sperator.
+ * @param str The string to split
+ * @param sep The seperator
+ * @return The list of seperate strings (including empty ones). The whole input string if no seperator found.
+ */
+CPPCHECKLIB std::list<std::string> splitString(const std::string& str, char sep);
 
 #endif

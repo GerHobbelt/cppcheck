@@ -1460,10 +1460,16 @@ void SymbolDatabase::createSymbolDatabaseIncompleteVars()
             tok = tok->link();
             continue;
         }
-        if (tok->isCpp() && (Token::Match(tok, "catch|typeid (") ||
-                             Token::Match(tok, "static_cast|dynamic_cast|const_cast|reinterpret_cast"))) {
-            tok = tok->linkAt(1);
-            continue;
+        if (tok->isCpp()) {
+            if (Token::Match(tok, "catch|typeid (") ||
+                Token::Match(tok, "static_cast|dynamic_cast|const_cast|reinterpret_cast")) {
+                tok = tok->linkAt(1);
+                continue;
+            }
+            if (tok->str() == "using") {
+                tok = Token::findsimplematch(tok, ";");
+                continue;
+            }
         }
         if (tok->str() == "NULL")
             continue;
@@ -2491,6 +2497,13 @@ static bool isOperator(const Token *tokenDef)
     return name.size() > 8 && startsWith(name,"operator") && std::strchr("+-*/%&|~^<>!=[(", name[8]);
 }
 
+static bool isTrailingReturnType(const Token* tok)
+{
+    while (tok && tok->isKeyword())
+        tok = tok->next();
+    return Token::Match(tok, "&|&&| .");
+}
+
 Function::Function(const Token *tok,
                    const Scope *scope,
                    const Token *tokDef,
@@ -2534,7 +2547,7 @@ Function::Function(const Token *tok,
     if (!isConstructor() && !isDestructor()) {
         // @todo auto type deduction should be checked
         // @todo attributes and exception specification can also precede trailing return type
-        if (Token::Match(argDef->link()->next(), "const|volatile| &|&&| .")) { // Trailing return type
+        if (isTrailingReturnType(argDef->link()->next())) { // Trailing return type
             hasTrailingReturnType(true);
             if (argDef->link()->strAt(1) == ".")
                 retDef = argDef->link()->tokAt(2);
@@ -3066,7 +3079,7 @@ static bool checkReturns(const Function* function, bool unknown, bool emptyEnabl
 {
     if (!function)
         return false;
-    if (function->type != Function::eFunction && function->type != Function::eOperatorEqual)
+    if (function->type != Function::eFunction && function->type != Function::eOperatorEqual && function->type != Function::eLambda)
         return false;
     const Token* defStart = function->retDef;
     if (!defStart)
@@ -5184,6 +5197,22 @@ static const Scope* findEnumScopeInBase(const Scope* scope, const std::string& t
     return nullptr;
 }
 
+static const Enumerator* findEnumeratorInUsingList(const Scope* scope, const std::string& name)
+{
+    for (const auto& u : scope->usingList) {
+        if (!u.scope)
+            continue;
+        for (const Scope* nested : u.scope->nestedList) {
+            if (nested->type != Scope::eEnum)
+                continue;
+            const Enumerator* e = nested->findEnumerator(name);
+            if (e && !(e->scope && e->scope->enumClass))
+                return e;
+        }
+    }
+    return nullptr;
+}
+
 const Enumerator * SymbolDatabase::findEnumerator(const Token * tok, std::set<std::string>& tokensThatAreNotEnumeratorValues) const
 {
     if (tok->isKeyword())
@@ -5262,6 +5291,8 @@ const Enumerator * SymbolDatabase::findEnumerator(const Token * tok, std::set<st
             }
         }
         const Enumerator * enumerator = scope->findEnumerator(tokStr);
+        if (!enumerator)
+            enumerator = findEnumeratorInUsingList(scope, tokStr);
 
         if (enumerator && !(enumerator->scope && enumerator->scope->enumClass))
             return enumerator;
@@ -5304,6 +5335,8 @@ const Enumerator * SymbolDatabase::findEnumerator(const Token * tok, std::set<st
                 scope = scope->nestedIn;
 
             enumerator = scope->findEnumerator(tokStr);
+            if (!enumerator)
+                enumerator = findEnumeratorInUsingList(scope, tokStr);
 
             if (enumerator && !(enumerator->scope && enumerator->scope->enumClass))
                 return enumerator;
@@ -5313,6 +5346,17 @@ const Enumerator * SymbolDatabase::findEnumerator(const Token * tok, std::set<st
 
                 if (enumerator && !(enumerator->scope && enumerator->scope->enumClass))
                     return enumerator;
+
+                if (tok->isCpp() && (*s)->type == Scope::eNamespace && Token::simpleMatch((*s)->classDef, "namespace {")) {
+                    for (const Scope* nested : (*s)->nestedList) {
+                        if (nested->type != Scope::eEnum)
+                            continue;
+                        enumerator = nested->findEnumerator(tokStr);
+
+                        if (enumerator && !(enumerator->scope && enumerator->scope->enumClass))
+                            return enumerator;
+                    }
+                }
             }
         }
     }
@@ -6079,7 +6123,7 @@ const Scope *SymbolDatabase::findScopeByName(const std::string& name) const
 //---------------------------------------------------------------------------
 
 template<class S, class T, REQUIRES("S must be a Scope class", std::is_convertible<S*, const Scope*> ), REQUIRES("T must be a Type class", std::is_convertible<T*, const Type*> )>
-S* findRecordInNestedListImpl(S& thisScope, const std::string & name, bool isC)
+S* findRecordInNestedListImpl(S& thisScope, const std::string& name, bool isC, std::set<const Scope*>& visited)
 {
     for (S* scope: thisScope.nestedList) {
         if (scope->className == name && scope->type != Scope::eFunction)
@@ -6089,6 +6133,15 @@ S* findRecordInNestedListImpl(S& thisScope, const std::string & name, bool isC)
             if (nestedScope)
                 return nestedScope;
         }
+    }
+
+    for (const auto& u : thisScope.usingList) {
+        if (!u.scope || u.scope == &thisScope || visited.find(u.scope) != visited.end())
+            continue;
+        visited.emplace(u.scope);
+        S* nestedScope = findRecordInNestedListImpl<S, T>(const_cast<S&>(*u.scope), name, false, visited);
+        if (nestedScope)
+            return nestedScope;
     }
 
     T * nested_type = thisScope.findType(name);
@@ -6106,12 +6159,14 @@ S* findRecordInNestedListImpl(S& thisScope, const std::string & name, bool isC)
 
 const Scope* Scope::findRecordInNestedList(const std::string & name, bool isC) const
 {
-    return findRecordInNestedListImpl<const Scope, const Type>(*this, name, isC);
+    std::set<const Scope*> visited;
+    return findRecordInNestedListImpl<const Scope, const Type>(*this, name, isC, visited);
 }
 
 Scope* Scope::findRecordInNestedList(const std::string & name, bool isC)
 {
-    return findRecordInNestedListImpl<Scope, Type>(*this, name, isC);
+    std::set<const Scope*> visited;
+    return findRecordInNestedListImpl<Scope, Type>(*this, name, isC, visited);
 }
 
 //---------------------------------------------------------------------------

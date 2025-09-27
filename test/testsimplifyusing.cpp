@@ -70,6 +70,7 @@ private:
         TEST_CASE(simplifyUsing28);
         TEST_CASE(simplifyUsing29);
         TEST_CASE(simplifyUsing30);
+        TEST_CASE(simplifyUsing31);
 
         TEST_CASE(simplifyUsing8970);
         TEST_CASE(simplifyUsing8971);
@@ -754,6 +755,33 @@ private:
         }
     }
 
+    void simplifyUsing31() { // #11899
+        const char code[] = "struct B {\n"
+                            "    B();\n"
+                            "    void f();\n"
+                            "};\n"
+                            "struct D : B {\n"
+                            "    using B::B;\n"
+                            "    void g() {\n"
+                            "        B::f();\n"
+                            "    }\n"
+                            "    B b;\n"
+                            "};\n";
+        const char expected[] = "struct B { "
+                                "B ( ) ; "
+                                "void f ( ) ; "
+                                "} ; "
+                                "struct D : B { "
+                                "using B = B :: B ; "
+                                "void g ( ) { "
+                                "B :: f ( ) ; "
+                                "} "
+                                "B b ; "
+                                "} ;";
+        ASSERT_EQUALS(expected, tok(code, Platform::Type::Native, /*debugwarnings*/ true));
+        ASSERT_EQUALS("", errout_str());
+    }
+
     void simplifyUsing8970() {
         const char code[] = "using V = std::vector<int>;\n"
                             "struct A {\n"
@@ -856,9 +884,7 @@ private:
                            "}";
 
         ASSERT_EQUALS(exp, tok(code));
-        ASSERT_EQUALS("[test.cpp:7]: (debug) valueFlowConditionExpressions bailout: Skipping function due to incomplete variable NS1\n"
-                      "[test.cpp:11]: (debug) valueFlowConditionExpressions bailout: Skipping function due to incomplete variable NS2\n",
-                      errout_str());
+        ASSERT_EQUALS("", errout_str());
     }
 
     void simplifyUsing9381() {

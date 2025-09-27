@@ -870,7 +870,14 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
 
             // --library
             else if (std::strncmp(argv[i], "--library=", 10) == 0) {
-                mSettings.libraries.emplace_back(argv[i] + 10);
+                std::list<std::string> libs = splitString(argv[i] + 10, ',');
+                for (auto& l : libs) {
+                    if (l.empty()) {
+                        mLogger.printError("empty library specified.");
+                        return Result::Fail;
+                    }
+                    mSettings.libraries.emplace_back(std::move(l));
+                }
             }
 
             // Set maximum number of #ifdef configurations to check
@@ -1404,9 +1411,12 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
     else if ((def || mSettings.preprocessOnly) && !maxconfigs)
         mSettings.maxConfigs = 1U;
 
-    if (mSettings.checks.isEnabled(Checks::unusedFunction) && mSettings.jobs > 1 && mSettings.buildDir.empty()) {
-        // TODO: bail out
-        mLogger.printMessage("unusedFunction check can't be used with '-j' option. Disabling unusedFunction check.");
+    if (mSettings.jobs > 1 && mSettings.buildDir.empty()) {
+        // TODO: bail out instead?
+        if (mSettings.checks.isEnabled(Checks::unusedFunction))
+            mLogger.printMessage("unusedFunction check requires --cppcheck-build-dir to be active with -j.");
+        // TODO: enable
+        //mLogger.printMessage("whole program analysis requires --cppcheck-build-dir to be active with -j.");
     }
 
     if (!mPathNames.empty() && project.projectType != ImportProject::Type::NONE) {

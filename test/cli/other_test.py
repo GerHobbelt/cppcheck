@@ -265,7 +265,7 @@ def test_addon_ctu_exitcode(tmpdir):
     with open(test_file, 'wt') as f:
         f.write("""typedef enum { BLOCK =  0x80U, } E;""")
     args = ['--addon=misra', '--enable=style', '--error-exitcode=1', test_file]
-    exitcode, stdout, stderr = cppcheck(args)
+    exitcode, _, stderr = cppcheck(args)
     assert '2.3' in stderr, stderr
     assert exitcode == 1
 
@@ -587,7 +587,7 @@ def test_addon_namingng_config(tmpdir):
 
     test_file_basename = 'test.c'
     test_file = os.path.join(tmpdir, test_file_basename)
-    with open(test_file, 'a') as f:
+    with open(test_file, 'a'):
         # only create the file
         pass
 
@@ -852,7 +852,7 @@ def test_missing_addon(tmpdir):
 
 def test_file_filter(tmpdir):
     test_file = os.path.join(tmpdir, 'test.cpp')
-    with open(test_file, 'wt') as f:
+    with open(test_file, 'wt'):
         pass
 
     args = ['--file-filter=*.cpp', test_file]
@@ -865,10 +865,10 @@ def test_file_filter(tmpdir):
 
 def test_file_filter_2(tmpdir):
     test_file_1 = os.path.join(tmpdir, 'test.cpp')
-    with open(test_file_1, 'wt') as f:
+    with open(test_file_1, 'wt'):
         pass
     test_file_2 = os.path.join(tmpdir, 'test.c')
-    with open(test_file_2, 'wt') as f:
+    with open(test_file_2, 'wt'):
         pass
 
     args = ['--file-filter=*.cpp', test_file_1, test_file_2]
@@ -881,10 +881,10 @@ def test_file_filter_2(tmpdir):
 
 def test_file_filter_3(tmpdir):
     test_file_1 = os.path.join(tmpdir, 'test.cpp')
-    with open(test_file_1, 'wt') as f:
+    with open(test_file_1, 'wt'):
         pass
     test_file_2 = os.path.join(tmpdir, 'test.c')
-    with open(test_file_2, 'wt') as f:
+    with open(test_file_2, 'wt'):
         pass
 
     args = ['--file-filter=*.c', test_file_1, test_file_2]
@@ -942,16 +942,16 @@ def test_file_order(tmpdir):
 
 def test_markup(tmpdir):
     test_file_1 = os.path.join(tmpdir, 'test_1.qml')
-    with open(test_file_1, 'wt') as f:
+    with open(test_file_1, 'wt'):
         pass
     test_file_2 = os.path.join(tmpdir, 'test_2.cpp')
-    with open(test_file_2, 'wt') as f:
+    with open(test_file_2, 'wt'):
         pass
     test_file_3 = os.path.join(tmpdir, 'test_3.qml')
-    with open(test_file_3, 'wt') as f:
+    with open(test_file_3, 'wt'):
         pass
     test_file_4 = os.path.join(tmpdir, 'test_4.cpp')
-    with open(test_file_4, 'wt') as f:
+    with open(test_file_4, 'wt'):
         pass
 
     args = ['--library=qt', test_file_1, test_file_2, test_file_3, test_file_4, '-j1']
@@ -971,16 +971,16 @@ def test_markup(tmpdir):
 
 def test_markup_j(tmpdir):
     test_file_1 = os.path.join(tmpdir, 'test_1.qml')
-    with open(test_file_1, 'wt') as f:
+    with open(test_file_1, 'wt'):
         pass
     test_file_2 = os.path.join(tmpdir, 'test_2.cpp')
-    with open(test_file_2, 'wt') as f:
+    with open(test_file_2, 'wt'):
         pass
     test_file_3 = os.path.join(tmpdir, 'test_3.qml')
-    with open(test_file_3, 'wt') as f:
+    with open(test_file_3, 'wt'):
         pass
     test_file_4 = os.path.join(tmpdir, 'test_4.cpp')
-    with open(test_file_4, 'wt') as f:
+    with open(test_file_4, 'wt'):
         pass
 
     args = ['--library=qt', '-j2', test_file_1, test_file_2, test_file_3, test_file_4]
@@ -1030,7 +1030,6 @@ inline void f1()
 }
 """
                 )
-        pass
     test_file_h_2 = os.path.join(tmpdir, 'test2.h')
     with open(test_file_h_2, 'wt') as f:
         f.write("""
@@ -1563,10 +1562,10 @@ def test_filelist(tmpdir):
 
 def test_markup_lang(tmpdir):
     test_file_1 = os.path.join(tmpdir, 'test_1.qml')
-    with open(test_file_1, 'wt') as f:
+    with open(test_file_1, 'wt'):
         pass
     test_file_2 = os.path.join(tmpdir, 'test_2.cpp')
-    with open(test_file_2, 'wt') as f:
+    with open(test_file_2, 'wt'):
         pass
 
     # do not assert processing markup file with enforced language
@@ -1728,3 +1727,38 @@ def test_lib_lookup_nofile(tmpdir):
         "looking for library '{}/cfg/gtk.cfg'".format(exepath),
         'Checking {} ...'.format(test_file)
     ]
+
+
+def test_lib_lookup_multi(tmpdir):
+    test_file = os.path.join(tmpdir, 'test.c')
+    with open(test_file, 'wt'):
+        pass
+
+    exitcode, stdout, _, exe = cppcheck_ex(['--library=posix,gnu', '--debug-lookup', test_file])
+    exepath = os.path.dirname(exe)
+    if sys.platform == 'win32':
+        exepath = exepath.replace('\\', '/')
+    assert exitcode == 0, stdout
+    lines = __remove_std_lookup_log(stdout.splitlines(), exepath)
+    assert lines == [
+        "looking for library 'posix'",
+        "looking for library 'posix.cfg'",
+        "looking for library '{}/posix.cfg'".format(exepath),
+        "looking for library '{}/cfg/posix.cfg'".format(exepath),
+        "looking for library 'gnu'",
+        "looking for library 'gnu.cfg'",
+        "looking for library '{}/gnu.cfg'".format(exepath),
+        "looking for library '{}/cfg/gnu.cfg'".format(exepath),
+        'Checking {} ...'.format(test_file)
+    ]
+
+
+def test_checkers_report(tmpdir):
+    test_file = os.path.join(tmpdir, 'test.c')
+    with open(test_file, 'wt') as f:
+        f.write('x=1;')
+    checkers_report = os.path.join(tmpdir, 'r.txt')
+    exitcode, stdout, stderr = cppcheck(['--enable=all', '--checkers-report=' + checkers_report, test_file], remove_checkers_report=False)
+    assert exitcode == 0, stdout
+    assert 'Active checkers:' in stderr
+    assert '--checkers-report' not in stderr

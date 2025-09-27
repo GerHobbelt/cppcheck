@@ -37,6 +37,7 @@
 
 #include <algorithm> // find_if()
 #include <cctype>
+#include <cstdint>
 #include <list>
 #include <map>
 #include <set>
@@ -363,6 +364,63 @@ void CheckOther::cstyleCastError(const Token *tok, bool isPtr)
                 "static_cast, const_cast, dynamic_cast and reinterpret_cast. A C-style cast could evaluate to "
                 "any of those automatically, thus it is considered safer if the programmer explicitly states "
                 "which kind of cast is expected.", CWE398, Certainty::normal);
+}
+
+void CheckOther::suspiciousFloatingPointCast()
+{
+    if (!mSettings->severity.isEnabled(Severity::style) && !mSettings->isPremiumEnabled("suspiciousFloatingPointCast"))
+        return;
+
+    logChecker("CheckOther::suspiciousFloatingPointCast"); // style
+
+    const SymbolDatabase *symbolDatabase = mTokenizer->getSymbolDatabase();
+    for (const Scope * scope : symbolDatabase->functionScopes) {
+        const Token* tok = scope->bodyStart;
+        if (scope->function && scope->function->isConstructor())
+            tok = scope->classDef;
+        for (; tok && tok != scope->bodyEnd; tok = tok->next()) {
+
+            if (!tok->isCast())
+                continue;
+
+            const ValueType* vt = tok->valueType();
+            if (!vt || vt->pointer || vt->reference != Reference::None || (vt->type != ValueType::FLOAT && vt->type != ValueType::DOUBLE))
+                continue;
+
+            using VTT = std::vector<ValueType::Type>;
+            const VTT sourceTypes = vt->type == ValueType::FLOAT ? VTT{ ValueType::DOUBLE, ValueType::LONGDOUBLE } : VTT{ ValueType::LONGDOUBLE };
+
+            const Token* source = tok->astOperand2() ? tok->astOperand2() : tok->astOperand1();
+            if (!source || !source->valueType() || std::find(sourceTypes.begin(), sourceTypes.end(), source->valueType()->type) == sourceTypes.end())
+                continue;
+
+            const Token* parent = tok->astParent();
+            if (!parent)
+                continue;
+
+            const ValueType* parentVt = parent->valueType();
+            if (!parentVt || parent->str() == "(") {
+                int argn{};
+                if (const Token* ftok = getTokenArgumentFunction(tok, argn)) {
+                    if (ftok->function()) {
+                        if (const Variable* argVar = ftok->function()->getArgumentVar(argn))
+                            parentVt = argVar->valueType();
+                    }
+                }
+            }
+            if (!parentVt || std::find(sourceTypes.begin(), sourceTypes.end(), parentVt->type) == sourceTypes.end())
+                continue;
+
+            suspiciousFloatingPointCastError(tok);
+        }
+    }
+}
+
+void CheckOther::suspiciousFloatingPointCastError(const Token* tok)
+{
+    reportError(tok, Severity::style, "suspiciousFloatingPointCast",
+                "Floating-point cast causes loss of precision.\n"
+                "If this cast is not intentional, remove it to avoid loss of precision", CWE398, Certainty::normal);
 }
 
 //---------------------------------------------------------------------------
@@ -1249,6 +1307,25 @@ void CheckOther::commaSeparatedReturnError(const Token *tok)
                 "macro is then used in a return statement, it is less likely such code is misunderstood.", CWE398, Certainty::normal);
 }
 
+static bool isLargeContainer(const Variable* var, const Settings* settings)
+{
+    const ValueType* vt = var->valueType();
+    if (vt->container->size_templateArgNo < 0)
+        return true;
+    const std::size_t maxByValueSize = 2 * settings->platform.sizeof_pointer;
+    if (var->dimensions().empty()) {
+        if (vt->container->startPattern == "std :: bitset <") {
+            if (vt->containerTypeToken->hasKnownIntValue())
+                return vt->containerTypeToken->getKnownIntValue() / 8 > maxByValueSize;
+        }
+        return false;
+    }
+    const ValueType vtElem = ValueType::parseDecl(vt->containerTypeToken, *settings);
+    const auto elemSize = std::max<std::size_t>(ValueFlow::getSizeOf(vtElem, *settings), 1);
+    const auto arraySize = var->dimension(0) * elemSize;
+    return arraySize > maxByValueSize;
+}
+
 void CheckOther::checkPassByReference()
 {
     if (!mSettings->severity.isEnabled(Severity::performance) || mTokenizer->isC())
@@ -1259,7 +1336,7 @@ void CheckOther::checkPassByReference()
     const SymbolDatabase * const symbolDatabase = mTokenizer->getSymbolDatabase();
 
     for (const Variable* var : symbolDatabase->variableList()) {
-        if (!var || !var->isClass() || var->isPointer() || var->isArray() || var->isReference() || var->isEnumType())
+        if (!var || !var->isClass() || var->isPointer() || (var->isArray() && !var->isStlType()) || var->isReference() || var->isEnumType())
             continue;
 
         const bool isRangeBasedFor = astIsRangeBasedForDecl(var->nameToken());
@@ -1277,6 +1354,8 @@ void CheckOther::checkPassByReference()
         bool inconclusive = false;
 
         const bool isContainer = var->valueType() && var->valueType()->type == ValueType::Type::CONTAINER && var->valueType()->container && !var->valueType()->container->view;
+        if (isContainer && !isLargeContainer(var, mSettings))
+            continue;
         if (!isContainer) {
             if (var->type() && !var->type()->isEnumType()) { // Check if type is a struct or class.
                 // Ensure that it is a large object.
@@ -2920,9 +2999,11 @@ void CheckOther::checkRedundantCopy()
         const Token* startTok = var->nameToken();
         if (startTok->strAt(1) == "=") // %type% %name% = ... ;
             ;
-        else if (Token::Match(startTok->next(), "(|{") && var->isClass() && var->typeScope()) {
+        else if (Token::Match(startTok->next(), "(|{") && var->isClass()) {
+            if (!var->typeScope() && !(var->valueType() && var->valueType()->container))
+                continue;
             // Object is instantiated. Warn if constructor takes arguments by value.
-            if (constructorTakesReference(var->typeScope()))
+            if (var->typeScope() && constructorTakesReference(var->typeScope()))
                 continue;
         } else if (Token::simpleMatch(startTok->next(), ";") && startTok->next()->isSplittedVarDeclEq()) {
             startTok = startTok->tokAt(2);
@@ -2934,7 +3015,7 @@ void CheckOther::checkRedundantCopy()
             continue;
         if (!Token::Match(tok->previous(), "%name% ("))
             continue;
-        if (!Token::Match(tok->link(), ") )| ;")) // bailout for usage like "const A a = getA()+3"
+        if (!Token::Match(tok->link(), ") )|}| ;")) // bailout for usage like "const A a = getA()+3"
             continue;
 
         const Token* dot = tok->astOperand1();

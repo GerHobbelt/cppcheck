@@ -4788,7 +4788,6 @@ void stdbind_helper(int a)
 
 void stdbind()
 {
-    // cppcheck-suppress valueFlowBailoutIncompleteVar
     using namespace std::placeholders;
 
     // TODO cppcheck-suppress ignoredReturnValue #9369
@@ -5127,4 +5126,36 @@ std::size_t variableScope_cstr(const char* p) {
         p = variableScope_cstr_dummy(s.c_str());
     }
     return std::strlen(p);
+}
+
+void unusedvar_stringstream(const char* p)
+{
+    // cppcheck-suppress unreadVariable
+    std::istringstream istr(p);
+    // cppcheck-suppress unreadVariable
+    std::ostringstream ostr(p);
+    // cppcheck-suppress unreadVariable
+    std::stringstream sstr(p);
+}
+
+int passedByValue_std_array1(std::array<int, 2> a)
+{
+    return a[0] + a[1];
+}
+
+// cppcheck-suppress passedByValue
+int passedByValue_std_array2(std::array<int, 200> a)
+{
+    return a[0] + a[1];
+}
+
+int passedByValue_std_bitset1(std::bitset<4> bs) // #12961
+{
+    return bs.size();
+}
+
+// cppcheck-suppress passedByValue
+int passedByValue_std_bitset2(std::bitset<256> bs)
+{
+    return bs.size();
 }

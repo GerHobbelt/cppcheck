@@ -25,6 +25,7 @@
 #include "standards.h"
 #include "symboldatabase.h"
 #include "token.h"
+#include "tokenlist.h"
 #include "valueflow.h"
 
 #include "vf_settokenvalue.h"
@@ -33,6 +34,7 @@
 #include <cstddef>
 #include <exception>
 #include <limits>
+#include <sstream>
 #include <utility>
 #include <vector>
 
@@ -91,6 +93,18 @@ namespace ValueFlow
         }
 
         return true;
+    }
+
+    bool getMinMaxValues(const std::string &typestr, const Settings &settings, bool cpp, MathLib::bigint &minvalue, MathLib::bigint &maxvalue)
+    {
+        TokenList typeTokens(&settings);
+        std::istringstream istr(typestr+";");
+        if (!typeTokens.createTokens(istr, cpp ? Standards::Language::CPP : Standards::Language::C))
+            return false;
+        typeTokens.simplifyPlatformTypes();
+        typeTokens.simplifyStdType();
+        const ValueType &vt = ValueType::parseDecl(typeTokens.front(), settings);
+        return getMinMaxValues(&vt, settings.platform, minvalue, maxvalue);
     }
 
     long long truncateIntValue(long long value, size_t value_size, const ValueType::Sign dst_sign)
@@ -379,5 +393,15 @@ namespace ValueFlow
         std::string s = Path::stripDirectoryPart(file) + ":" + std::to_string(ctx.line()) + ": " + ctx.function_name() +
                         " => " + local.function_name() + ": " + debugString(v);
         v.debugPath.emplace_back(tok, std::move(s));
+    }
+
+    std::list<Value> getIteratorValues(std::list<Value> values, const Value::ValueKind* kind)
+    {
+        values.remove_if([&](const Value& v) {
+            if (kind && v.valueKind != *kind)
+                return true;
+            return !v.isIteratorValue();
+        });
+        return values;
     }
 }

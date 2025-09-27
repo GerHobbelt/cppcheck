@@ -28,6 +28,7 @@
 #include "utils.h"
 #include "vfvalue.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <cstddef>
@@ -37,6 +38,7 @@
 #include <ostream>
 #include <set>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -751,13 +753,13 @@ public:
 
     bool isCChar() const {
         return (((mTokType == eString) && isPrefixStringCharLiteral(mStr, '"', emptyString)) ||
-                ((mTokType ==  eChar) && isPrefixStringCharLiteral(mStr, '\'', emptyString) && mStr.length() == 3));
+                ((mTokType == eChar) && isPrefixStringCharLiteral(mStr, '\'', emptyString) && (replaceEscapeSequences(getCharLiteral(mStr)).size() == 1)));
     }
 
     bool isCMultiChar() const {
-        return (((mTokType ==  eChar) && isPrefixStringCharLiteral(mStr, '\'', emptyString)) &&
-                (mStr.length() > 3));
+        return (mTokType == eChar) && isPrefixStringCharLiteral(mStr, '\'', emptyString) && (replaceEscapeSequences(getCharLiteral(mStr)).size() > 1);
     }
+
     /**
      * @brief Is current token a template argument?
      *
@@ -1417,9 +1419,6 @@ private:
 
     /** Update internal property cache about isStandardType() */
     void update_property_isStandardType();
-
-    /** Update internal property cache about string and char literals */
-    void update_property_char_string_literal();
 
     /** Internal helper function to avoid excessive string allocations */
     void astStringVerboseRecursive(std::string& ret, const nonneg int indent1 = 0, const nonneg int indent2 = 0) const;

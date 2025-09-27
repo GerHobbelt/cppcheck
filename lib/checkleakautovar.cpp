@@ -39,7 +39,6 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
-#include <iostream>
 #include <list>
 #include <vector>
 
@@ -259,6 +258,30 @@ static const Token * isFunctionCall(const Token * nameToken)
             // returning opening parenthesis pointer
             return nameToken;
         }
+    }
+    return nullptr;
+}
+
+static const Token* getOutparamAllocation(const Token* tok, const Settings& settings)
+{
+    if (!tok)
+        return nullptr;
+    int argn{};
+    const Token* ftok = getTokenArgumentFunction(tok, argn);
+    if (!ftok)
+        return nullptr;
+    if (const Library::AllocFunc* allocFunc = settings.library.getAllocFuncInfo(ftok)) {
+        if (allocFunc->arg == argn + 1)
+            return ftok;
+    }
+    return nullptr;
+}
+
+static const Token* getReturnValueFromOutparamAlloc(const Token* alloc, const Settings& settings)
+{
+    if (const Token* ftok = getOutparamAllocation(alloc, settings)) {
+        if (Token::simpleMatch(ftok->astParent()->astParent(), "="))
+            return ftok->next()->astParent()->astOperand1();
     }
     return nullptr;
 }
@@ -526,6 +549,15 @@ bool CheckLeakAutoVar::checkScope(const Token * const startToken,
                         if (astIsVariableComparison(tok3, "!=", "0", &vartok) &&
                             (notzero.find(vartok->varId()) != notzero.end()))
                             varInfo2.clear();
+
+                        if (std::any_of(varInfo1.alloctype.begin(), varInfo1.alloctype.end(), [&](const std::pair<int, VarInfo::AllocInfo>& info) {
+                            if (info.second.status != VarInfo::ALLOC)
+                                return false;
+                            const Token* ret = getReturnValueFromOutparamAlloc(info.second.allocTok, *mSettings);
+                            return ret && vartok && ret->varId() && ret->varId() == vartok->varId();
+                        })) {
+                            varInfo1.clear();
+                        }
                     } else if (isVarTokComparison(tok3, &vartok, alloc_failed_conds)) {
                         varInfo1.reallocToAlloc(vartok->varId());
                         varInfo1.erase(vartok->varId());
@@ -1054,21 +1086,6 @@ void CheckLeakAutoVar::leakIfAllocated(const Token *vartok,
             configurationInfo(vartok, use->second);
         }
     }
-}
-
-static const Token* getOutparamAllocation(const Token* tok, const Settings& settings)
-{
-    if (!tok)
-        return nullptr;
-    int argn{};
-    const Token* ftok = getTokenArgumentFunction(tok, argn);
-    if (!ftok)
-        return nullptr;
-    if (const Library::AllocFunc* allocFunc = settings.library.getAllocFuncInfo(ftok)) {
-        if (allocFunc->arg == argn + 1)
-            return ftok;
-    }
-    return nullptr;
 }
 
 void CheckLeakAutoVar::ret(const Token *tok, VarInfo &varInfo, const bool isEndOfScope)

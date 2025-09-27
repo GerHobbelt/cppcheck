@@ -124,6 +124,7 @@ private:
         TEST_CASE(suspiciousCase);
         TEST_CASE(suspiciousEqualityComparison);
         TEST_CASE(suspiciousUnaryPlusMinus); // #8004
+        TEST_CASE(suspiciousFloatingPointCast);
 
         TEST_CASE(selfAssignment);
         TEST_CASE(trac1132);
@@ -3636,6 +3637,16 @@ private:
               "    g(r[0] * 2);\n"
               "}\n");
         ASSERT_EQUALS("[test.cpp:6]: (style) Variable 'r' can be declared as reference to const\n", errout_str());
+
+        check("std::iostream& get();\n" // #12940
+              "std::iostream& Fun() {\n"
+              "    auto lam = []() -> std::iostream& {\n"
+              "        std::iostream& ios = get();\n"
+              "        return ios;\n"
+              "    };\n"
+              "    return lam();\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
     }
 
     void constParameterCallback() {
@@ -5591,6 +5602,33 @@ private:
               "}\n");
         ASSERT_EQUALS("[test.cpp:2]: (warning, inconclusive) Found suspicious operator '+', result is not used.\n"
                       "[test.cpp:3]: (warning, inconclusive) Found suspicious operator '-', result is not used.\n",
+                      errout_str());
+    }
+
+    void suspiciousFloatingPointCast() {
+        check("double f(double a, double b, float c) {\n"
+              "    return a + (float)b + c;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Floating-point cast causes loss of precision.\n", errout_str());
+
+        check("double f(double a, double b, float c) {\n"
+              "    return a + static_cast<float>(b) + c;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Floating-point cast causes loss of precision.\n", errout_str());
+
+        check("long double f(long double a, long double b, float c) {\n"
+              "    return a + (double)b + c;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Floating-point cast causes loss of precision.\n", errout_str());
+
+        check("void g(int, double);\n"
+              "void h(double);\n"
+              "void f(double d) {\n"
+              "    g(1, (float)d);\n"
+              "    h((float)d);\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:4]: (style) Floating-point cast causes loss of precision.\n"
+                      "[test.cpp:5]: (style) Floating-point cast causes loss of precision.\n",
                       errout_str());
     }
 
@@ -9046,6 +9084,22 @@ private:
         TODO_ASSERT_EQUALS("",
                            "[test.cpp:16] -> [test.cpp:18]: (style) The comparison 'c == m->get()' is always true because 'c' and 'm->get()' represent the same value.\n",
                            errout_str());
+
+        check("struct S {\n" // #12925
+              "    const std::string & f() const { return str; }\n"
+              "    std::string str;\n"
+              "};\n"
+              "void f(const S* s) {\n"
+              "    const std::string v{ s->f() };\n"
+              "    if (v.empty()) {}\n"
+              "}\n"
+              "void g(const S* s) {\n"
+              "    const std::string w(s->f());\n"
+              "    if (w.empty()) {}\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:6]: (performance, inconclusive) Use const reference for 'v' to avoid unnecessary data copying.\n"
+                      "[test.cpp:10]: (performance, inconclusive) Use const reference for 'w' to avoid unnecessary data copying.\n",
+                      errout_str());
 
         check("struct T {\n"
               "    std::string s;\n"

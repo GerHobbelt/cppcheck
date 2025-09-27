@@ -103,14 +103,19 @@ static const std::unordered_set<std::string> controlFlowKeywords = {
 void Token::update_property_info()
 {
     setFlag(fIsControlFlowKeyword, controlFlowKeywords.find(mStr) != controlFlowKeywords.end());
+    isStandardType(false);
 
     if (!mStr.empty()) {
         if (mStr == "true" || mStr == "false")
             tokType(eBoolean);
-        else if (isStringLiteral(mStr))
+        else if (isStringLiteral(mStr)) {
             tokType(eString);
-        else if (isCharLiteral(mStr))
+            isLong(isPrefixStringCharLiteral(mStr, '"', "L"));
+        }
+        else if (isCharLiteral(mStr)) {
             tokType(eChar);
+            isLong(isPrefixStringCharLiteral(mStr, '\'', "L"));
+        }
         else if (std::isalpha((unsigned char)mStr[0]) || mStr[0] == '_' || mStr[0] == '$') { // Name
             if (mImpl->mVarId)
                 tokType(eVariable);
@@ -157,12 +162,11 @@ void Token::update_property_info()
             tokType(eEllipsis);
         else
             tokType(eOther);
+
+        update_property_isStandardType();
     } else {
         tokType(eNone);
     }
-
-    update_property_char_string_literal();
-    update_property_isStandardType();
 }
 
 static const std::unordered_set<std::string> stdTypes = { "bool"
@@ -180,24 +184,13 @@ static const std::unordered_set<std::string> stdTypes = { "bool"
 
 void Token::update_property_isStandardType()
 {
-    isStandardType(false);
-
-    if (mStr.size() < 3)
+    if (mStr.size() < 3 || mStr.size() > 7)
         return;
 
     if (stdTypes.find(mStr)!=stdTypes.end()) {
         isStandardType(true);
         tokType(eType);
     }
-}
-
-void Token::update_property_char_string_literal()
-{
-    if (mTokType != Token::eString && mTokType != Token::eChar)
-        return;
-
-    isLong(((mTokType == Token::eString) && isPrefixStringCharLiteral(mStr, '"', "L")) ||
-           ((mTokType == Token::eChar) && isPrefixStringCharLiteral(mStr, '\'', "L")));
 }
 
 bool Token::isUpperCaseName() const
@@ -729,29 +722,10 @@ nonneg int Token::getStrLength(const Token *tok)
     assert(tok != nullptr);
     assert(tok->mTokType == eString);
 
-    int len = 0;
-    // cppcheck-suppress shadowFunction - TODO: fix this
-    const std::string str(getStringLiteral(tok->str()));
-    std::string::const_iterator it = str.cbegin();
-    const std::string::const_iterator end = str.cend();
+    const std::string s(replaceEscapeSequences(getStringLiteral(tok->str())));
 
-    while (it != end) {
-        if (*it == '\\') {
-            ++it;
-
-            // string ends at '\0'
-            if (*it == '0')
-                return len;
-        }
-
-        if (*it == '\0')
-            return len;
-
-        ++it;
-        ++len;
-    }
-
-    return len;
+    const auto pos = s.find('\0');
+    return pos < s.size() ? pos : s.size();
 }
 
 nonneg int Token::getStrArraySize(const Token *tok)
@@ -916,7 +890,7 @@ const Token * Token::findClosingBracket() const
         }
         // save named template parameter
         else if (templateParameter && depth == 1 && Token::Match(closing, "[,=]") &&
-                 closing->previous()->isName() && !Token::Match(closing->previous(), "class|typename|."))
+                 closing->previous()->isName() && !Token::Match(closing->previous(), "class|typename|.") && !Token::Match(closing->tokAt(-2), "=|::"))
             templateParameters.insert(closing->strAt(-1));
     }
 

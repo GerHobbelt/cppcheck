@@ -571,6 +571,8 @@ void Tokenizer::simplifyUsingToTypedef()
             while (Token::Match(endtok, ":: %name%"))
                 endtok = endtok->tokAt(2);
             if (endtok && endtok->str() == ";") {
+                if (endtok->strAt(-1) == endtok->strAt(-3))
+                    continue;
                 tok->next()->str("typedef");
                 endtok = endtok->previous();
                 endtok->insertToken(endtok->str());
@@ -792,7 +794,8 @@ namespace {
             }
 
             if (Token::Match(tok, "%name% ::")) {
-                if (Token::Match(mRangeType.first, "const| struct|class %name% %name% ;")) {
+                if (Token::Match(mRangeType.first, "const| struct|class|union|enum %name% %name%|{") ||
+                    Token::Match(mRangeType.first, "%name% %name% ;")) {
                     tok->originalName(tok->str());
                     tok->str(mRangeType.second->strAt(-1));
                 } else {

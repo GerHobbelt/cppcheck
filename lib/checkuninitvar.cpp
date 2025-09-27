@@ -183,7 +183,7 @@ void CheckUninitVar::checkScope(const Scope* scope, const std::set<std::string> 
         if (!tok)
             continue;
 
-        if (tok->astParent() && Token::simpleMatch(tok->astParent()->previous(), "for (") &&
+        if (tok->astParent() && Token::simpleMatch(tok->astParent()->previous(), "for (") && Token::simpleMatch(tok->astParent()->link()->next(), "{") &&
             checkLoopBody(tok->astParent()->link()->next(), var, var.isArray() ? ARRAY : NO_ALLOC, emptyString, true))
             continue;
 
@@ -1287,7 +1287,7 @@ const Token* CheckUninitVar::isVariableUsage(const Token *vartok, const Library&
     if (Token::Match((derefValue ? derefValue : vartok)->astParent(), "(|=") && astIsRhs(derefValue ? derefValue : vartok)) {
         const Token *rhstok = derefValue ? derefValue : vartok;
         const Token *lhstok = rhstok->astParent()->astOperand1();
-        const Variable *lhsvar = lhstok->variable();
+        const Variable *lhsvar = lhstok ? lhstok->variable() : nullptr;
         if (lhsvar && lhsvar->isReference() && lhsvar->nameToken() == lhstok)
             return nullptr;
     }

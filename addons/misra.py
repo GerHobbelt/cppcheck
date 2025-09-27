@@ -2581,8 +2581,6 @@ class MisraChecker:
         for token in data.tokenlist:
             if not isCast(token):
                 continue
-            if token.astOperand1.astOperand1:
-                continue
             vt1 = token.valueType
             vt2 = token.astOperand1.valueType
             if not vt1 or not vt2:
@@ -3329,6 +3327,9 @@ class MisraChecker:
             end_token = tok.link
             while tok != end_token:
                 tok = tok.next
+                if tok.str == 'sizeof' and tok.next.str == '(':
+                    tok = tok.next.link
+                    continue
                 if tok.str == "(" and tok.isCast:
                     tok = tok.link
                     continue
@@ -4256,6 +4257,7 @@ class MisraChecker:
                 self.addSuppressedRule(ruleNum)
 
     def report_config_error(self, location, errmsg):
+        errmsg = 'Because of missing configuration, misra checking is incomplete. There can be false negatives! ' + errmsg
         cppcheck_severity = 'error'
         error_id = 'config'
         if self.settings.verify:
@@ -4280,14 +4282,6 @@ class MisraChecker:
             errorId = 'c2012-' + str(num1) + '.' + str(num2)
             misra_severity = 'Undefined'
             cppcheck_severity = 'style'
-            if self.path_premium_addon and ruleNum not in self.ruleTexts:
-                for line in cppcheckdata.cmd_output([self.path_premium_addon, '--cli', '--get-rule-text=' + errorId]).split('\n'):
-                    if len(line) > 1 and not line.startswith('{'):
-                        errmsg = line.strip()
-                        rule = Rule(num1, num2)
-                        rule.text = errmsg
-                        self.ruleTexts[rule.num] = rule
-                        break
             if ruleNum in self.ruleTexts:
                 errmsg = self.ruleTexts[ruleNum].text
                 if self.ruleTexts[ruleNum].misra_severity:

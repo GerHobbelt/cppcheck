@@ -270,6 +270,8 @@ private:
         TEST_CASE(memberFunctionOfUnknownClassMacro2);
         TEST_CASE(memberFunctionOfUnknownClassMacro3);
         TEST_CASE(functionLinkage);
+        TEST_CASE(externalFunctionsInsideAFunction);    // #12420
+        TEST_CASE(namespacedFunctionInsideExternBlock); // #12420
 
         TEST_CASE(classWithFriend);
 
@@ -1411,6 +1413,53 @@ private:
             ASSERT(p->valueType()->volatileness == 2);
             ASSERT(p->valueType()->reference == Reference::None);
         }
+        {
+            GET_SYMBOL_DB_C("typedef unsigned char uint8_t;\n uint8_t ubVar = 0;\n");
+            const Variable* const p = db->getVariableFromVarId(1);
+            ASSERT(p->valueType());
+            ASSERT(p->valueType()->pointer == 0);
+            ASSERT(p->valueType()->constness == 0);
+            ASSERT(p->valueType()->volatileness == 0);
+            ASSERT(p->valueType()->originalTypeName == "uint8_t");
+            ASSERT(p->valueType()->reference == Reference::None);
+        }
+        {
+            GET_SYMBOL_DB_C("typedef enum eEnumDef {CPPCHECK=0}eEnum_t;\n eEnum_t eVar = CPPCHECK;\n");
+            const Variable* const p = db->getVariableFromVarId(1);
+            ASSERT(p->valueType());
+            ASSERT(p->valueType()->pointer == 0);
+            ASSERT(p->valueType()->constness == 0);
+            ASSERT(p->valueType()->volatileness == 0);
+            ASSERT(p->valueType()->originalTypeName == "eEnum_t");
+            ASSERT(p->valueType()->reference == Reference::None);
+        }
+        {
+            GET_SYMBOL_DB_C("typedef unsigned char uint8_t;\n typedef struct stStructDef {uint8_t ubTest;}stStruct_t;\n stStruct_t stVar;\n");
+            const Variable* p = db->getVariableFromVarId(1);
+            ASSERT(p->valueType());
+            ASSERT(p->valueType()->pointer == 0);
+            ASSERT(p->valueType()->constness == 0);
+            ASSERT(p->valueType()->volatileness == 0);
+            ASSERT(p->valueType()->originalTypeName == "uint8_t");
+            ASSERT(p->valueType()->reference == Reference::None);
+            p = db->getVariableFromVarId(2);
+            ASSERT(p->valueType());
+            ASSERT(p->valueType()->pointer == 0);
+            ASSERT(p->valueType()->constness == 0);
+            ASSERT(p->valueType()->volatileness == 0);
+            ASSERT(p->valueType()->originalTypeName == "stStruct_t");
+            ASSERT(p->valueType()->reference == Reference::None);
+        }
+        {
+            GET_SYMBOL_DB_C("typedef int (*ubFunctionPointer_fp)(int);\n void test(ubFunctionPointer_fp functionPointer);\n");
+            const Variable* const p = db->getVariableFromVarId(1);
+            ASSERT(p->valueType());
+            ASSERT(p->valueType()->pointer == 1);
+            ASSERT(p->valueType()->constness == 0);
+            ASSERT(p->valueType()->volatileness == 0);
+            ASSERT(p->valueType()->originalTypeName == "ubFunctionPointer_fp");
+            ASSERT(p->valueType()->reference == Reference::None);
+        }
     }
 
     void VariableValueTypeTemplate() {
@@ -2359,6 +2408,36 @@ private:
 
         f = Token::findsimplematch(tokenizer.tokens(), "f6");
         ASSERT(f && f->function() && !f->function()->isExtern() && f->function()->retDef->str() == "void");
+    }
+
+    void externalFunctionsInsideAFunction() {
+        GET_SYMBOL_DB("void foo( void )\n"
+                      "{\n"
+                      "    extern void bar( void );\n"
+                      "    bar();\n"
+                      "}\n");
+
+        ASSERT(db && errout.str().empty());
+
+        const Token *f = Token::findsimplematch(tokenizer.tokens(), "bar");
+        ASSERT(f && f->function() && f->function()->isExtern() && f == f->function()->tokenDef && f->function()->retDef->str() == "void");
+
+        const Token *call = Token::findsimplematch(f->next(), "bar");
+        ASSERT(call && call->function() == f->function());
+    }
+
+    void namespacedFunctionInsideExternBlock() {
+        // Should not crash
+        GET_SYMBOL_DB("namespace N {\n"
+                      "    void f();\n"
+                      "}\n"
+                      "extern \"C\" {\n"
+                      "    void f() {\n"
+                      "        N::f();\n"
+                      "    }\n"
+                      "}\n");
+
+        ASSERT(db && errout.str().empty());
     }
 
     void classWithFriend() {

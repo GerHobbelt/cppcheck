@@ -737,6 +737,38 @@ void SymbolDatabase::createSymbolDatabaseFindAllScopes()
                 } else {
                     tok = tok->link();
                 }
+            } else if (Token::Match(tok, "extern %type%")) {
+                const Token * ftok = tok->next();
+                while (Token::Match(ftok, "%name%|*|&"))
+                    ftok = ftok->next();
+                if (!ftok || ftok->str() != "(")
+                    continue;
+                ftok = ftok->previous();
+                if (Token::simpleMatch(ftok->linkAt(1), ") ;")) {
+                    const Token *funcStart = nullptr;
+                    const Token *argStart = nullptr;
+                    const Token *declEnd = nullptr;
+                    if (isFunction(ftok, scope, &funcStart, &argStart, &declEnd)) {
+                        if (declEnd && declEnd->str() == ";") {
+                            bool newFunc = true; // Is this function already in the database?
+                            auto range = scope->functionMap.equal_range(ftok->str());
+                            for (std::multimap<std::string, const Function*>::const_iterator it = range.first; it != range.second; ++it) {
+                                if (it->second->argsMatch(scope, it->second->argDef, argStart, emptyString, 0)) {
+                                    newFunc = false;
+                                    break;
+                                }
+                            }
+                            // save function prototype in database
+                            if (newFunc) {
+                                Function function(ftok, scope, funcStart, argStart);
+                                if (function.isExtern()) {
+                                    scope->addFunction(std::move(function));
+                                    tok = declEnd;
+                                }
+                            }
+                        }
+                    }
+                }
             }
             // syntax error?
             if (!scope)
@@ -1591,7 +1623,10 @@ namespace {
             return;
         const Token* op2 = tok->astParent()->astOperand2();
         if (op2 && op2->exprId() == 0 &&
-            !(isLambdaCaptureList(op2) || (op2->str() == "(" && isLambdaCaptureList(op2->astOperand1())) || Token::simpleMatch(op2, "{ }")))
+            !((tok->astParent()->astParent() && tok->astParent()->isAssignmentOp() && tok->astParent()->astParent()->isAssignmentOp()) ||
+              isLambdaCaptureList(op2) ||
+              (op2->str() == "(" && isLambdaCaptureList(op2->astOperand1())) ||
+              Token::simpleMatch(op2, "{ }")))
             return;
 
         if (tok->astParent()->isExpandedMacro() || Token::Match(tok->astParent(), "++|--")) {
@@ -4249,6 +4284,14 @@ void SymbolDatabase::printXml(std::ostream &out) const
                         outs += accessControlToString(function->access);
                         outs +="\"";
                     }
+                    if (function->isOperator())
+                        outs += " isOperator=\"true\"";
+                    if (function->isExplicit())
+                        outs += " isExplicit=\"true\"";
+                    if (function->hasOverrideSpecifier())
+                        outs += " hasOverrideSpecifier=\"true\"";
+                    if (function->hasFinalSpecifier())
+                        outs += " hasFinalSpecifier=\"true\"";
                     if (function->isInlineKeyword())
                         outs += " isInlineKeyword=\"true\"";
                     if (function->isStatic())
@@ -4666,6 +4709,14 @@ const Function * Function::getOverriddenFunctionRecursive(const ::Type* baseType
             }
         }
 
+        if (isDestructor()) {
+            auto it = std::find_if(parent->functionList.begin(), parent->functionList.end(), [](const Function& f) {
+                return f.isDestructor() && f.isImplicitlyVirtual();
+            });
+            if (it != parent->functionList.end())
+                return &*it;
+        }
+
         if (!derivedFromType->derivedFrom.empty() && !derivedFromType->hasCircularDependencies() && !isDerivedFromItself(baseType->classScope->className, i.name)) {
             // avoid endless recursion, see #5289 Crash: Stack overflow in isImplicitlyVirtual_rec when checking SVN and
             // #5590 with a loop within the class hierarchy.
@@ -4990,7 +5041,7 @@ static const Token* skipPointers(const Token* tok)
 {
     while (Token::Match(tok, "*|&|&&") || (Token::Match(tok, "( [*&]") && Token::Match(tok->link()->next(), "(|["))) {
         tok = tok->next();
-        if (tok->strAt(-1) == "(" && Token::Match(tok, "%type% ::"))
+        if (tok && tok->strAt(-1) == "(" && Token::Match(tok, "%type% ::"))
             tok = tok->tokAt(2);
     }
 
@@ -5902,6 +5953,9 @@ const Function* SymbolDatabase::findFunction(const Token* const tok) const
     // find the scope this function is in
     const Scope *currScope = tok->scope();
     while (currScope && currScope->isExecutable()) {
+        if (const Function* f = currScope->findFunction(tok)) {
+            return f;
+        }
         if (currScope->functionOf)
             currScope = currScope->functionOf;
         else
@@ -6438,7 +6492,7 @@ static const Token* parsedecl(const Token* type,
                               bool isCpp,
                               SourceLocation loc = SourceLocation::current());
 
-void SymbolDatabase::setValueType(Token* tok, const Variable& var, SourceLocation loc)
+void SymbolDatabase::setValueType(Token* tok, const Variable& var, const SourceLocation &loc)
 {
     ValueType valuetype;
     if (mSettings.debugnormal || mSettings.debugwarnings)
@@ -6471,7 +6525,7 @@ void SymbolDatabase::setValueType(Token* tok, const Variable& var, SourceLocatio
 
 static ValueType::Type getEnumType(const Scope* scope, const Platform& platform);
 
-void SymbolDatabase::setValueType(Token* tok, const Enumerator& enumerator, SourceLocation loc)
+void SymbolDatabase::setValueType(Token* tok, const Enumerator& enumerator, const SourceLocation &loc)
 {
     ValueType valuetype;
     if (mSettings.debugnormal || mSettings.debugwarnings)
@@ -6520,7 +6574,7 @@ static bool isContainerYieldPointer(Library::Container::Yield yield)
     return yield == Library::Container::Yield::BUFFER || yield == Library::Container::Yield::BUFFER_NT;
 }
 
-void SymbolDatabase::setValueType(Token* tok, const ValueType& valuetype, SourceLocation loc)
+void SymbolDatabase::setValueType(Token* tok, const ValueType& valuetype, const SourceLocation &loc)
 {
     auto* valuetypePtr = new ValueType(valuetype);
     if (mSettings.debugnormal || mSettings.debugwarnings)
@@ -8107,7 +8161,7 @@ std::string ValueType::str() const
     return ret.substr(1);
 }
 
-void ValueType::setDebugPath(const Token* tok, SourceLocation ctx, SourceLocation local)
+void ValueType::setDebugPath(const Token* tok, SourceLocation ctx, const SourceLocation &local)
 {
     std::string file = ctx.file_name();
     if (file.empty())

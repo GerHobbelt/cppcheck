@@ -25,7 +25,9 @@
 #define __STDC_WANT_LIB_EXT1__ 1
 #include <ctime>
 #include <cwchar>
+#include <deque>
 #include <exception>
+#include <filesystem>
 #include <fstream>
 #include <functional>
 #ifndef __STDC_NO_THREADS__
@@ -52,6 +54,30 @@
 #ifdef __cpp_lib_span
 #include <span>
 #endif
+
+bool ignoredReturnValue_std_filesystem_exists(const std::filesystem::path &path, std::error_code& ec)
+{
+    // cppcheck-suppress ignoredReturnValue
+    std::filesystem::exists(path);
+    // cppcheck-suppress ignoredReturnValue
+    std::filesystem::exists(path, ec);
+    const bool b {std::filesystem::exists(path)};
+    return b && std::filesystem::exists(path, ec);
+}
+
+// https://en.cppreference.com/w/cpp/io/manip/quoted
+void uninitvar_std_quoted(std::stringstream &ss, const std::string &input, const char delim, const char escape)
+{
+    ss << std::quoted(input);
+    ss << std::quoted(input, delim);
+    ss << std::quoted(input, delim, escape);
+    char delimChar;
+    // cppcheck-suppress uninitvar
+    ss << std::quoted(input, delimChar);
+    char escapeChar;
+    // cppcheck-suppress uninitvar
+    ss << std::quoted(input, delim, escapeChar);
+}
 
 int zerodiv_ldexp()
 {
@@ -4935,4 +4961,10 @@ std::string global_scope_std() // #12355
 void unique_lock_const_ref(std::mutex& m)
 {
     std::unique_lock lock(m);
+}
+
+void eraseIteratorOutOfBounds_std_deque(std::deque<int>& x) // #8690
+{
+    // cppcheck-suppress eraseIteratorOutOfBounds
+    x.erase(x.end());
 }

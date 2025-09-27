@@ -313,13 +313,32 @@ void CheckOther::warningOldStylePointerCast()
             tok = scope->bodyStart;
         for (; tok && tok != scope->bodyEnd; tok = tok->next()) {
             // Old style pointer casting..
-            if (!Token::Match(tok, "( const|volatile| const|volatile|class|struct| %type% * *| *| const|&| ) (| %name%|%num%|%bool%|%char%|%str%|&"))
+            if (tok->str() != "(")
                 continue;
+            const Token* castTok = tok->next();
+            while (Token::Match(castTok, "const|volatile|class|struct|union|%type%|::")) {
+                castTok = castTok->next();
+                if (Token::simpleMatch(castTok, "<") && castTok->link())
+                    castTok = castTok->link()->next();
+            }
+            if (castTok == tok->next())
+                continue;
+            bool isPtr = false, isRef = false;
+            while (Token::Match(castTok, "*|const|&")) {
+                if (castTok->str() == "*")
+                    isPtr = true;
+                else if (castTok->str() == "&")
+                    isRef = true;
+                castTok = castTok->next();
+            }
+            if ((!isPtr && !isRef) || !Token::Match(castTok, ") (| %name%|%num%|%bool%|%char%|%str%|&"))
+                continue;
+
             if (Token::Match(tok->previous(), "%type%"))
                 continue;
 
             // skip first "const" in "const Type* const"
-            while (Token::Match(tok->next(), "const|volatile|class|struct"))
+            while (Token::Match(tok->next(), "const|volatile|class|struct|union"))
                 tok = tok->next();
             const Token* typeTok = tok->next();
             // skip second "const" in "const Type* const"
@@ -331,16 +350,17 @@ void CheckOther::warningOldStylePointerCast()
                 continue;
 
             if (typeTok->tokType() == Token::eType || typeTok->tokType() == Token::eName)
-                cstyleCastError(tok);
+                cstyleCastError(tok, isPtr);
         }
     }
 }
 
-void CheckOther::cstyleCastError(const Token *tok)
+void CheckOther::cstyleCastError(const Token *tok, bool isPtr)
 {
+    const std::string type = isPtr ? "pointer" : "reference";
     reportError(tok, Severity::style, "cstyleCast",
-                "C-style pointer casting\n"
-                "C-style pointer casting detected. C++ offers four different kinds of casts as replacements: "
+                "C-style " + type + " casting\n"
+                "C-style " + type + " casting detected. C++ offers four different kinds of casts as replacements: "
                 "static_cast, const_cast, dynamic_cast and reinterpret_cast. A C-style cast could evaluate to "
                 "any of those automatically, thus it is considered safer if the programmer explicitly states "
                 "which kind of cast is expected.", CWE398, Certainty::normal);
@@ -1938,7 +1958,7 @@ void CheckOther::checkIncompleteStatement()
             continue;
         if (isVoidStmt(tok))
             continue;
-        if (mTokenizer->isCPP() && tok->str() == "&" && !(tok->astOperand1()->valueType() && tok->astOperand1()->valueType()->isIntegral()))
+        if (mTokenizer->isCPP() && tok->str() == "&" && !(tok->astOperand1() && tok->astOperand1()->valueType() && tok->astOperand1()->valueType()->isIntegral()))
             // Possible archive
             continue;
         const bool inconclusive = tok->isConstOp();
@@ -2389,10 +2409,19 @@ namespace {
 
 void CheckOther::checkDuplicateExpression()
 {
-    const bool styleEnabled = mSettings->severity.isEnabled(Severity::style);
-    const bool warningEnabled = mSettings->severity.isEnabled(Severity::warning);
-    if (!styleEnabled && !warningEnabled)
-        return;
+    {
+        const bool styleEnabled = mSettings->severity.isEnabled(Severity::style);
+        const bool premiumEnabled = mSettings->isPremiumEnabled("oppositeExpression") ||
+                                    mSettings->isPremiumEnabled("duplicateExpression") ||
+                                    mSettings->isPremiumEnabled("duplicateAssignExpression") ||
+                                    mSettings->isPremiumEnabled("duplicateExpressionTernary") ||
+                                    mSettings->isPremiumEnabled("duplicateValueTernary") ||
+                                    mSettings->isPremiumEnabled("selfAssignment") ||
+                                    mSettings->isPremiumEnabled("knownConditionTrueFalse");
+
+        if (!styleEnabled && !premiumEnabled)
+            return;
+    }
 
     logChecker("CheckOther::checkDuplicateExpression"); // style,warning
 
@@ -2498,9 +2527,9 @@ void CheckOther::checkDuplicateExpression()
                             !findExpressionChanged(tok, tok, loopTok->link()->next()->link(), mSettings, cpp)) {
                             const bool isEnum = tok->scope()->type == Scope::eEnum;
                             const bool assignment = !isEnum && tok->str() == "=";
-                            if (assignment && warningEnabled)
+                            if (assignment)
                                 selfAssignmentError(tok, tok->astOperand1()->expressionString());
-                            else if (styleEnabled && !isEnum) {
+                            else if (!isEnum) {
                                 if (cpp && mSettings->standards.cpp >= Standards::CPP11 && tok->str() == "==") {
                                     const Token* parent = tok->astParent();
                                     while (parent && parent->astParent()) {
@@ -2522,11 +2551,10 @@ void CheckOther::checkDuplicateExpression()
                                             mSettings->library,
                                             true,
                                             false)) {
-                    if (warningEnabled && isWithoutSideEffects(cpp, tok->astOperand1())) {
+                    if (isWithoutSideEffects(cpp, tok->astOperand1())) {
                         selfAssignmentError(tok, tok->astOperand1()->expressionString());
                     }
-                } else if (styleEnabled &&
-                           isOppositeExpression(cpp,
+                } else if (isOppositeExpression(cpp,
                                                 tok->astOperand1(),
                                                 tok->astOperand2(),
                                                 mSettings->library,
@@ -2535,9 +2563,9 @@ void CheckOther::checkDuplicateExpression()
                                                 &errorPath) &&
                            !Token::Match(tok, "=|-|-=|/|/=") &&
                            isWithoutSideEffects(cpp, tok->astOperand1())) {
-                    oppositeExpressionError(tok, errorPath);
+                    oppositeExpressionError(tok, std::move(errorPath));
                 } else if (!Token::Match(tok, "[-/%]")) { // These operators are not associative
-                    if (styleEnabled && tok->astOperand2() && tok->str() == tok->astOperand1()->str() &&
+                    if (tok->astOperand2() && tok->str() == tok->astOperand1()->str() &&
                         isSameExpression(cpp,
                                          true,
                                          tok->astOperand2(),
@@ -2564,7 +2592,7 @@ void CheckOther::checkDuplicateExpression()
                         }
                     }
                 }
-            } else if (styleEnabled && tok->astOperand1() && tok->astOperand2() && tok->str() == ":" && tok->astParent() && tok->astParent()->str() == "?") {
+            } else if (tok->astOperand1() && tok->astOperand2() && tok->str() == ":" && tok->astParent() && tok->astParent()->str() == "?") {
                 if (!tok->astOperand1()->values().empty() && !tok->astOperand2()->values().empty() && isEqualKnownValue(tok->astOperand1(), tok->astOperand2()) &&
                     !isVariableChanged(tok->astParent(), /*indirect*/ 0, mSettings, cpp) &&
                     isConstStatement(tok->astOperand1(), cpp) && isConstStatement(tok->astOperand2(), cpp))
@@ -2598,16 +2626,17 @@ void CheckOther::duplicateExpressionError(const Token *tok1, const Token *tok2, 
     const std::string& op = opTok ? opTok->str() : "&&";
     std::string msg = "Same expression " + (hasMultipleExpr ? "\'" + expr1 + "\'" + " found multiple times in chain of \'" + op + "\' operators" : "on both sides of \'" + op + "\'");
     const char *id = "duplicateExpression";
-    if (expr1 != expr2 && (!opTok || !opTok->isArithmeticalOp())) {
+    if (expr1 != expr2 && (!opTok || Token::Match(opTok, "%oror%|%comp%|&&|?|!"))) {
         id = "knownConditionTrueFalse";
         std::string exprMsg = "The comparison \'" + expr1 + " " + op +  " " + expr2 + "\' is always ";
         if (Token::Match(opTok, "==|>=|<="))
             msg = exprMsg + "true";
         else if (Token::Match(opTok, "!=|>|<"))
             msg = exprMsg + "false";
-        if (!Token::Match(tok1, "%num%|NULL|nullptr") && !Token::Match(tok2, "%num%|NULL|nullptr"))
-            msg += " because '" + expr1 + "' and '" + expr2 + "' represent the same value";
     }
+
+    if (expr1 != expr2 && !Token::Match(tok1, "%num%|NULL|nullptr") && !Token::Match(tok2, "%num%|NULL|nullptr"))
+        msg += " because '" + expr1 + "' and '" + expr2 + "' represent the same value";
 
     reportError(errors, Severity::style, id, msg +
                 (std::string(".\nFinding the same expression ") + (hasMultipleExpr ? "more than once in a condition" : "on both sides of an operator")) +
@@ -2646,7 +2675,7 @@ void CheckOther::duplicateValueTernaryError(const Token *tok)
 
 void CheckOther::selfAssignmentError(const Token *tok, const std::string &varname)
 {
-    reportError(tok, Severity::warning,
+    reportError(tok, Severity::style,
                 "selfAssignment",
                 "$symbol:" + varname + "\n"
                 "Redundant assignment of '$symbol' to itself.", CWE398, Certainty::normal);
@@ -3826,6 +3855,7 @@ void CheckOther::comparePointersError(const Token *tok, const ValueFlow::Value *
     std::string verb = "Comparing";
     if (Token::simpleMatch(tok, "-"))
         verb = "Subtracting";
+    const char * const id = (verb[0] == 'C') ? "comparePointers" : "subtractPointers";
     if (v1) {
         errorPath.emplace_back(v1->tokvalue->variable()->nameToken(), "Variable declared here.");
         errorPath.insert(errorPath.end(), v1->errorPath.cbegin(), v1->errorPath.cend());
@@ -3836,7 +3866,7 @@ void CheckOther::comparePointersError(const Token *tok, const ValueFlow::Value *
     }
     errorPath.emplace_back(tok, "");
     reportError(
-        errorPath, Severity::error, "comparePointers", verb + " pointers that point to different objects", CWE570, Certainty::normal);
+        errorPath, Severity::error, id, verb + " pointers that point to different objects", CWE570, Certainty::normal);
 }
 
 void CheckOther::checkModuloOfOne()

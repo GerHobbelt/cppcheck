@@ -2571,7 +2571,7 @@ bool isVariableChanged(const Token *tok, int indirect, const Settings *settings,
     tok2 = skipRedundantPtrOp(tok2, tok2->astParent());
 
     if (tok2->astParent() && tok2->astParent()->isAssignmentOp()) {
-        if ((indirect == 0 || tok2 != tok) && tok2 == tok2->astParent()->astOperand1())
+        if (((indirect == 0 || tok2 != tok) || (indirect == 1 && tok2->str() == ".")) && tok2 == tok2->astParent()->astOperand1())
             return true;
         // Check if assigning to a non-const lvalue
         const Variable * var = getLHSVariable(tok2->astParent());
@@ -3225,7 +3225,7 @@ bool isCPPCast(const Token* tok)
     return tok && Token::simpleMatch(tok->previous(), "> (") && tok->astOperand2() && tok->astOperand1() && isCPPCastKeyword(tok->astOperand1());
 }
 
-bool isConstVarExpression(const Token *tok, std::function<bool(const Token*)> skipPredicate)
+bool isConstVarExpression(const Token *tok, const std::function<bool(const Token*)>& skipPredicate)
 {
     if (!tok)
         return false;
@@ -3255,7 +3255,7 @@ bool isConstVarExpression(const Token *tok, std::function<bool(const Token*)> sk
     if (Token::Match(tok, "%cop%|[|.")) {
         if (tok->astOperand1() && !isConstVarExpression(tok->astOperand1(), skipPredicate))
             return false;
-        if (tok->astOperand2() && !isConstVarExpression(tok->astOperand2(), std::move(skipPredicate)))
+        if (tok->astOperand2() && !isConstVarExpression(tok->astOperand2(), skipPredicate))
             return false;
         return true;
     }

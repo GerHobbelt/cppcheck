@@ -631,18 +631,18 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
         mPlistFile.close();
     }
 
-    CheckUnusedFunctions checkUnusedFunctions(nullptr, nullptr, nullptr);
-
     try {
         if (mSettings.library.markupFile(filename)) {
-            Tokenizer tokenizer(mSettings, this);
-            if (fileStream)
-                tokenizer.list.createTokens(*fileStream, filename);
-            else {
-                std::ifstream in(filename);
-                tokenizer.list.createTokens(in, filename);
+            if (mSettings.isUnusedFunctionCheckEnabled() && mSettings.buildDir.empty()) {
+                Tokenizer tokenizer(mSettings, this);
+                if (fileStream)
+                    tokenizer.list.createTokens(*fileStream, filename);
+                else {
+                    std::ifstream in(filename);
+                    tokenizer.list.createTokens(in, filename);
+                }
+                CheckUnusedFunctions::parseTokens(tokenizer, mSettings);
             }
-            checkUnusedFunctions.getFileInfo(&tokenizer, &mSettings);
             return EXIT_SUCCESS;
         }
 
@@ -933,10 +933,6 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
                 // Check normal tokens
                 checkNormalTokens(tokenizer);
 
-                // Analyze info..
-                if (!mSettings.buildDir.empty())
-                    checkUnusedFunctions.parseTokens(tokenizer, filename.c_str(), &mSettings);
-
 #ifdef HAVE_RULES
                 // handling of "simple" rules has been removed.
                 if (hasRule("simple"))
@@ -1017,14 +1013,13 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
     }
 
     if (!mSettings.buildDir.empty()) {
-        mAnalyzerInformation.setFileInfo("CheckUnusedFunctions", checkUnusedFunctions.analyzerInfo());
         mAnalyzerInformation.close();
     }
 
     // In jointSuppressionReport mode, unmatched suppressions are
     // collected after all files are processed
     if (!mSettings.useSingleJob() && (mSettings.severity.isEnabled(Severity::information) || mSettings.checkConfiguration)) {
-        Suppressions::reportUnmatchedSuppressions(mSettings.nomsg.getUnmatchedLocalSuppressions(filename, isUnusedFunctionCheckEnabled()), *this);
+        Suppressions::reportUnmatchedSuppressions(mSettings.nomsg.getUnmatchedLocalSuppressions(filename, mSettings.isUnusedFunctionCheckEnabled()), *this);
     }
 
     mErrorList.clear();
@@ -1072,44 +1067,52 @@ void CppCheck::checkRawTokens(const Tokenizer &tokenizer)
 
 void CppCheck::checkNormalTokens(const Tokenizer &tokenizer)
 {
+    CheckUnusedFunctions unusedFunctionsChecker;
+
     // TODO: this should actually be the behavior if only "--enable=unusedFunction" is specified - see #10648
     const char* unusedFunctionOnly = std::getenv("UNUSEDFUNCTION_ONLY");
     const bool doUnusedFunctionOnly = unusedFunctionOnly && (std::strcmp(unusedFunctionOnly, "1") == 0);
 
-    const std::time_t maxTime = mSettings.checksMaxTime > 0 ? std::time(nullptr) + mSettings.checksMaxTime : 0;
+    if (!doUnusedFunctionOnly) {
+        const std::time_t maxTime = mSettings.checksMaxTime > 0 ? std::time(nullptr) + mSettings.checksMaxTime : 0;
 
-    // call all "runChecks" in all registered Check classes
-    // cppcheck-suppress shadowFunction - TODO: fix this
-    for (Check *check : Check::instances()) {
-        if (Settings::terminated())
-            return;
+        // call all "runChecks" in all registered Check classes
+        // cppcheck-suppress shadowFunction - TODO: fix this
+        for (Check *check : Check::instances()) {
+            if (Settings::terminated())
+                return;
 
-        if (maxTime > 0 && std::time(nullptr) > maxTime) {
-            if (mSettings.debugwarnings) {
-                ErrorMessage::FileLocation loc;
-                loc.setfile(tokenizer.list.getFiles()[0]);
-                ErrorMessage errmsg({std::move(loc)},
-                                    emptyString,
-                                    Severity::debug,
-                                    "Checks maximum time exceeded",
-                                    "checksMaxTime",
-                                    Certainty::normal);
-                reportErr(errmsg);
+            if (maxTime > 0 && std::time(nullptr) > maxTime) {
+                if (mSettings.debugwarnings) {
+                    ErrorMessage::FileLocation loc;
+                    loc.setfile(tokenizer.list.getFiles()[0]);
+                    ErrorMessage errmsg({std::move(loc)},
+                                        emptyString,
+                                        Severity::debug,
+                                        "Checks maximum time exceeded",
+                                        "checksMaxTime",
+                                        Certainty::normal);
+                    reportErr(errmsg);
+                }
+                return;
             }
-            return;
+
+            Timer timerRunChecks(check->name() + "::runChecks", mSettings.showtime, &s_timerResults);
+            check->runChecks(tokenizer, this);
         }
-
-        if (doUnusedFunctionOnly && dynamic_cast<CheckUnusedFunctions*>(check) == nullptr)
-            continue;
-
-        Timer timerRunChecks(check->name() + "::runChecks", mSettings.showtime, &s_timerResults);
-        check->runChecks(tokenizer, this);
     }
 
-    if (mSettings.clang)
+    if (mSettings.checks.isEnabled(Checks::unusedFunction) && !mSettings.buildDir.empty()) {
+        unusedFunctionsChecker.parseTokens(tokenizer, tokenizer.list.getFiles().front().c_str(), mSettings);
+    }
+    if (mSettings.isUnusedFunctionCheckEnabled() && mSettings.buildDir.empty()) {
+        CheckUnusedFunctions::parseTokens(tokenizer, mSettings);
+    }
+
+    if (mSettings.clang) {
         // TODO: Use CTU for Clang analysis
         return;
-
+    }
 
     if (mSettings.useSingleJob() || !mSettings.buildDir.empty()) {
         // Analyse the tokens..
@@ -1123,20 +1126,23 @@ void CppCheck::checkNormalTokens(const Tokenizer &tokenizer)
                 delete fi1;
         }
 
-        // cppcheck-suppress shadowFunction - TODO: fix this
-        for (const Check *check : Check::instances()) {
-            if (doUnusedFunctionOnly && dynamic_cast<const CheckUnusedFunctions*>(check) == nullptr)
-                continue;
-
-            if (Check::FileInfo * const fi = check->getFileInfo(&tokenizer, &mSettings)) {
-                if (!mSettings.buildDir.empty())
-                    mAnalyzerInformation.setFileInfo(check->name(), fi->toString());
-                if (mSettings.useSingleJob())
-                    mFileInfo.push_back(fi);
-                else
-                    delete fi;
+        if (!doUnusedFunctionOnly) {
+            // cppcheck-suppress shadowFunction - TODO: fix this
+            for (const Check *check : Check::instances()) {
+                if (Check::FileInfo * const fi = check->getFileInfo(&tokenizer, &mSettings)) {
+                    if (!mSettings.buildDir.empty())
+                        mAnalyzerInformation.setFileInfo(check->name(), fi->toString());
+                    if (mSettings.useSingleJob())
+                        mFileInfo.push_back(fi);
+                    else
+                        delete fi;
+                }
             }
         }
+    }
+
+    if (mSettings.checks.isEnabled(Checks::unusedFunction) && !mSettings.buildDir.empty()) {
+        mAnalyzerInformation.setFileInfo("CheckUnusedFunctions", unusedFunctionsChecker.analyzerInfo());
     }
 
 #ifdef HAVE_RULES
@@ -1473,8 +1479,7 @@ void CppCheck::executeAddons(const std::vector<std::string>& files, const std::s
             errmsg.id = obj["addon"].get<std::string>() + "-" + obj["errorId"].get<std::string>();
             if (misraC2023 && startsWith(errmsg.id, "misra-c2012-"))
                 errmsg.id = "misra-c2023-" + errmsg.id.substr(12);
-            const std::string text = obj["message"].get<std::string>();
-            errmsg.setmsg(text);
+            errmsg.setmsg(mSettings.getMisraRuleText(errmsg.id, obj["message"].get<std::string>()));
             const std::string severity = obj["severity"].get<std::string>();
             errmsg.severity = severityFromString(severity);
             if (errmsg.severity == Severity::none || errmsg.severity == Severity::internal) {
@@ -1684,6 +1689,7 @@ void CppCheck::getErrorMessages(ErrorLogger &errorlogger)
     for (std::list<Check *>::const_iterator it = Check::instances().cbegin(); it != Check::instances().cend(); ++it)
         (*it)->getErrorMessages(&errorlogger, &s);
 
+    CheckUnusedFunctions::getErrorMessages(errorlogger);
     Preprocessor::getErrorMessages(&errorlogger, s);
 }
 
@@ -1778,9 +1784,14 @@ bool CppCheck::analyseWholeProgram()
             ctu.nestedCalls.insert(ctu.nestedCalls.end(), fi2->nestedCalls.cbegin(), fi2->nestedCalls.cend());
         }
     }
+
     // cppcheck-suppress shadowFunction - TODO: fix this
     for (Check *check : Check::instances())
         errors |= check->analyseWholeProgram(&ctu, mFileInfo, mSettings, *this);  // TODO: ctu
+
+    if (mSettings.checks.isEnabled(Checks::unusedFunction))
+        errors |= CheckUnusedFunctions::check(mSettings, *this);
+
     return errors && (mExitCode > 0);
 }
 
@@ -1792,7 +1803,7 @@ void CppCheck::analyseWholeProgram(const std::string &buildDir, const std::list<
         return;
     }
     if (mSettings.checks.isEnabled(Checks::unusedFunction))
-        CheckUnusedFunctions::analyseWholeProgram(mSettings, this, buildDir);
+        CheckUnusedFunctions::analyseWholeProgram(mSettings, *this, buildDir);
     std::list<Check::FileInfo*> fileInfoList;
     CTU::FileInfo ctuFileInfo;
 
@@ -1845,13 +1856,11 @@ void CppCheck::analyseWholeProgram(const std::string &buildDir, const std::list<
     for (Check *check : Check::instances())
         check->analyseWholeProgram(&ctuFileInfo, fileInfoList, mSettings, *this);
 
+    if (mSettings.checks.isEnabled(Checks::unusedFunction))
+        CheckUnusedFunctions::check(mSettings, *this);
+
     for (Check::FileInfo *fi : fileInfoList)
         delete fi;
-}
-
-bool CppCheck::isUnusedFunctionCheckEnabled() const
-{
-    return (mSettings.useSingleJob() && mSettings.checks.isEnabled(Checks::unusedFunction));
 }
 
 void CppCheck::removeCtuInfoFiles(const std::list<std::pair<std::string, std::size_t>> &files, const std::list<FileSettings>& fileSettings)

@@ -3598,6 +3598,15 @@ private:
                       "    AutoCloseFD fd = open(\"abc\", O_RDONLY | O_CLOEXEC);\n"
                       "}");
         ASSERT_EQUALS("", errout.str());
+
+        checkNoMemset("struct C {\n" // #12313
+                      "    char* p;\n"
+                      "    C(char* ptr) : p(ptr) {}\n"
+                      "};\n"
+                      "void f() {\n"
+                      "    C c = strdup(\"abc\");\n"
+                      "}");
+        ASSERT_EQUALS("", errout.str());
     }
 
 #define checkThisSubtraction(code) checkThisSubtraction_(code, __FILE__, __LINE__)
@@ -8027,7 +8036,7 @@ private:
         errout.str("");
 
         // Check..
-        const Settings settings = settingsBuilder().severity(Severity::warning).certainty(Certainty::inconclusive, inconclusive).build();
+        const Settings settings = settingsBuilder().severity(Severity::warning).severity(Severity::style).certainty(Certainty::inconclusive, inconclusive).build();
 
         Preprocessor preprocessor(settings);
 
@@ -8549,6 +8558,15 @@ private:
                       "    }\n"
                       "};\n");
         ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:5]: (style) The function 'Calculate' overrides a function in a base class but is not marked with a 'override' specifier.\n", errout.str());
+
+        checkOverride("struct S {\n" // #12439
+                      "    virtual ~S() = default;\n"
+                      "};\n"
+                      "struct D : S {\n"
+                      "    ~D() {}\n"
+                      "};\n");
+        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:5]: (style) The destructor '~D' overrides a destructor in a base class but is not marked with a 'override' specifier.\n",
+                      errout.str());
     }
 
     void overrideCVRefQualifiers() {

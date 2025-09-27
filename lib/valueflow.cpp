@@ -771,7 +771,7 @@ static void setTokenValue(Token* tok,
     }
 
     else if (parent->str() == ":") {
-        setTokenValue(parent,value,settings);
+        setTokenValue(parent,std::move(value),settings);
     }
 
     else if (parent->str() == "?" && tok->str() == ":" && tok == parent->astOperand2() && parent->astOperand1()) {
@@ -807,7 +807,7 @@ static void setTokenValue(Token* tok,
             if (ret)
                 return;
 
-            ValueFlow::Value v(value);
+            ValueFlow::Value v(std::move(value));
             v.conditional = true;
             v.changeKnownToPossible();
 
@@ -1053,7 +1053,7 @@ static void setTokenValue(Token* tok,
     }
 
     else if (Token::Match(parent, ":: %name%") && parent->astOperand2() == tok) {
-        setTokenValue(parent, value, settings);
+        setTokenValue(parent, std::move(value), settings);
     }
     // Calling std::size or std::empty on an array
     else if (value.isTokValue() && Token::simpleMatch(value.tokvalue, "{") && tok->variable() &&
@@ -1061,12 +1061,12 @@ static void setTokenValue(Token* tok,
         std::vector<const Token*> args = getArguments(value.tokvalue);
         if (const Library::Function* f = settings.library.getFunction(parent->previous())) {
             if (f->containerYield == Library::Container::Yield::SIZE) {
-                ValueFlow::Value v(value);
+                ValueFlow::Value v(std::move(value));
                 v.valueType = ValueFlow::Value::ValueType::INT;
                 v.intvalue = args.size();
                 setTokenValue(parent, std::move(v), settings);
             } else if (f->containerYield == Library::Container::Yield::EMPTY) {
-                ValueFlow::Value v(value);
+                ValueFlow::Value v(std::move(value));
                 v.intvalue = args.empty();
                 v.valueType = ValueFlow::Value::ValueType::INT;
                 setTokenValue(parent, std::move(v), settings);
@@ -1619,7 +1619,7 @@ static void valueFlowArrayElement(TokenList& tokenlist, const Settings& settings
                     const std::string s = arrayValue.tokvalue->strValue();
                     if (index == s.size()) {
                         result.intvalue = 0;
-                        setTokenValue(tok, result, settings);
+                        setTokenValue(tok, std::move(result), settings);
                     } else if (index >= 0 && index < s.size()) {
                         result.intvalue = s[index];
                         setTokenValue(tok, std::move(result), settings);
@@ -3638,7 +3638,9 @@ static std::vector<ValueFlow::LifetimeToken> getLifetimeTokens(const Token* tok,
         while (vartok) {
             if (vartok->str() == "[" || vartok->originalName() == "->" || vartok->isUnaryOp("*"))
                 vartok = vartok->astOperand1();
-            else if (vartok->str() == "." || vartok->str() == "::")
+            else if (vartok->str() == ".")
+                vartok = vartok->astOperand1();
+            else if (vartok->str() == "::")
                 vartok = vartok->astOperand2();
             else
                 break;
@@ -4007,7 +4009,7 @@ static void valueFlowForwardLifetime(Token * tok, TokenList &tokenlist, ErrorLog
                 const Token* parentLifetime =
                     getParentLifetime(tokenlist.isCPP(), parent->astOperand1()->astOperand2(), &settings.library);
                 if (parentLifetime && parentLifetime->exprId() > 0) {
-                    valueFlowForward(nextExpression, endOfVarScope, parentLifetime, values, tokenlist, errorLogger, settings);
+                    valueFlowForward(nextExpression, endOfVarScope, parentLifetime, std::move(values), tokenlist, errorLogger, settings);
                 }
             }
         }
@@ -5232,6 +5234,16 @@ static void valueFlowAfterMove(TokenList& tokenlist, const SymbolDatabase& symbo
             Token* openParentesisOfMove = findOpenParentesisOfMove(varTok);
             Token* endOfFunctionCall = findEndOfFunctionCallForParameter(openParentesisOfMove);
             if (endOfFunctionCall) {
+                if (endOfFunctionCall->str() == ")") {
+                    Token* ternaryColon = endOfFunctionCall->link()->astParent();
+                    while (Token::simpleMatch(ternaryColon, "("))
+                        ternaryColon = ternaryColon->astParent();
+                    if (Token::simpleMatch(ternaryColon, ":")) {
+                        endOfFunctionCall = ternaryColon->astOperand2();
+                        if (Token::simpleMatch(endOfFunctionCall, "("))
+                            endOfFunctionCall = endOfFunctionCall->link();
+                    }
+                }
                 ValueFlow::Value value;
                 value.valueType = ValueFlow::Value::ValueType::MOVED;
                 value.moveKind = moveKind;
@@ -8460,7 +8472,7 @@ static void valueFlowSmartPointer(TokenList &tokenlist, ErrorLogger * errorLogge
                 if (Token::simpleMatch(ftok, "( )")) {
                     ValueFlow::Value v(0);
                     v.setKnown();
-                    valueFlowForwardAssign(ftok, tok, vars, {std::move(v)}, false, tokenlist, errorLogger, settings);
+                    valueFlowForwardAssign(ftok, tok, std::move(vars), {std::move(v)}, false, tokenlist, errorLogger, settings);
                 } else {
                     tok->removeValues(std::mem_fn(&ValueFlow::Value::isIntValue));
                     Token* inTok = ftok->astOperand2();
@@ -8915,7 +8927,7 @@ static void valueFlowContainerSize(TokenList& tokenlist,
                     ValueFlow::Value value(0);
                     value.valueType = ValueFlow::Value::ValueType::CONTAINER_SIZE;
                     value.setImpossible();
-                    valueFlowForward(tok->linkAt(2), containerTok, value, tokenlist, errorLogger, settings);
+                    valueFlowForward(tok->linkAt(2), containerTok, std::move(value), tokenlist, errorLogger, settings);
                 }
             } else if (Token::simpleMatch(tok, "+=") && astIsContainer(tok->astOperand1())) {
                 const Token* containerTok = tok->astOperand1();

@@ -244,6 +244,7 @@ private:
         TEST_CASE(exprid7);
         TEST_CASE(exprid8);
         TEST_CASE(exprid9);
+        TEST_CASE(exprid10);
 
         TEST_CASE(structuredBindings);
     }
@@ -2913,8 +2914,12 @@ private:
                                "}"));
     }
 
-    void varid_arrayinit() { // #7579 - no variable declaration in rhs
+    void varid_arrayinit() {
+        // #7579 - no variable declaration in rhs
         ASSERT_EQUALS("1: void foo ( int * a@1 ) { int b@2 [ 1 ] = { x * a@1 [ 0 ] } ; }\n", tokenize("void foo(int*a) { int b[] = { x*a[0] }; }"));
+
+        // #12402
+        ASSERT_EQUALS("1: void f ( ) { void ( * p@1 [ 1 ] ) ( int ) = { [ ] ( int i@2 ) { } } ; }\n", tokenize("void f() { void (*p[1])(int) = { [](int i) {} }; }"));
     }
 
     void varid_lambda_arg() {
@@ -4020,6 +4025,19 @@ private:
         const char expected[] = "1: void f ( const std :: type_info & type ) {\n"
                                 "2: if ( type@1 ==@UNIQUE typeid (@UNIQUE unsigned int@UNIQUE ) ) { }\n"
                                 "3: else { if ( type@1 ==@UNIQUE typeid (@UNIQUE int@UNIQUE ) ) { } }\n"
+                                "4: }\n";
+        ASSERT_EQUALS(expected, tokenizeExpr(code));
+    }
+
+    void exprid10()
+    {
+        const char code[] = "void f(const std::string& p) {\n" // #12350
+                            "    std::string s;\n"
+                            "    ((s = \"abc\") += p) += \"def\";\n"
+                            "}\n";
+        const char expected[] = "1: void f ( const std :: string & p ) {\n"
+                                "2: std ::@UNIQUE string s@2 ;\n"
+                                "3: ( ( s@2 =@UNIQUE \"abc\" ) +=@UNIQUE p@1 ) +=@UNIQUE \"def\"@UNIQUE ;\n"
                                 "4: }\n";
         ASSERT_EQUALS(expected, tokenizeExpr(code));
     }

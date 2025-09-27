@@ -101,6 +101,8 @@ private:
         TEST_CASE(varScope33);
         TEST_CASE(varScope34);
         TEST_CASE(varScope35);
+        TEST_CASE(varScope36);      // #12158
+        TEST_CASE(varScope37);      // #12158
 
         TEST_CASE(oldStylePointerCast);
         TEST_CASE(invalidPointerCast);
@@ -1667,6 +1669,35 @@ private:
         ASSERT_EQUALS("[test.cpp:4]: (style) The scope of the variable 'buf' can be reduced.\n", errout.str());
     }
 
+    void varScope36() {
+        // #12158
+        check("void f( uint32_t value ) {\n"
+              "    uint32_t i = 0U;\n"
+              "    if ( value > 100U ) { }\n"
+              "    else if( value > 50U ) { }\n"
+              "    else{\n"
+              "         for( i = 0U; i < 5U; i++ ) {}\n"
+              "    }\n"
+              "}\n", nullptr, false);
+        ASSERT_EQUALS("[test.cpp:2]: (style) The scope of the variable 'i' can be reduced.\n", errout.str());
+    }
+
+    void varScope37() {
+        // #12158
+        check("void f( uint32_t value ) {\n"
+              "    uint32_t i = 0U;\n"
+              "    if ( value > 100U ) { }\n"
+              "    else {\n"
+              "        if( value > 50U ) { }\n"
+              "        else{\n"
+              "            for( i = 0U; i < 5U; i++ ) {}\n"
+              "        }\n"
+              "    }\n"
+              "}\n", nullptr, false);
+        ASSERT_EQUALS("[test.cpp:2]: (style) The scope of the variable 'i' can be reduced.\n", errout.str());
+    }
+
+
 #define checkOldStylePointerCast(code) checkOldStylePointerCast_(code, __FILE__, __LINE__)
     void checkOldStylePointerCast_(const char code[], const char* file, int line) {
         // Clear the error buffer..
@@ -2173,6 +2204,7 @@ private:
               "}\n");
         ASSERT_EQUALS("[test.cpp:1]: (performance) Function parameter 't' should be passed by const reference.\n", errout.str());
 
+        Settings settings0 = settingsBuilder(_settings).platform(Platform::Type::Unix64).build();
         check("struct S {\n" // #12138
               "    union {\n"
               "        int a = 0;\n"
@@ -2189,7 +2221,7 @@ private:
               "};\n"
               "void f(S s) {\n"
               "    if (s.x > s.y) {}\n"
-              "}\n");
+              "}\n", /*filename*/ nullptr, /*inconclusive*/ true, /*runSimpleChecks*/ true, /*verbose*/ false, &settings0);
         ASSERT_EQUALS("", errout.str());
 
         check("struct S { std::list<int> l; };\n" // #12147

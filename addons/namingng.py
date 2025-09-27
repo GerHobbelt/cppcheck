@@ -24,6 +24,7 @@
 
 import cppcheckdata
 import sys
+import os
 import re
 import argparse
 import json
@@ -96,10 +97,14 @@ def process(dumpfiles, configfile, debugprint=False):
 
         # Check File naming
         if "RE_FILE" in conf and conf["RE_FILE"]:
-            mockToken = DataStruct(afile[:-5], "0", afile[afile.rfind('/') + 1:-5])
-            msgType = 'File name'
-            for exp in conf["RE_FILE"]:
-                evalExpr(conf["RE_FILE"], exp, mockToken, msgType, errors)
+            for source_file in data.files:
+                basename = os.path.basename(source_file)
+                good = False
+                for exp in conf["RE_FILE"]:
+                    good |= bool(re.match(exp, source_file))
+                    good |= bool(re.match(exp, basename))
+                if not good:
+                    errors.append(reportError(source_file, 0, 'style', 'File name ' + source_file + ' violates naming convention'))
 
         # Check Namespace naming
         if "RE_NAMESPACE" in conf and conf["RE_NAMESPACE"]:
@@ -132,7 +137,7 @@ def process(dumpfiles, configfile, debugprint=False):
 
                         if conf["skip_one_char_variables"] and len(var.nameToken.str) == 1:
                             continue
-                        if varType in conf["var_prefixes"]:
+                        if varType in conf.get("var_prefixes",{}):
                             if not var.nameToken.str.startswith(conf["var_prefixes"][varType]):
                                 errors.append(reportError(
                                                     var.typeStartToken.file,
@@ -192,7 +197,7 @@ def process(dumpfiles, configfile, debugprint=False):
                         if debugprint:
                             print("\t:: {} {}".format(retval, token.function.name))
 
-                        if retval and retval in conf["function_prefixes"]:
+                        if retval and retval in conf.get("function_prefixes",{}):
                             if not token.function.name.startswith(conf["function_prefixes"][retval]):
                                 errors.append(reportError(
                                     token.file, token.linenr, 'style', 'Function ' + token.function.name + ' violates naming convention'))

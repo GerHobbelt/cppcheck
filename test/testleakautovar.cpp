@@ -112,6 +112,7 @@ private:
         TEST_CASE(deallocuse11); // #8302
         TEST_CASE(deallocuse12);
         TEST_CASE(deallocuse13);
+        TEST_CASE(deallocuse14);
 
         TEST_CASE(doublefree1);
         TEST_CASE(doublefree2);
@@ -921,6 +922,25 @@ private:
               "}\n", true);
         ASSERT_EQUALS("[test.cpp:4]: (error) Dereferencing 'a' after it is deallocated / released\n"
                       "[test.cpp:7]: (error) Dereferencing 'b' after it is deallocated / released\n",
+                      errout.str());
+    }
+
+    void deallocuse14() {
+        check("struct S { void f(); };\n" // #10905
+              "void g() {\n"
+              "    S* s = new S;\n"
+              "    delete s;\n"
+              "    s->f();\n"
+              "}\n", true);
+        ASSERT_EQUALS("[test.cpp:5]: (error) Dereferencing 's' after it is deallocated / released\n",
+                      errout.str());
+
+        check("void f() {\n"
+              "    int *p = (int*)malloc(4);\n"
+              "    free(p);\n"
+              "    if (*p == 5) {}\n"
+              "}\n");
+        ASSERT_EQUALS("[test.c:4]: (error) Dereferencing 'p' after it is deallocated / released\n",
                       errout.str());
     }
 
@@ -2979,6 +2999,7 @@ private:
         TEST_CASE(returnedValue); // #9298
         TEST_CASE(deallocuse2);
         TEST_CASE(fclose_false_positive); // #9575
+        TEST_CASE(strcpy_false_negative);
     }
 
     void returnedValue() { // #9298
@@ -2996,7 +3017,14 @@ private:
               "    free(p);\n"
               "    strcpy(a, p);\n"
               "}");
-        TODO_ASSERT_EQUALS("error (free,use)", "", errout.str());
+        ASSERT_EQUALS("[test.cpp:3]: (error) Dereferencing 'p' after it is deallocated / released\n", errout.str());
+
+        check("void f(char *p, const char *q) {\n" // #11665
+              "    free(p);\n"
+              "    strcpy(p, q);\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:3]: (error) Dereferencing 'p' after it is deallocated / released\n",
+                      errout.str());
 
         check("void f(char *p) {\n"   // #3041 - assigning pointer when it's used
               "    free(p);\n"
@@ -3010,6 +3038,13 @@ private:
         ASSERT_EQUALS("", errout.str());
     }
 
+    void strcpy_false_negative() { // #12289
+        check("void f() {\n"
+              "    char* buf = new char[12];\n"
+              "    strcpy(buf, \"123\");\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:4]: (error) Memory leak: buf\n", errout.str());
+    }
 };
 
 REGISTER_TEST(TestLeakAutoVarStrcpy)

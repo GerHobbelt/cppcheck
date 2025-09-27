@@ -278,6 +278,22 @@ extern const char* f()
     assert stderr == '{}:4:12: warning: strerror is MT-unsafe [threadsafety-unsafe-call]\n'.format(test_file)
 
 
+def test_addon_invalidjson(tmpdir):
+    addon_file = os.path.join(tmpdir, 'invalid.json')
+    with open(addon_file, 'wt') as f:
+        f.write("""
+{
+    "Script": "addons/something.py"
+}
+                """)
+
+    args = ['--addon={}'.format(addon_file), '--enable=all', 'nonexistent.cpp']
+
+    exitcode, stdout, stderr = cppcheck(args)
+    assert exitcode != 0
+    assert stdout == 'Loading {} failed. script must be set to a string value.\n'.format(addon_file)
+
+
 def test_addon_naming(tmpdir):
     # the addon does nothing without a config
     addon_file = os.path.join(tmpdir, 'naming1.json')
@@ -598,7 +614,11 @@ def test_file_filter_3(tmpdir):
 
 
 def test_file_filter_no_match(tmpdir):
-    args = ['--file-filter=*.c', 'test.cpp']
+    test_file = os.path.join(tmpdir, 'test.cpp')
+    with open(test_file, 'wt'):
+        pass
+
+    args = ['--file-filter=*.c', test_file]
     out_lines = [
         'cppcheck: error: could not find any files matching the filter.'
     ]
@@ -825,3 +845,33 @@ def test_file_duplicate_2(tmpdir):
         '3/3 files checked 0% done'
     ]
     assert stderr == ''
+
+
+def test_file_ignore(tmpdir):
+    test_file = os.path.join(tmpdir, 'test.cpp')
+    with open(test_file, 'wt'):
+        pass
+
+    args = ['-itest.cpp', test_file]
+    out_lines = [
+        'cppcheck: error: could not find or open any of the paths given.',
+        'cppcheck: Maybe all paths were ignored?'
+    ]
+
+    assert_cppcheck(args, ec_exp=1, err_exp=[], out_exp=out_lines)
+
+
+def test_build_dir_j_memleak(tmpdir): #12111
+    build_dir = os.path.join(tmpdir, 'build-dir')
+    os.mkdir(build_dir)
+
+    test_file = os.path.join(tmpdir, 'test.cpp')
+    with open(test_file, 'wt') as f:
+        f.write('int main() {}')
+
+    args = ['--cppcheck-build-dir={}'.format(build_dir), '-j2', test_file]
+    out_lines = [
+        'Checking {} ...'.format(test_file)
+    ]
+
+    assert_cppcheck(args, ec_exp=0, err_exp=[], out_exp=out_lines)

@@ -343,6 +343,9 @@ QString ResultsTree::severityToTranslatedString(Severity severity)
     case Severity::debug:
         return tr("debug");
 
+    case Severity::internal:
+        return tr("internal");
+
     case Severity::none:
     default:
         return QString();
@@ -666,6 +669,11 @@ void ResultsTree::contextMenuEvent(QContextMenuEvent * e)
             menu.addAction(hideallid);
 
             QAction *suppress = new QAction(tr("Suppress selected id(s)"), &menu);
+            {
+                QVariantMap data = mContextItem->data().toMap();
+                const QString messageId = data[ERRORID].toString();
+                suppress->setEnabled(!ErrorLogger::isCriticalErrorId(messageId.toStdString()));
+            }
             menu.addAction(suppress);
             connect(suppress, &QAction::triggered, this, &ResultsTree::suppressSelectedIds);
 
@@ -808,7 +816,7 @@ void ResultsTree::startApplication(const QStandardItem *target, int application)
         }
 #endif // Q_OS_WIN
 
-        const QString cmdLine = QString("%1 %2").arg(program).arg(params);
+        const QString cmdLine = QString("%1 %2").arg(program, params);
 
         // this is reported as deprecated in Qt 5.15.2 but no longer in Qt 6
 #if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))

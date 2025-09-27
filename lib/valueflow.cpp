@@ -2969,6 +2969,13 @@ struct ValueFlowAnalyzer : Analyzer {
             makeConditional();
     }
 
+    void updateState(const Token* tok) override
+    {
+        // Update program state
+        pms.removeModifiedVars(tok);
+        pms.addState(tok, getProgramState());
+    }
+
     virtual void internalUpdate(Token* /*tok*/, const ValueFlow::Value& /*v*/, Direction /*d*/)
     {
         assert(false && "Internal update unimplemented.");
@@ -6304,7 +6311,7 @@ struct ConditionHandler {
                 values.insert(values.end(), cond.false_values.cbegin(), cond.false_values.cend());
 
             // extra logic for unsigned variables 'i>=1' => possible value can also be 0
-            if (Token::Match(tok, "<|>")) {
+            if (Token::Match(tok, "<|>|<=|>=")) {
                 values.remove_if([](const ValueFlow::Value& v) {
                     if (v.isIntValue())
                         return v.intvalue != 0;

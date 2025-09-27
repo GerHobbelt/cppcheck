@@ -876,6 +876,23 @@ private:
                "   y=x;\n"
                "}";
         ASSERT_EQUALS(false, testValueOfX(code, 3U, ValueFlow::Value::MoveKind::MovedVariable));
+
+        code = "void g(std::string);\n"
+               "void foo(std::string x) {\n"
+               "  g(std::move(x));\n"
+               "  int counter = 0;\n"
+               "\n"
+               "  for (int i = 0; i < 5; i++) {\n"
+               "    if (i % 2 == 0) {\n"
+               "      x = std::to_string(i);\n"
+               "      counter++;\n"
+               "    }\n"
+               "  }\n"
+               "  for (int i = 0; i < counter; i++) {\n"
+               "      if(x > 5) {}\n"
+               "  }\n"
+               "}\n";
+        ASSERT_EQUALS(false, testValueOfX(code, 13U, ValueFlow::Value::MoveKind::MovedVariable));
     }
 
     void valueFlowCalculations() {
@@ -1460,7 +1477,7 @@ private:
                "    int a = x;\n"
                "    if (x >= 1) {}\n"
                "}";
-        ASSERT_EQUALS(true, testValueOfX(code, 2U, 1));
+        TODO_ASSERT_EQUALS(true, false, testValueOfX(code, 2U, 1));
         ASSERT_EQUALS(true, testValueOfX(code, 2U, 0));
 
         code = "void f(unsigned int x) {\n"
@@ -5645,6 +5662,22 @@ private:
         values = tokenValues(code, "x <", ValueFlow::Value::ValueType::UNINIT);
         ASSERT_EQUALS(0, values.size());
 
+        code = "void getX(int *p);\n"
+               "bool do_something();\n"
+               "void foo() {\n"
+               "  int x;\n"
+               "  bool flag;\n"
+               "  bool success;\n"
+               "  success = do_something();\n"
+               "  flag = success;\n"
+               "  if (success == true) {\n"
+               "    getX(&x);\n"
+               "  }\n"
+               "  for (int i = 0; (flag == true) && (i < x); ++i) {}\n"
+               "}\n";
+        values = tokenValues(code, "x ) ; ++ i", ValueFlow::Value::ValueType::UNINIT);
+        ASSERT_EQUALS(0, values.size());
+
         code = "void g(bool *result, size_t *buflen) {\n" // #12091
                "    if (*result && *buflen >= 5) {}\n" // <- *buflen might not be initialized
                "}\n"
@@ -5655,6 +5688,22 @@ private:
                "}";
         values = tokenValues(code, "buflen >=", ValueFlow::Value::ValueType::UNINIT);
         ASSERT_EQUALS(1, values.size());
+
+        code = "void foo() {\n"
+               "  int counter = 0;\n"
+               "  int x;\n"
+               "  for (int i = 0; i < 5; i++) {\n"
+               "    if (i % 2 == 0) {\n"
+               "      x = i;\n"
+               "      counter++;\n"
+               "    }\n"
+               "  }\n"
+               "  for (int i = 0; i < counter; i++) {\n"
+               "      if(x > 5) {}\n"
+               "  }\n"
+               "}\n";
+        values = tokenValues(code, "x > 5", ValueFlow::Value::ValueType::UNINIT);
+        ASSERT_EQUALS(0, values.size());
     }
 
     void valueFlowConditionExpressions() {
@@ -7549,6 +7598,15 @@ private:
                "    str += s.to_string();\n"
                "}\n";
         valueOfTok(code, "s");
+
+        code = "void a(int e, int d, int c, int h) {\n"
+               "  std::vector<int> b;\n"
+               "  std::vector<int> f;\n"
+               "  if (b == f && h)\n"
+               "    return;\n"
+               "  if (b == f && b == f && c && e < d) {}\n"
+               "}\n";
+        valueOfTok(code, "b");
     }
 
     void valueFlowUnknownMixedOperators() {

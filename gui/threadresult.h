@@ -31,7 +31,6 @@
 #include <QObject>
 #include <QString>
 #include <QStringList>
-#include <QtGlobal>
 
 class ErrorItem;
 class ImportProject;
@@ -59,7 +58,7 @@ public:
      * @brief Set list of files to check
      * @param files List of files to check
      */
-    void setFiles(const QStringList &files);
+    void setFiles(std::list<FileWithDetails> files);
 
     void setProject(const ImportProject &prj);
 
@@ -138,10 +137,10 @@ protected:
      *
      */
     std::list<FileWithDetails> mFiles;
-    std::list<FileWithDetails>::const_iterator mItNextFile;
+    std::list<FileWithDetails>::const_iterator mItNextFile{mFiles.cbegin()};
 
     std::list<FileSettings> mFileSettings;
-    std::list<FileSettings>::const_iterator mItNextFileSettings;
+    std::list<FileSettings>::const_iterator mItNextFileSettings{mFileSettings.cbegin()};
 
     /**
      * @brief Max progress

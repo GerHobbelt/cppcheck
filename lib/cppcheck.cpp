@@ -732,7 +732,7 @@ unsigned int CppCheck::checkClang(const FileWithDetails &file, int fileIndex)
                              mSettings,
                              &s_timerResults);
         tokenizer.printDebugOutput(std::cout);
-        checkNormalTokens(tokenizer, nullptr); // TODO: provide analyzer information
+        checkNormalTokens(tokenizer, nullptr, ""); // TODO: provide analyzer information
 
         // create dumpfile
         std::ofstream fdump;
@@ -1213,7 +1213,7 @@ unsigned int CppCheck::checkFile(const FileWithDetails& file, const std::string 
                     }
 
                     // Check normal tokens
-                    checkNormalTokens(tokenizer, analyzerInformation.get());
+                    checkNormalTokens(tokenizer, analyzerInformation.get(), currentConfig);
                 } catch (const InternalError &e) {
                     ErrorMessage errmsg = ErrorMessage::fromInternalError(e, &tokenizer.list, file.spath());
                     mErrorLogger.reportErr(errmsg);
@@ -1337,7 +1337,7 @@ void CppCheck::internalError(const std::string &filename, const std::string &msg
 // CppCheck - A function that checks a normal token list
 //---------------------------------------------------------------------------
 
-void CppCheck::checkNormalTokens(const Tokenizer &tokenizer, AnalyzerInformation* analyzerInformation)
+void CppCheck::checkNormalTokens(const Tokenizer &tokenizer, AnalyzerInformation* analyzerInformation, const std::string& currentConfig)
 {
     CheckUnusedFunctions unusedFunctionsChecker;
 
@@ -1402,7 +1402,7 @@ void CppCheck::checkNormalTokens(const Tokenizer &tokenizer, AnalyzerInformation
         if (!doUnusedFunctionOnly) {
             // cppcheck-suppress shadowFunction - TODO: fix this
             for (const Check *check : Check::instances()) {
-                if (Check::FileInfo * const fi = check->getFileInfo(tokenizer, mSettings)) {
+                if (Check::FileInfo * const fi = check->getFileInfo(tokenizer, mSettings, currentConfig)) {
                     if (analyzerInformation)
                         analyzerInformation->setFileInfo(check->name(), fi->toString());
                     if (mSettings.useSingleJob())
@@ -1589,7 +1589,7 @@ void CppCheck::executeRules(const std::string &tokenlist, const TokenList &list)
         if (!re) {
             if (pcreCompileErrorStr) {
                 const std::string msg = "pcre_compile failed: " + std::string(pcreCompileErrorStr);
-                const ErrorMessage errmsg(std::list<ErrorMessage::FileLocation>(),
+                const ErrorMessage errmsg({},
                                           "",
                                           Severity::error,
                                           msg,
@@ -1610,7 +1610,7 @@ void CppCheck::executeRules(const std::string &tokenlist, const TokenList &list)
         // It is NULL if everything works, and points to an error string otherwise.
         if (pcreStudyErrorStr) {
             const std::string msg = "pcre_study failed: " + std::string(pcreStudyErrorStr);
-            const ErrorMessage errmsg(std::list<ErrorMessage::FileLocation>(),
+            const ErrorMessage errmsg({},
                                       "",
                                       Severity::error,
                                       msg,
@@ -1633,7 +1633,7 @@ void CppCheck::executeRules(const std::string &tokenlist, const TokenList &list)
             if (pcreExecRet < 0) {
                 const std::string errorMessage = pcreErrorCodeToString(pcreExecRet);
                 if (!errorMessage.empty()) {
-                    const ErrorMessage errmsg(std::list<ErrorMessage::FileLocation>(),
+                    const ErrorMessage errmsg({},
                                               "",
                                               Severity::error,
                                               std::string("pcre_exec failed: ") + errorMessage,
@@ -2089,9 +2089,10 @@ unsigned int CppCheck::analyseWholeProgram(const std::string &buildDir, const st
             // cppcheck-suppress shadowFunction - TODO: fix this
             for (const Check *check : Check::instances()) {
                 if (checkClassAttr == check->name()) {
-                    Check::FileInfo* fi = check->loadFileInfoFromXml(e);
-                    fi->file0 = filesTxtInfo.sourceFile;
-                    fileInfoList.push_back(fi);
+                    if (Check::FileInfo* fi = check->loadFileInfoFromXml(e)) {
+                        fi->file0 = filesTxtInfo.sourceFile;
+                        fileInfoList.push_back(fi);
+                    }
                 }
             }
         }

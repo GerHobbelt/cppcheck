@@ -189,6 +189,7 @@ private:
         TEST_CASE(const96);
         TEST_CASE(const97);
         TEST_CASE(const98);
+        TEST_CASE(const99);
 
         TEST_CASE(const_handleDefaultParameters);
         TEST_CASE(const_passThisToMemberOfOtherClass);
@@ -6843,6 +6844,17 @@ private:
         ASSERT_EQUALS("", errout_str());
     }
 
+    void const99() {
+        checkConst("typedef void (*InitFunc)(void**);\n" // #13953
+                   "struct S {\n"
+                   "    int *m;\n"
+                   "    void f(InitFunc func) {\n"
+                   "        func(reinterpret_cast<void**>(&m));\n"
+                   "    }\n"
+                   "};\n");
+        ASSERT_EQUALS("", errout_str());
+    }
+
     void const_handleDefaultParameters() {
         checkConst("struct Foo {\n"
                    "    void foo1(int i, int j = 0) {\n"
@@ -9092,7 +9104,7 @@ private:
             const std::string filename = std::to_string(fileInfo.size()) + ".cpp";
             SimpleTokenizer tokenizer{settingsDefault, *this, filename};
             ASSERT(tokenizer.tokenize(c));
-            fileInfo.push_back(check.getFileInfo(tokenizer, settingsDefault));
+            fileInfo.push_back(check.getFileInfo(tokenizer, settingsDefault, ""));
         }
 
         // Check code..
@@ -9138,7 +9150,7 @@ private:
 
         // Check..
         const Check& c = getCheck<CheckClass>();
-        Check::FileInfo * fileInfo = (c.getFileInfo)(tokenizer, settings1);
+        Check::FileInfo * fileInfo = (c.getFileInfo)(tokenizer, settings1, "");
 
         delete fileInfo;
     }

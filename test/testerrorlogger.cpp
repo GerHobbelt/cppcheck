@@ -77,8 +77,7 @@ private:
 
         TEST_CASE(isCriticalErrorId);
 
-        TEST_CASE(ErrorMessageReportTypeMisraC);
-        TEST_CASE(ErrorMessageReportTypeCertC);
+        TEST_CASE(TestReportType);
     }
 
     void TestPatternSearchReplace(const std::string& idPlaceholder, const std::string& id) const {
@@ -315,30 +314,32 @@ private:
         }
     }
 
-    void ErrorMessageReportTypeMisraC() const {
+    #define testReportType(reportType, severity, errorId, expectedClassification, expectedGuideline) \
+        testReportType_(__FILE__, __LINE__, reportType, severity, errorId, expectedClassification, expectedGuideline)
+    void testReportType_(const char *file, int line, ReportType reportType, Severity severity, const std::string &errorId,
+                         const std::string &expectedClassification, const std::string &expectedGuideline) const
+    {
         std::list<ErrorMessage::FileLocation> locs = { fooCpp5 };
-        const auto reportType = ReportType::misraC;
         const auto mapping = createGuidelineMapping(reportType);
-        const std::string format = "{severity} {id}";
-        ErrorMessage msg(std::move(locs), emptyString, Severity::error, "", "unusedVariable", Certainty::normal);
+
+        ErrorMessage msg(std::move(locs), emptyString, severity, "", errorId, Certainty::normal);
         msg.guideline = getGuideline(msg.id, reportType, mapping, msg.severity);
         msg.classification = getClassification(msg.guideline, reportType);
-        ASSERT_EQUALS("Advisory", msg.classification);
-        ASSERT_EQUALS("2.8", msg.guideline);
-        ASSERT_EQUALS("Advisory 2.8", msg.toString(true, format, ""));
+
+        ASSERT_EQUALS_LOC(expectedClassification, msg.classification, file, line);
+        ASSERT_EQUALS_LOC(expectedGuideline, msg.guideline, file, line);
     }
 
-    void ErrorMessageReportTypeCertC() const {
-        std::list<ErrorMessage::FileLocation> locs = { fooCpp5 };
-        const auto reportType = ReportType::certC;
-        const auto mapping = createGuidelineMapping(reportType);
-        const std::string format = "{severity} {id}";
-        ErrorMessage msg(std::move(locs), emptyString, Severity::error, "", "resourceLeak", Certainty::normal);
-        msg.guideline = getGuideline(msg.id, reportType, mapping, msg.severity);
-        msg.classification = getClassification(msg.guideline, reportType);
-        ASSERT_EQUALS("L3", msg.classification);
-        ASSERT_EQUALS("FIO42-C", msg.guideline);
-        ASSERT_EQUALS("L3 FIO42-C", msg.toString(true, format, ""));
+    void TestReportType() const {
+        testReportType(ReportType::misraC2012, Severity::error, "unusedVariable", "Advisory", "2.8");
+        testReportType(ReportType::misraCpp2023, Severity::warning, "premium-misra-cpp-2023-6.8.4", "Advisory", "6.8.4");
+        testReportType(ReportType::misraCpp2023, Severity::style, "premium-misra-cpp-2023-19.6.1", "Advisory", "19.6.1");
+        testReportType(ReportType::misraCpp2023, Severity::style, "premium-misra-cpp-2023-dir-0.3.1", "Advisory", "Dir 0.3.1");
+        testReportType(ReportType::misraCpp2023, Severity::style, "premium-misra-cpp-2023-dir-0.3.2", "Required", "Dir 0.3.2");
+        testReportType(ReportType::misraCpp2008, Severity::style, "premium-misra-cpp-2008-3-4-1", "Required", "3-4-1");
+        testReportType(ReportType::misraC2012, Severity::style, "premium-misra-c-2012-dir-4.6", "Advisory", "Dir 4.6");
+        testReportType(ReportType::misraC2012, Severity::style, "misra-c2012-dir-4.6", "Advisory", "Dir 4.6");
+        testReportType(ReportType::certC, Severity::error, "resourceLeak", "L3", "FIO42-C");
     }
 
     void CustomFormat() const {
@@ -417,8 +418,7 @@ private:
 
     void ToXmlV2Encoding() const {
         {
-            std::list<ErrorMessage::FileLocation> locs;
-            ErrorMessage msg(std::move(locs), "", Severity::error, "Programming error.\nComparing \"\203\" with \"\003\"", "errorId", Certainty::normal);
+            ErrorMessage msg({}, "", Severity::error, "Programming error.\nComparing \"\203\" with \"\003\"", "errorId", Certainty::normal);
             const std::string expected("        <error id=\"errorId\" severity=\"error\" msg=\"Programming error.\" verbose=\"Comparing &quot;\\203&quot; with &quot;\\003&quot;\"/>");
             ASSERT_EQUALS(expected, msg.toXML());
         }
@@ -492,8 +492,7 @@ private:
 
     void SerializeInconclusiveMessage() const {
         // Inconclusive error message
-        std::list<ErrorMessage::FileLocation> locs;
-        ErrorMessage msg(std::move(locs), "", Severity::error, "Programming error", "errorId", Certainty::inconclusive);
+        ErrorMessage msg({}, "", Severity::error, "Programming error", "errorId", Certainty::inconclusive);
         msg.file0 = "test.cpp";
 
         const std::string msg_str = msg.serialize();
@@ -591,8 +590,7 @@ private:
     }
 
     void SerializeSanitize() const {
-        std::list<ErrorMessage::FileLocation> locs;
-        ErrorMessage msg(std::move(locs), "", Severity::error, std::string("Illegal character in \"foo\001bar\""), "errorId", Certainty::normal);
+        ErrorMessage msg({}, "", Severity::error, std::string("Illegal character in \"foo\001bar\""), "errorId", Certainty::normal);
         msg.file0 = "1.c";
 
         const std::string msg_str = msg.serialize();

@@ -319,6 +319,7 @@ private:
         TEST_CASE(namespaces2);
         TEST_CASE(namespaces3);  // #3854 - unknown macro
         TEST_CASE(namespaces4);
+        TEST_CASE(namespaces5); // #13967
         TEST_CASE(needInitialization);
 
         TEST_CASE(tryCatch1);
@@ -532,6 +533,7 @@ private:
         TEST_CASE(findFunction58); // #13310
         TEST_CASE(findFunction59);
         TEST_CASE(findFunction60);
+        TEST_CASE(findFunction61);
         TEST_CASE(findFunctionRef1);
         TEST_CASE(findFunctionRef2); // #13328
         TEST_CASE(findFunctionContainer);
@@ -3207,6 +3209,19 @@ private:
         ASSERT_EQUALS("fredA", fredA->name());
         const Type *fredAType = fredA->type();
         ASSERT_EQUALS(2U, fredAType->classDef->linenr());
+    }
+
+    void namespaces5() { // #13967
+        GET_SYMBOL_DB("namespace test {\n"
+                      "  template <int S>\n"
+                      "  struct Test { int x[S]; };\n"
+                      "  const Test<64> test;\n"
+                      "}\n");
+        const Variable *x = db->getVariableFromVarId(2U);
+        ASSERT_EQUALS("x", x->name());
+        const Scope *scope = x->scope();
+        ASSERT(scope->nestedIn);
+        ASSERT_EQUALS("test", scope->nestedIn->className);
     }
 
     void needInitialization() {
@@ -8647,6 +8662,19 @@ private:
                       "    return v.back();\n"
                       "}\n");
         const Token* fun = Token::findsimplematch(tokenizer.tokens(), "fun ( v");
+        ASSERT(fun && !fun->function());
+    }
+
+    void findFunction61() {
+        GET_SYMBOL_DB("namespace N {\n" // #13975
+                      "    struct B {\n"
+                      "        virtual ~B() = default;\n"
+                      "    };\n"
+                      "    struct D : B {\n"
+                      "        D() : B() {}\n"
+                      "    };\n"
+                      "}\n");
+        const Token* fun = Token::findsimplematch(tokenizer.tokens(), "B ( ) {");
         ASSERT(fun && !fun->function());
     }
 

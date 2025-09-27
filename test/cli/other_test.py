@@ -243,6 +243,35 @@ def test_execute_addon_failure_json_notexist(tmpdir):
     assert stderr == "{}:0:0: error: Bailing out from analysis: Checking file failed: Failed to execute addon 'addon.json' - exitcode is {} [internalError]\n\n^\n".format(test_file, ec)
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows specific issue")
+def test_execute_addon_path_with_spaces(tmpdir):
+    addon_json = os.path.join(tmpdir, 'addon.json')
+    addon_dir = os.path.join(tmpdir, 'A Folder')
+    addon_script = os.path.join(addon_dir, 'addon.bat')
+
+    with open(addon_json, 'wt') as f:
+        f.write(json.dumps({'executable': addon_script }))
+
+    os.makedirs(addon_dir, exist_ok=True)
+
+    with open(addon_script, 'wt') as f:
+        f.write('@echo {"file":"1.c","linenr":1,"column":1,"severity":"error","message":"hello world","errorId":"hello","addon":"test"}')
+
+    test_file = os.path.join(tmpdir, 'test.cpp')
+    with open(test_file, 'wt') as f:
+        pass
+
+    args = [
+        '--addon={}'.format(addon_json),
+        test_file,
+    ]
+
+    _, _, stderr = cppcheck(args)
+
+    # Make sure the full command is used
+    assert '1.c:1:1: error: hello world [test-hello]\n' in stderr
+
+
 def test_execute_addon_failure_json_ctu_notexist(tmpdir):
     # specify non-existent python executable so execution of addon fails
     addon_json = os.path.join(tmpdir, 'addon.json')
@@ -2701,8 +2730,9 @@ def test_debug_verbose_xml(tmp_path):
     assert len(ast_elem) == 1
 
 
+# TODO: remove interaction with --debug?
 # TODO: test with --xml
-def __test_debug_template(tmp_path, verbose):
+def __test_debug_template(tmp_path, verbose=False, debug=False):
     test_file = tmp_path / 'test.cpp'
     with open(test_file, "w") as f:
         f.write(
@@ -2722,14 +2752,31 @@ void f()
 
     if verbose:
         args += ['--verbose']
+    if debug:
+        args += ['--debug']
 
     exitcode, stdout, stderr = cppcheck(args)
     assert exitcode == 0, stdout
-    assert stdout.find('##file ') == -1
-    assert stdout.find('##Value flow') == -1
-    assert stdout.find('### Symbol database ###') == -1
-    assert stdout.find('##AST') == -1
-    assert stdout.find('### Template Simplifier pass ') != -1
+    if debug:
+        assert stdout.find('##file ') != -1
+    else:
+        assert stdout.find('##file ') == -1
+    if debug:
+        assert stdout.find('##Value flow') != -1
+    else:
+        assert stdout.find('##Value flow') == -1
+    if debug and verbose:
+        assert stdout.find('### Symbol database ###') != -1
+    else:
+        assert stdout.find('### Symbol database ###') == -1
+    if debug and verbose:
+        assert stdout.find('##AST') != -1
+    else:
+        assert stdout.find('##AST') == -1
+    if debug:
+        assert stdout.count('### Template Simplifier pass ') == 2
+    else:
+        assert stdout.count('### Template Simplifier pass ') == 1
     assert stderr.splitlines() == [
         '{}:4:13: error: Null pointer dereference: (int*)nullptr [nullPointer]'.format(test_file)
     ]
@@ -2737,12 +2784,22 @@ void f()
 
 
 def test_debug_template(tmp_path):
-    __test_debug_template(tmp_path, False)
+    __test_debug_template(tmp_path, verbose=False)
 
 
 def test_debug_template_verbose_nodiff(tmp_path):
     # make sure --verbose does not change the output
-    assert __test_debug_template(tmp_path, False) == __test_debug_template(tmp_path, True)
+    assert __test_debug_template(tmp_path, verbose=False) == __test_debug_template(tmp_path, verbose=True)
+
+
+def test_debug_template_debug(tmp_path):
+    __test_debug_template(tmp_path, debug=True)
+
+
+@pytest.mark.xfail(strict=True)  # TODO: remove dependency on --verbose
+def test_debug_template_debug_verbose_nodiff(tmp_path):
+    # make sure --verbose does not change the output
+    assert __test_debug_template(tmp_path, debug=True, verbose=False) == __test_debug_template(tmp_path, debug=True, verbose=True)
 
 
 def test_file_ignore_2(tmp_path):  # #13570
@@ -3467,7 +3524,6 @@ def test_debug_ast(tmp_path):
     __test_debug_ast(tmp_path, False)
 
 
-@pytest.mark.xfail(strict=True)  # TODO: remove dependency on --verbose
 def test_debug_ast_verbose_nodiff(tmp_path):
     # make sure --verbose does not change the output
     assert __test_debug_ast(tmp_path, False) == __test_debug_ast(tmp_path, True)

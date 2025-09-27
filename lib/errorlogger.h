@@ -29,7 +29,6 @@
 #include <list>
 #include <set>
 #include <string>
-#include <utility>
 #include <vector>
 #include <map>
 
@@ -126,7 +125,7 @@ public:
                  const std::string& msg,
                  const CWE &cwe,
                  Certainty certainty);
-    ErrorMessage(const ErrorPath &errorPath,
+    ErrorMessage(ErrorPath errorPath,
                  const TokenList *tokenList,
                  Severity severity,
                  const char id[],

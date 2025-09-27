@@ -47,6 +47,7 @@ class Settings;
 class SymbolDatabase;
 class Tokenizer;
 class ValueType;
+class ErrorLogger;
 
 enum class Reference : std::uint8_t {
     None,
@@ -1205,7 +1206,7 @@ private:
      */
     bool isVariableDeclaration(const Token* tok, const Token*& vartok, const Token*& typetok) const;
 
-    void findFunctionInBase(const std::string & name, nonneg int args, std::vector<const Function *> & matches) const;
+    void findFunctionInBase(const Token* tok, nonneg int args, std::vector<const Function *> & matches) const;
 
     /** @brief initialize varlist */
     void getVariableList(const Token *start, const Token *end);
@@ -1236,7 +1237,7 @@ public:
         DOUBLE,
         LONGDOUBLE
     } type = UNKNOWN_TYPE;
-    nonneg int bits{};                         ///< bitfield bitcount
+    int bits{};                                ///< bitfield bitcount
     nonneg int pointer{};                      ///< 0=>not pointer, 1=>*, 2=>**, 3=>***, etc
     nonneg int constness{};                    ///< bit 0=data, bit 1=*, bit 2=**
     nonneg int volatileness{};                 ///< bit 0=data, bit 1=*, bit 2=**

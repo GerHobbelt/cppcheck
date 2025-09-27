@@ -21,7 +21,6 @@
 #include "application.h"
 #include "applicationlist.h"
 #include "common.h"
-#include "config.h"
 #include "erroritem.h"
 #include "errorlogger.h"
 #include "errortypes.h"
@@ -250,9 +249,16 @@ bool ResultsTree::addErrorItem(const ErrorItem &item)
     }
 
     // Partially refresh the tree: Unhide file item if necessary
-    if (!hide) {
-        setRowHidden(fileItem->row(), QModelIndex(), !mShowSeverities.isShown(item.severity));
+    setRowHidden(stditem->row(), fileItem->index(), hide || !mShowSeverities.isShown(item.severity));
+
+    bool hideFile = true;
+    for (int i = 0; i < fileItem->rowCount(); ++i) {
+        if (!isRowHidden(i, fileItem->index())) {
+            hideFile = false;
+        }
     }
+    setRowHidden(fileItem->row(), QModelIndex(), hideFile);
+
     return true;
 }
 
@@ -965,7 +971,7 @@ void ResultsTree::recheckSelectedFiles()
                 askFileDir(currentFile);
                 return;
             }
-            if (Path::isHeader2(currentFile.toStdString())) {
+            if (Path::isHeader(currentFile.toStdString())) {
                 if (!data[FILE0].toString().isEmpty() && !selectedItems.contains(data[FILE0].toString())) {
                     selectedItems<<((!mCheckPath.isEmpty() && (data[FILE0].toString().indexOf(mCheckPath) != 0)) ? (mCheckPath + "/" + data[FILE0].toString()) : data[FILE0].toString());
                     if (!selectedItems.contains(fileNameWithCheckPath))

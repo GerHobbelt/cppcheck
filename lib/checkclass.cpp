@@ -2682,6 +2682,8 @@ void CheckClass::initializerListOrder()
                                 tok = end;
 
                             for (; tok != end; tok = tok->next()) {
+                                if (Token::Match(tok->astParent(), ".|::"))
+                                    continue;
                                 if (const Variable* argVar = scope->getVariable(tok->str())) {
                                     if (scope != argVar->scope())
                                         continue;
@@ -3650,7 +3652,7 @@ bool CheckClass::analyseWholeProgram(const CTU::FileInfo *ctu, const std::list<C
     logChecker("CheckClass::analyseWholeProgram");
 
     for (const Check::FileInfo* fi1 : fileInfo) {
-        const MyFileInfo *fi = dynamic_cast<const MyFileInfo*>(fi1);
+        const auto *fi = dynamic_cast<const MyFileInfo*>(fi1);
         if (!fi)
             continue;
         for (const MyFileInfo::NameLoc &nameLoc : fi->classDefinitions) {

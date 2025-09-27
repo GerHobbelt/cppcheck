@@ -24,6 +24,7 @@
 #include "settings.h"
 #include "tokenize.h"
 
+#include <cstddef>
 #include <limits>
 #include <string>
 #include <vector>
@@ -538,7 +539,8 @@ private:
         ASSERT_EQUALS("", errout_str());
     }
 
-    void checkPureFunction_(const char code[], const char* file, int line) {
+    template<size_t size>
+    void checkPureFunction_(const char (&code)[size], const char* file, int line) {
         // Tokenize..
         SimpleTokenizer tokenizer(settings1, *this);
         ASSERT_LOC(tokenizer.tokenize(code), file, line);
@@ -4582,6 +4584,22 @@ private:
               "    return 1;\n"
               "}\n");
         ASSERT_EQUALS("", errout_str());
+
+        check("namespace S { int s{}; };\n" // #11046
+              "void f(bool b) {\n"
+              "    if (S::s) {\n"
+              "        if (b) {\n"
+              "            if (S::s) {}\n"
+              "        }\n"
+              "    }\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:5]: (style) Condition 'S::s' is always true\n", errout_str());
+
+        check("void f() {\n" // #10811
+              "    int i = 0;\n"
+              "    if ((i = g(), 1) != 0) {}\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:3]: (style) Condition '(i=g(),1)!=0' is always true\n", errout_str());
     }
 
     void alwaysTrueSymbolic()
@@ -4780,6 +4798,23 @@ private:
               "        else if (i > n) {}\n"
               "        else {}\n"
               "    }\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        // #12681
+        check("void f(unsigned u) {\n"
+              "      if (u > 0) {\n"
+              "             u--;\n"
+              "             if (u == 0) {}\n"
+              "      }\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        check("void f(unsigned u) {\n"
+              "      if (u < 0xFFFFFFFF) {\n"
+              "             u++;\n"
+              "             if (u == 0xFFFFFFFF) {}\n"
+              "      }\n"
               "}\n");
         ASSERT_EQUALS("", errout_str());
     }

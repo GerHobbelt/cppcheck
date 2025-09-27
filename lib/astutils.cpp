@@ -2188,7 +2188,7 @@ static bool hasNoreturnFunction(const Token* tok, const Library& library, const 
         } else if (Token::Match(ftok, "exit|abort")) {
             return true;
         }
-        if (unknownFunc && !function && library.functions.count(library.getFunctionName(ftok)) == 0)
+        if (unknownFunc && !function && library.functions().count(library.getFunctionName(ftok)) == 0)
             *unknownFunc = ftok;
         return false;
     }
@@ -2297,7 +2297,7 @@ static T* getTokenArgumentFunctionImpl(T* tok, int& argn)
             parent = parent->astParent();
 
         // passing variable to subfunction?
-        if (Token::Match(parent, "[*[(,{.]") || Token::Match(parent, "%oror%|&&"))
+        if (Token::Match(parent, "[[(,{.]") || Token::Match(parent, "%oror%|&&") || (parent && parent->isUnaryOp("*")))
             ;
         else if (Token::simpleMatch(parent, ":")) {
             while (Token::Match(parent, "[?:]"))
@@ -2435,6 +2435,31 @@ static bool isArray(const Token* tok)
     return false;
 }
 
+static bool isMutableExpression(const Token* tok)
+{
+    if (!tok)
+        return false;
+    if (tok->isLiteral() || tok->isKeyword() || tok->isStandardType() || tok->isEnumerator())
+        return false;
+    if (Token::Match(tok, ",|;|:|]|)|}"))
+        return false;
+    if (Token::simpleMatch(tok, "[ ]"))
+        return false;
+    if (Token::Match(tok->previous(), "%name% (") && tok->previous()->isKeyword())
+        return false;
+    if (Token::Match(tok, "<|>") && tok->link())
+        return false;
+    if (Token::simpleMatch(tok, "[") && tok->astOperand1())
+        return isMutableExpression(tok->astOperand1());
+    if (const Variable* var = tok->variable()) {
+        if (var->nameToken() == tok)
+            return false;
+        if (!var->isPointer() && var->isConst())
+            return false;
+    }
+    return true;
+}
+
 bool isVariableChangedByFunctionCall(const Token *tok, int indirect, const Settings &settings, bool *inconclusive)
 {
     if (!tok)
@@ -2545,7 +2570,7 @@ bool isVariableChangedByFunctionCall(const Token *tok, int indirect, const Setti
 
 bool isVariableChanged(const Token *tok, int indirect, const Settings &settings, int depth)
 {
-    if (!tok)
+    if (!isMutableExpression(tok))
         return false;
 
     if (indirect == 0 && isConstVarExpression(tok))
@@ -2553,7 +2578,7 @@ bool isVariableChanged(const Token *tok, int indirect, const Settings &settings,
 
     const Token *tok2 = tok;
     int derefs = 0;
-    while (Token::simpleMatch(tok2->astParent(), "*") ||
+    while ((tok2->astParent() && tok2->astParent()->isUnaryOp("*")) ||
            (Token::simpleMatch(tok2->astParent(), ".") && !Token::simpleMatch(tok2->astParent()->astParent(), "(")) ||
            (tok2->astParent() && tok2->astParent()->isUnaryOp("&") && Token::simpleMatch(tok2->astParent()->astParent(), ".") && tok2->astParent()->astParent()->originalName()=="->") ||
            (Token::simpleMatch(tok2->astParent(), "[") && tok2 == tok2->astParent()->astOperand1())) {
@@ -2594,12 +2619,12 @@ bool isVariableChanged(const Token *tok, int indirect, const Settings &settings,
     tok2 = skipRedundantPtrOp(tok2, tok2->astParent());
 
     if (tok2->astParent() && tok2->astParent()->isAssignmentOp()) {
-        if (((indirect == 0 || tok2 != tok) || (indirect == 1 && tok2->str() == ".")) && tok2 == tok2->astParent()->astOperand1())
+        if (astIsLHS(tok2))
             return true;
         // Check if assigning to a non-const lvalue
         const Variable * var = getLHSVariable(tok2->astParent());
-        if (var && var->isReference() && !var->isConst() &&
-            ((var->nameToken() && var->nameToken()->next() == tok2->astParent()) || var->isPointer())) {
+        if (var && var->isReference() && !var->isConst() && var->nameToken() &&
+            var->nameToken()->next() == tok2->astParent()) {
             if (!var->isLocal() || isVariableChanged(var, settings, depth - 1))
                 return true;
         }
@@ -2815,7 +2840,7 @@ static bool isExpressionChangedAt(const F& getExprTok,
 {
     if (depth < 0)
         return true;
-    if (tok->isLiteral() || tok->isKeyword() || tok->isStandardType() || Token::Match(tok, ",|;|:"))
+    if (!isMutableExpression(tok))
         return false;
     if (tok->exprId() != exprid || (!tok->varId() && !tok->isName())) {
         if (globalvar && Token::Match(tok, "%name% (") && !(tok->function() && tok->function()->isAttributePure()))

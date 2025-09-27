@@ -278,7 +278,8 @@ void CheckFunctions::checkIgnoredReturnValue()
             if ((!tok->function() || !Token::Match(tok->function()->retDef, "void %name%")) &&
                 tok->next()->astOperand1()) {
                 const Library::UseRetValType retvalTy = mSettings->library.getUseRetValType(tok);
-                const bool warn = (tok->function() && tok->function()->isAttributeNodiscard()) || // avoid duplicate warnings for resource-allocating functions
+                const bool warn = (tok->function() && (tok->function()->isAttributeNodiscard() || tok->function()->isAttributePure() || tok->function()->isAttributeConst())) ||
+                                  // avoid duplicate warnings for resource-allocating functions
                                   (retvalTy == Library::UseRetValType::DEFAULT && mSettings->library.getAllocFuncInfo(tok) == nullptr);
                 if (mSettings->severity.isEnabled(Severity::warning) && warn)
                     ignoredReturnValueError(tok, tok->next()->astOperand1()->expressionString());
@@ -654,7 +655,7 @@ void CheckFunctions::checkLibraryMatchFunctions()
         if (functionName.empty())
             continue;
 
-        if (mSettings->library.functions.find(functionName) != mSettings->library.functions.end())
+        if (mSettings->library.functions().find(functionName) != mSettings->library.functions().end())
             continue;
 
         if (mSettings->library.podtype(tok->expressionString()))

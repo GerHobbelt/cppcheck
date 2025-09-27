@@ -745,10 +745,8 @@ void SymbolDatabase::createSymbolDatabaseFindAllScopes()
                     scopeList.emplace_back(this, tok, scope, Scope::eUnconditional, tok);
                     scope->nestedList.push_back(&scopeList.back());
                     scope = &scopeList.back();
-                } else if (scope->isExecutable()) {
-                    endInitList.emplace(tok->link(), scope);
                 } else {
-                    tok = tok->link();
+                    endInitList.emplace(tok->link(), scope);
                 }
             } else if (Token::Match(tok, "extern %type%")) {
                 const Token * ftok = tok->next();
@@ -1496,7 +1494,7 @@ void SymbolDatabase::createSymbolDatabaseIncompleteVars()
             fstr.insert(0, ftok->previous()->str() + "::");
             ftok = ftok->tokAt(-2);
         }
-        if (mSettings.library.functions.find(fstr) != mSettings.library.functions.end())
+        if (mSettings.library.functions().find(fstr) != mSettings.library.functions().end())
             continue;
         if (tok->isCpp()) {
             const Token* parent = tok->astParent();
@@ -1743,7 +1741,7 @@ void SymbolDatabase::createSymbolDatabaseExprIds()
                 setParentExprId(tok, exprIdMap, id);
             }
         }
-        for (Token* tok = const_cast<Token*>(scope->bodyStart); tok != scope->bodyEnd; tok = tok->next()) {
+        for (auto* tok = const_cast<Token*>(scope->bodyStart); tok != scope->bodyEnd; tok = tok->next()) {
             if (tok->varId() == 0 && tok->exprId() > 0 && tok->astParent() && !tok->astOperand1() && !tok->astOperand2()) {
                 if (tok->isNumber() || tok->isKeyword() || Token::Match(tok->astParent(), ".|::") ||
                     (Token::simpleMatch(tok->astParent(), "(") && precedes(tok, tok->astParent())))
@@ -2123,7 +2121,7 @@ namespace {
 
 void SymbolDatabase::validateVariables() const
 {
-    for (std::vector<const Variable *>::const_iterator iter = mVariableList.cbegin(); iter!=mVariableList.cend(); ++iter) {
+    for (auto iter = mVariableList.cbegin(); iter!=mVariableList.cend(); ++iter) {
         const Variable * const var = *iter;
         if (var) {
             if (!var->scope()) {
@@ -2417,7 +2415,7 @@ void Variable::setValueType(const ValueType &valueType)
         if (declType && !declType->next()->valueType())
             return;
     }
-    ValueType* vt = new ValueType(valueType);
+    auto* vt = new ValueType(valueType);
     delete mValueType;
     mValueType = vt;
     if ((mValueType->pointer > 0) && (!isArray() || Token::Match(mNameToken->previous(), "( * %name% )")))
@@ -3634,7 +3632,7 @@ bool Type::hasCircularDependencies(std::set<BaseInfo>* ancestors) const
     if (!ancestors) {
         ancestors=&knownAncestors;
     }
-    for (std::vector<BaseInfo>::const_iterator parent=derivedFrom.cbegin(); parent!=derivedFrom.cend(); ++parent) {
+    for (auto parent=derivedFrom.cbegin(); parent!=derivedFrom.cend(); ++parent) {
         if (!parent->type)
             continue;
         if (this==parent->type)
@@ -3713,6 +3711,8 @@ bool Variable::arrayDimensions(const Settings& settings, bool& isContainer)
         // check for empty array dimension []
         if (dim->next()->str() != "]") {
             dimension_.tok = dim->astOperand2();
+            // TODO: only perform when ValueFlow is enabled
+            // TODO: collect timing information for this call?
             ValueFlow::valueFlowConstantFoldAST(const_cast<Token *>(dimension_.tok), settings);
             if (dimension_.tok && dimension_.tok->hasKnownIntValue()) {
                 dimension_.num = dimension_.tok->getKnownIntValue();
@@ -6194,10 +6194,9 @@ const Scope *SymbolDatabase::findScope(const Token *tok, const Scope *startScope
         if (tok->strAt(1) == "::") {
             scope = scope->findRecordInNestedList(tok->str());
             tok = tok->tokAt(2);
-        } else if (tok->strAt(1) == "<" && Token::simpleMatch(tok->linkAt(1), "> ::")) {
-            scope = scope->findRecordInNestedList(tok->str());
-            tok = tok->linkAt(1)->tokAt(2);
-        } else
+        } else if (tok->strAt(1) == "<")
+            return nullptr;
+        else
             return scope->findRecordInNestedList(tok->str());
     }
 
@@ -7537,10 +7536,10 @@ void SymbolDatabase::setValueTypeInTokenList(bool reportDebugWarnings, Token *to
                             vt.smartPointerType = vt.typeScope->definedType;
                             vt.typeScope = nullptr;
                         }
-                        if (e == "std::make_shared" && mSettings.library.smartPointers.count("std::shared_ptr") > 0)
-                            vt.smartPointer = &mSettings.library.smartPointers.at("std::shared_ptr");
-                        if (e == "std::make_unique" && mSettings.library.smartPointers.count("std::unique_ptr") > 0)
-                            vt.smartPointer = &mSettings.library.smartPointers.at("std::unique_ptr");
+                        if (e == "std::make_shared" && mSettings.library.smartPointers().count("std::shared_ptr") > 0)
+                            vt.smartPointer = &mSettings.library.smartPointers().at("std::shared_ptr");
+                        if (e == "std::make_unique" && mSettings.library.smartPointers().count("std::unique_ptr") > 0)
+                            vt.smartPointer = &mSettings.library.smartPointers().at("std::unique_ptr");
                         vt.type = ValueType::Type::SMART_POINTER;
                         vt.smartPointerTypeToken = tok->astOperand1()->tokAt(3);
                         setValueType(tok, vt);

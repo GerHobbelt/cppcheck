@@ -43,7 +43,8 @@ namespace simplecpp {
 // TODO: make Tokenizer private
 class SimpleTokenizer : public Tokenizer {
 public:
-    SimpleTokenizer(ErrorLogger& errorlogger, const char code[], bool cpp = true)
+    template<size_t size>
+    SimpleTokenizer(ErrorLogger& errorlogger, const char (&code)[size], bool cpp = true)
         : Tokenizer{s_settings, errorlogger}
     {
         if (!tokenize(code, cpp))
@@ -71,7 +72,20 @@ public:
      * @param configuration E.g. "A" for code where "#ifdef A" is true
      * @return false if source code contains syntax errors
      */
-    bool tokenize(const char code[],
+    template<size_t size>
+    bool tokenize(const char (&code)[size],
+                  bool cpp = true,
+                  const std::string &configuration = emptyString)
+    {
+        std::istringstream istr(code);
+        if (!list.createTokens(istr, cpp ? "test.cpp" : "test.c"))
+            return false;
+
+        return simplifyTokens1(configuration);
+    }
+
+    // TODO: get rid of this
+    bool tokenize(const std::string& code,
                   bool cpp = true,
                   const std::string &configuration = emptyString)
     {
@@ -90,8 +104,8 @@ private:
 class SimpleTokenList
 {
 public:
-
-    explicit SimpleTokenList(const char code[], Standards::Language lang = Standards::Language::CPP)
+    template<size_t size>
+    explicit SimpleTokenList(const char (&code)[size], Standards::Language lang = Standards::Language::CPP)
     {
         std::istringstream iss(code);
         if (!list.createTokens(iss, lang))
@@ -217,5 +231,12 @@ inline std::string filter_valueflow(const std::string& s) {
         throw std::runtime_error("no valueflow.cpp messages were filtered");
     return ostr;
 }
+
+struct LibraryHelper
+{
+    static bool loadxmldata(Library &lib, const char xmldata[], std::size_t len);
+    static bool loadxmldata(Library &lib, Library::Error& liberr, const char xmldata[], std::size_t len);
+    static Library::Error loadxmldoc(Library &lib, const tinyxml2::XMLDocument& doc);
+};
 
 #endif // helpersH

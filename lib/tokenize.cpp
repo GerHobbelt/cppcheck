@@ -79,9 +79,14 @@ namespace {
 /** Return whether tok is the "{" that starts an enumerator list */
 static bool isEnumStart(const Token* tok)
 {
-    if (!tok || tok->str() != "{")
+    if (!Token::simpleMatch(tok, "{"))
         return false;
-    return (tok->strAt(-1) == "enum") || (tok->strAt(-2) == "enum") || Token::Match(tok->tokAt(-3), "enum class %name%");
+    tok = tok->previous();
+    while (tok && !tok->isKeyword() && Token::Match(tok, "%name%|::|:"))
+        tok = tok->previous();
+    if (Token::simpleMatch(tok, "class"))
+        tok = tok->previous();
+    return Token::simpleMatch(tok, "enum");
 }
 
 template<typename T>
@@ -127,7 +132,7 @@ const Token * Tokenizer::isFunctionHead(const Token *tok, const std::string &end
         if (Token::Match(tok, "%name% (") && tok->isUpperCaseName())
             tok = tok->linkAt(1)->next();
         if (tok && tok->originalName() == "->") { // trailing return type
-            for (tok = tok->next(); tok && !Token::Match(tok, ";|{|override|final"); tok = tok->next())
+            for (tok = tok->next(); tok && !Token::Match(tok, ";|{|override|final|}|)|]"); tok = tok->next())
                 if (tok->link() && Token::Match(tok, "<|[|("))
                     tok = tok->link();
         }
@@ -136,6 +141,14 @@ const Token * Tokenizer::isFunctionHead(const Token *tok, const std::string &end
             tok = tok->next();
         if (Token::Match(tok, "= 0|default|delete ;"))
             tok = tok->tokAt(2);
+        if (Token::simpleMatch(tok, "requires")) {
+            for (tok = tok->next(); tok && !Token::Match(tok, ";|{|}|)|]"); tok = tok->next()) {
+                if (tok->link() && Token::Match(tok, "<|[|("))
+                    tok = tok->link();
+                if (Token::simpleMatch(tok, "bool {"))
+                    tok = tok->linkAt(1);
+            }
+        }
         if (tok && tok->str() == ":" && !Token::Match(tok->next(), "%name%|::"))
             return nullptr;
         return (tok && endsWith.find(tok->str()) != std::string::npos) ? tok : nullptr;
@@ -504,7 +517,7 @@ const Token *Tokenizer::processFunc(const Token *tok2, bool inOperator) const
                 tok2 = tok2->next();
 
                 while (Token::Match(tok2, "*|&") &&
-                       !Token::Match(tok2->next(), ")|>"))
+                       !Token::Match(tok2->next(), "[)>,]"))
                     tok2 = tok2->next();
 
                 // skip over namespace
@@ -1132,18 +1145,6 @@ void Tokenizer::simplifyTypedef()
     simplifyTypedefCpp();
 }
 
-static bool isEnumScope(const Token* tok)
-{
-    if (!Token::simpleMatch(tok, "{"))
-        return false;
-    tok = tok->previous();
-    while (tok && !tok->isKeyword() && Token::Match(tok, "%name%|::|:"))
-        tok = tok->previous();
-    if (Token::simpleMatch(tok, "class"))
-        tok = tok->previous();
-    return Token::simpleMatch(tok, "enum");
-}
-
 void Tokenizer::simplifyTypedefCpp()
 {
     bool isNamespace = false;
@@ -1755,7 +1756,7 @@ void Tokenizer::simplifyTypedefCpp()
                                 }
                                 ++scope;
                             }
-                            if (isEnumScope(tok2))
+                            if (isEnumStart(tok2))
                                 inEnum = true;
                         }
 
@@ -3421,6 +3422,7 @@ bool Tokenizer::simplifyTokens1(const std::string &configuration)
     if (!mSettings.buildDir.empty())
         Summaries::create(*this, configuration);
 
+    // TODO: apply this through Settings::ValueFlowOptions
     // TODO: do not run valueflow if no checks are being performed at all - e.g. unusedFunctions only
     const char* disableValueflowEnv = std::getenv("DISABLE_VALUEFLOW");
     const bool doValueFlow = !disableValueflowEnv || (std::strcmp(disableValueflowEnv, "1") != 0);
@@ -3860,7 +3862,7 @@ void Tokenizer::arraySizeAfterValueFlow()
         }
         if (maxIndex >= 0) {
             // insert array size
-            Token* tok = const_cast<Token*>(var->nameToken()->next());
+            auto* tok = const_cast<Token*>(var->nameToken()->next());
             tok->insertToken(std::to_string(maxIndex + 1));
             // ast
             tok->astOperand2(tok->next());
@@ -4617,8 +4619,9 @@ void Tokenizer::setVarIdPass1()
                         if (!(scopeStack.top().isStructInit || tok->strAt(-1) == "="))
                             variableMap.enterScope();
                     }
+                    const bool isStructInit = scopeStack.top().isStructInit || tok->strAt(-1) == "=" || (initlist && !Token::Match(tok->tokAt(-1), "[)}]"));
+                    scopeStack.emplace(isExecutable, isStructInit, isEnumStart(tok), variableMap.getVarId());
                     initlist = false;
-                    scopeStack.emplace(isExecutable, scopeStack.top().isStructInit || tok->strAt(-1) == "=", isEnumStart(tok), variableMap.getVarId());
                 } else { /* if (tok->str() == "}") */
                     bool isNamespace = false;
                     for (const Token *tok1 = tok->link()->previous(); tok1 && tok1->isName(); tok1 = tok1->previous()) {
@@ -8064,7 +8067,7 @@ void Tokenizer::unmatchedToken(const Token *tok) const
 void Tokenizer::syntaxErrorC(const Token *tok, const std::string &what) const
 {
     printDebugOutput(0);
-    throw InternalError(tok, "Code '"+what+"' is invalid C code. Use --std or --language to configure the language.", InternalError::SYNTAX);
+    throw InternalError(tok, "Code '"+what+"' is invalid C code.", "Use --std, -x or --language to enforce C++. Or --cpp-header-probe to identify C++ headers via the Emacs marker.", InternalError::SYNTAX);
 }
 
 void Tokenizer::unknownMacroError(const Token *tok1) const
@@ -8703,9 +8706,10 @@ void Tokenizer::findGarbageCode() const
             syntaxError(tok);
         if (Token::Match(tok, ": [)]=]"))
             syntaxError(tok);
-        if (Token::Match(tok, "typedef [,;]"))
+        if (Token::Match(tok, "typedef [,;:]"))
             syntaxError(tok);
-        if (Token::Match(tok, "! %comp%"))
+        if (Token::Match(tok, "!|~ %comp%") &&
+            !(isCPP() && tok->strAt(1) == ">" && Token::simpleMatch(tok->tokAt(-1), "operator")))
             syntaxError(tok);
         if (Token::Match(tok, "] %name%") && (!isCPP() || !(tok->tokAt(-1) && Token::simpleMatch(tok->tokAt(-2), "delete [")))) {
             if (tok->next()->isUpperCaseName())
@@ -8744,6 +8748,16 @@ void Tokenizer::findGarbageCode() const
                     syntaxError(tok);
             }
         }
+        if (isCPP() && tok->str() == "namespace" && tok->tokAt(-1)) {
+            if (!Token::Match(tok->tokAt(-1), ";|{|}|using|inline")) {
+                if (tok->tokAt(-1)->isUpperCaseName())
+                    unknownMacroError(tok->tokAt(-1));
+                else if (tok->linkAt(-1) && tok->linkAt(-1)->tokAt(-1) && tok->linkAt(-1)->tokAt(-1)->isUpperCaseName())
+                    unknownMacroError(tok->linkAt(-1)->tokAt(-1));
+                else
+                    syntaxError(tok);
+            }
+        }
     }
 
     // ternary operator without :
@@ -8771,22 +8785,25 @@ void Tokenizer::findGarbageCode() const
         for (const Token *tok = tokens(); tok; tok = tok->next()) {
             if (Token::simpleMatch(tok, "< >") && !(Token::Match(tok->tokAt(-1), "%name%") || (tok->tokAt(-1) && Token::Match(tok->tokAt(-2), "operator %op%"))))
                 syntaxError(tok);
+            if (Token::simpleMatch(tok, ": template") && !Token::Match(tok->tokAt(-1), "public|private|protected"))
+                syntaxError(tok);
             if (!Token::simpleMatch(tok, "template <"))
                 continue;
-            if (tok->previous() && !Token::Match(tok->previous(), ":|;|{|}|)|>|\"C++\"")) {
+            if (!tok->tokAt(2) || tok->tokAt(2)->isLiteral())
+                syntaxError(tok);
+            if (tok->previous() && !Token::Match(tok->previous(), ":|,|;|{|}|)|<|>|\"C++\"")) {
                 if (tok->previous()->isUpperCaseName())
                     unknownMacroError(tok->previous());
                 else
                     syntaxError(tok);
             }
-            const Token * const tok1 = tok;
-            tok = tok->next()->findClosingBracket();
-            if (!tok)
-                syntaxError(tok1);
-            if (!Token::Match(tok, ">|>> ::|...| %name%") &&
-                !Token::Match(tok, ">|>> [ [ %name%") &&
-                !Token::Match(tok, "> >|*"))
-                syntaxError(tok->next() ? tok->next() : tok1);
+            const Token * const tok1 = tok->next()->findClosingBracket();
+            if (!tok1)
+                syntaxError(tok);
+            if (!Token::Match(tok1, ">|>> ::|...| %name%") &&
+                !Token::Match(tok1, ">|>> [ [ %name%") &&
+                !Token::Match(tok1, "> >|*"))
+                syntaxError(tok1->next() ? tok1->next() : tok);
         }
     }
 

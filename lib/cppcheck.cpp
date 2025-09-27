@@ -19,6 +19,7 @@
 #include "cppcheck.h"
 
 #include "addoninfo.h"
+#include "analyzerinfo.h"
 #include "check.h"
 #include "checkunusedfunctions.h"
 #include "clangimport.h"
@@ -493,14 +494,14 @@ unsigned int CppCheck::checkClang(const FileWithDetails &file)
             reportErr(errorMessage);
         };
         if (reportClangErrors(fin, reportError, compilerWarnings))
-            return 0;
+            return 0; // TODO: report as failure?
     } else {
         std::istringstream istr(output2);
         auto reportError = [this](const ErrorMessage& errorMessage) {
             reportErr(errorMessage);
         };
         if (reportClangErrors(istr, reportError, compilerWarnings))
-            return 0;
+            return 0; // TODO: report as failure?
     }
 
     if (!mSettings.buildDir.empty()) {
@@ -740,7 +741,10 @@ unsigned int CppCheck::checkFile(const FileWithDetails& file, const std::string 
         }
         preprocessor.removeComments(tokens1);
 
-        if (!mSettings.buildDir.empty()) {
+        if (!mSettings.buildDir.empty())
+            mAnalyzerInformation.reset(new AnalyzerInformation);
+
+        if (mAnalyzerInformation) {
             // Get toolinfo
             std::ostringstream toolinfo;
             toolinfo << CPPCHECK_VERSION_STRING;
@@ -755,7 +759,7 @@ unsigned int CppCheck::checkFile(const FileWithDetails& file, const std::string 
             // Calculate hash so it can be compared with old hash / future hashes
             const std::size_t hash = preprocessor.calculateHash(tokens1, toolinfo.str());
             std::list<ErrorMessage> errors;
-            if (!mAnalyzerInformation.analyzeFile(mSettings.buildDir, file.spath(), cfgname, hash, errors)) {
+            if (!mAnalyzerInformation->analyzeFile(mSettings.buildDir, file.spath(), cfgname, hash, errors)) {
                 while (!errors.empty()) {
                     reportErr(errors.front());
                     errors.pop_front();
@@ -1012,8 +1016,8 @@ unsigned int CppCheck::checkFile(const FileWithDetails& file, const std::string 
         reportErr(errmsg);
     }
 
-    if (!mSettings.buildDir.empty()) {
-        mAnalyzerInformation.close();
+    if (mAnalyzerInformation) {
+        mAnalyzerInformation.reset();
     }
 
     // In jointSuppressionReport mode, unmatched suppressions are
@@ -1056,6 +1060,7 @@ void CppCheck::checkNormalTokens(const Tokenizer &tokenizer)
     CheckUnusedFunctions unusedFunctionsChecker;
 
     // TODO: this should actually be the behavior if only "--enable=unusedFunction" is specified - see #10648
+    // TODO: log message when this is active?
     const char* unusedFunctionOnly = std::getenv("UNUSEDFUNCTION_ONLY");
     const bool doUnusedFunctionOnly = unusedFunctionOnly && (std::strcmp(unusedFunctionOnly, "1") == 0);
 
@@ -1100,12 +1105,12 @@ void CppCheck::checkNormalTokens(const Tokenizer &tokenizer)
         return;
     }
 
-    if (mSettings.useSingleJob() || !mSettings.buildDir.empty()) {
+    if (mSettings.useSingleJob() || mAnalyzerInformation) {
         // Analyse the tokens..
-
-        if (CTU::FileInfo * const fi1 = CTU::getFileInfo(tokenizer)) {
-            if (!mSettings.buildDir.empty())
-                mAnalyzerInformation.setFileInfo("ctu", fi1->toString());
+        {
+            CTU::FileInfo * const fi1 = CTU::getFileInfo(tokenizer);
+            if (mAnalyzerInformation)
+                mAnalyzerInformation->setFileInfo("ctu", fi1->toString());
             if (mSettings.useSingleJob())
                 mFileInfo.push_back(fi1);
             else
@@ -1116,8 +1121,8 @@ void CppCheck::checkNormalTokens(const Tokenizer &tokenizer)
             // cppcheck-suppress shadowFunction - TODO: fix this
             for (const Check *check : Check::instances()) {
                 if (Check::FileInfo * const fi = check->getFileInfo(tokenizer, mSettings)) {
-                    if (!mSettings.buildDir.empty())
-                        mAnalyzerInformation.setFileInfo(check->name(), fi->toString());
+                    if (mAnalyzerInformation)
+                        mAnalyzerInformation->setFileInfo(check->name(), fi->toString());
                     if (mSettings.useSingleJob())
                         mFileInfo.push_back(fi);
                     else
@@ -1127,8 +1132,8 @@ void CppCheck::checkNormalTokens(const Tokenizer &tokenizer)
         }
     }
 
-    if (mSettings.checks.isEnabled(Checks::unusedFunction) && !mSettings.buildDir.empty()) {
-        mAnalyzerInformation.setFileInfo("CheckUnusedFunctions", unusedFunctionsChecker.analyzerInfo());
+    if (mSettings.checks.isEnabled(Checks::unusedFunction) && mAnalyzerInformation) {
+        mAnalyzerInformation->setFileInfo("CheckUnusedFunctions", unusedFunctionsChecker.analyzerInfo());
     }
 
 #ifdef HAVE_RULES
@@ -1422,8 +1427,11 @@ void CppCheck::executeAddons(const std::vector<std::string>& files, const std::s
     std::string fileList;
 
     if (files.size() >= 2 || endsWith(files[0], ".ctu-info")) {
+        // TODO: can this conflict when using -j?
         fileList = Path::getPathFromFilename(files[0]) + FILELIST;
         std::ofstream fout(fileList);
+        filesDeleter.addFile(fileList);
+        // TODO: check if file could be created
         for (const std::string& f: files)
             fout << f << std::endl;
     }
@@ -1663,8 +1671,8 @@ void CppCheck::reportErr(const ErrorMessage &msg)
     if (!mErrorList.emplace(std::move(errmsg)).second)
         return;
 
-    if (!mSettings.buildDir.empty())
-        mAnalyzerInformation.reportErr(msg);
+    if (mAnalyzerInformation)
+        mAnalyzerInformation->reportErr(msg);
 
     if (!mSettings.supprs.nofail.isSuppressed(errorMessage) && !mSettings.supprs.nomsg.isSuppressed(errorMessage)) {
         mExitCode = 1;

@@ -821,7 +821,7 @@ void TemplateSimplifier::getTemplateInstantiations()
                 // Don't ignore user specialization but don't consider it an instantiation.
                 // Instantiations in return type, function parameters, and executable code
                 // are not ignored.
-                const unsigned int pos = getTemplateNamePosition(tok);
+                const int pos = getTemplateNamePosition(tok);
                 if (pos > 0)
                     skip = tok->tokAt(pos);
             } else {
@@ -2080,7 +2080,7 @@ void TemplateSimplifier::expandTemplate(
                 --scopeCount;
             if (scopeCount < 0)
                 break;
-            if (tok3->isName() && !Token::Match(tok3, "class|typename|struct") && !tok3->isStandardType()) {
+            if (tok3->isName() && !Token::Match(tok3, "class|typename|struct") && !tok3->isStandardType() && !Token::Match(tok3->previous(), ".|::")) {
                 // search for this token in the type vector
                 unsigned int itype = 0;
                 while (itype < typeParametersInDeclaration.size() && typeParametersInDeclaration[itype]->str() != tok3->str())

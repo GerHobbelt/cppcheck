@@ -18,4 +18,8 @@ Deprecations:
 
 Other:
 - Updated Qt to 6.8.2 (official Windows release only).
+- added CMake target `run-clang-tidy-csa` to run Clang Static Analyzer
+- added CMake option `ENABLE_CSA_ALPHA` to enable the Clang Static Analyzer alpha checkers
+- Updated TinyXML-2 to v11.0.0
+- The minimum supported Python version has been bumped to 3.7.
 -

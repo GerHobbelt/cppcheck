@@ -29,6 +29,10 @@ if(CPPCHK_GLIBCXX_DEBUG AND UNIX AND CMAKE_BUILD_TYPE STREQUAL "Debug")
     endif()
 endif()
 
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND USE_LIBCXX)
+    add_definitions(-D_LIBCPP_REMOVE_TRANSITIVE_INCLUDES)
+endif()
+
 if(HAVE_RULES)
     add_definitions(-DHAVE_RULES)
 endif()

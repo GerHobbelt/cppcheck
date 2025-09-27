@@ -22,11 +22,8 @@
 #include "standards.h"
 #include "fixture.h"
 #include "token.h"
-#include "tokenize.h"
-#include "tokenlist.h"
 
 #include <cstddef>
-#include <sstream>
 #include <string>
 #include <vector>
 
@@ -150,6 +147,7 @@ private:
         TEST_CASE(varid_in_class25);
         TEST_CASE(varid_in_class26);
         TEST_CASE(varid_in_class27);
+        TEST_CASE(varid_in_class28);
         TEST_CASE(varid_namespace_1);   // #7272
         TEST_CASE(varid_namespace_2);   // #7000
         TEST_CASE(varid_namespace_3);   // #8627
@@ -284,10 +282,8 @@ private:
 #define tokenizeHeader(...) tokenizeHeader_(__FILE__, __LINE__, __VA_ARGS__)
     template<size_t size>
     std::string tokenizeHeader_(const char* file, int line, const char (&code)[size], const char filename[]) {
-        Tokenizer tokenizer(settings, *this);
-        std::istringstream istr(code);
-        ASSERT_LOC(tokenizer.list.createTokens(istr, filename), file, line);
-        ASSERT_EQUALS(true, tokenizer.simplifyTokens1(""));
+        SimpleTokenizer tokenizer{settings, *this};
+        ASSERT_LOC((tokenizer.tokenize)(code, std::string(filename)), file, line);
 
         // result..
         Token::stringifyOptions options = Token::stringifyOptions::forDebugVarId();
@@ -297,10 +293,8 @@ private:
 
 #define tokenizeExpr(...) tokenizeExpr_(__FILE__, __LINE__, __VA_ARGS__)
     template<size_t size>
-    std::string tokenizeExpr_(const char* file, int line, const char (&code)[size], const char filename[] = "test.cpp") {
-        std::vector<std::string> files(1, filename);
-        Tokenizer tokenizer(settings, *this);
-        PreprocessorHelper::preprocess(code, files, tokenizer, *this);
+    std::string tokenizeExpr_(const char* file, int line, const char (&code)[size]) {
+        SimpleTokenizer2 tokenizer(settings, *this, code, "test.cpp");
 
         ASSERT_LOC(tokenizer.simplifyTokens1(""), file, line);
 
@@ -2343,6 +2337,22 @@ private:
                                 "2: int * * pp@1 ;\n"
                                 "3: void f ( ) { int x@2 ( * pp@1 [ 0 ] ) ; }\n"
                                 "4: } ;\n";
+        ASSERT_EQUALS(expected, tokenize(code));
+    }
+
+    void varid_in_class28() {
+        const char code[] = "struct S {\n" // 13725
+                            "    struct T {\n"
+                            "        bool b();\n"
+                            "    };\n"
+                            "    bool b = false;\n"
+                            "};\n";
+        const char expected[] = "1: struct S {\n"
+                                "2: struct T {\n"
+                                "3: bool b ( ) ;\n"
+                                "4: } ;\n"
+                                "5: bool b@1 ; b@1 = false ;\n"
+                                "6: } ;\n";
         ASSERT_EQUALS(expected, tokenize(code));
     }
 

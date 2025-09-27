@@ -22,7 +22,6 @@
 #include "helpers.h"
 #include "platform.h"
 #include "settings.h"
-#include "tokenize.h"
 
 #include <cstddef>
 #include <limits>
@@ -88,6 +87,7 @@ private:
         TEST_CASE(oppositeInnerConditionOr);
         TEST_CASE(oppositeInnerConditionEmpty);
         TEST_CASE(oppositeInnerConditionFollowVar);
+        TEST_CASE(oppositeInnerConditionLambda);
 
         TEST_CASE(identicalInnerCondition);
 
@@ -131,16 +131,15 @@ private:
     {
         CheckOptions() = default;
         const Settings* s = nullptr;
-        const char* filename = "test.cpp";
+        bool cpp = true;
         bool inconclusive = false;
     };
 
 #define check(...) check_(__FILE__, __LINE__, __VA_ARGS__)
     void check_(const char* file, int line, const char code[], const CheckOptions& options = make_default_obj()) {
         const Settings settings = settingsBuilder(options.s ? *options.s : settings0).certainty(Certainty::inconclusive, options.inconclusive).build();
-        Tokenizer tokenizer(settings, *this);
-        std::vector<std::string> files(1, options.filename);
-        PreprocessorHelper::preprocess(code, files, tokenizer, *this);
+
+        SimpleTokenizer2 tokenizer(settings, *this, code, options.cpp ? "test.cpp" : "test.c");
 
         // Tokenizer..
         ASSERT_LOC(tokenizer.simplifyTokens1(""), file, line);
@@ -154,9 +153,7 @@ private:
     {
         const Settings settings = settingsBuilder(settings0).severity(Severity::performance).certainty(Certainty::inconclusive).build();
 
-        std::vector<std::string> files(1, "test.cpp");
-        Tokenizer tokenizer(settings, *this);
-        PreprocessorHelper::preprocess(code, files, tokenizer, *this);
+        SimpleTokenizer2 tokenizer(settings, *this, code, "test.cpp");
 
         // Tokenizer..
         ASSERT_LOC(tokenizer.simplifyTokens1(""), file, line);
@@ -2734,6 +2731,22 @@ private:
         ASSERT_EQUALS("", errout_str());
     }
 
+    void oppositeInnerConditionLambda() {
+        check("void f() {\n" // #13728
+              "    for (int i = 0; i < 2;) {\n"
+              "        auto inc = [&]() {\n"
+              "            if (i >= 2)\n"
+              "                throw 0;\n"
+              "            return i++;\n"
+              "        };\n"
+              "        inc();\n"
+              "        inc();\n"
+              "        inc();\n"
+              "    }\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+    }
+
     void identicalInnerCondition() {
         check("void f1(int a, int b) { if(a==b) if(a==b) {}}");
         ASSERT_EQUALS("[test.cpp:1] -> [test.cpp:1]: (warning) Identical inner 'if' condition is always true.\n", errout_str());
@@ -3145,7 +3158,7 @@ private:
         check("void f() { A<x &> a; }");
         ASSERT_EQUALS("", errout_str());
 
-        check("void f() { a(x<y|z,0); }", dinit(CheckOptions, $.filename = "test.c"));  // filename is c => there are never templates
+        check("void f() { a(x<y|z,0); }", dinit(CheckOptions, $.cpp = false));  // language is c => there are never templates
         ASSERT_EQUALS("[test.c:1]: (style) Boolean result is used in bitwise operation. Clarify expression with parentheses.\n", errout_str());
 
         check("class A<B&,C>;");
@@ -4741,6 +4754,36 @@ private:
               "    catch (...) {}\n"
               "    return b ? 1 : 0;\n"
               "}");
+        ASSERT_EQUALS("", errout_str());
+
+        check("struct S {\n"
+              "    const S* get2() const {\n"
+              "        if (mS)\n"
+              "            return mS;\n"
+              "        return this;\n"
+              "    }\n"
+              "    S* mS = nullptr;\n"
+              "};\n"
+              "void f2() {\n"
+              "    const S s;\n"
+              "    const S* sp2 = s.get2();\n"
+              "    if (sp2) {}\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:12]: (style) Condition 'sp2' is always true\n", errout_str());
+
+        check("struct S {\n"
+              "    void f(int i);\n"
+              "    bool g() const { return !m.empty(); }\n"
+              "    std::set<int> m;\n"
+              "};\n"
+              "void S::f(int i) {\n"
+              "    bool b = g();\n"
+              "    auto it = m.find(i);\n"
+              "    if (it != m.end()) {\n"
+              "        m.erase(it);\n"
+              "        if (g() != b) {}\n"
+              "    }\n"
+              "}\n");
         ASSERT_EQUALS("", errout_str());
     }
 

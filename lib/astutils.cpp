@@ -289,10 +289,10 @@ bool astIsContainerString(const Token* tok)
     return container->stdStringLike;
 }
 
-static std::pair<const Token*, const Library::Container*> getContainerFunction(const Token* tok, const Settings* settings)
+static std::pair<const Token*, const Library::Container*> getContainerFunction(const Token* tok, const Library& library)
 {
     const Library::Container* cont{};
-    if (!tok || !tok->valueType() || (!tok->valueType()->container && (!settings || !(cont = settings->library.detectContainerOrIterator(tok->valueType()->smartPointerTypeToken)))))
+    if (!tok || !tok->valueType() || (!tok->valueType()->container && (!(cont = library.detectContainerOrIterator(tok->valueType()->smartPointerTypeToken)))))
         return {};
     const Token* parent = tok->astParent();
     if (Token::Match(parent, ". %name% (") && astIsLHS(tok)) {
@@ -301,9 +301,9 @@ static std::pair<const Token*, const Library::Container*> getContainerFunction(c
     return {};
 }
 
-Library::Container::Action astContainerAction(const Token* tok, const Token** ftok, const Settings* settings)
+Library::Container::Action astContainerAction(const Token* tok, const Library& library, const Token** ftok)
 {
-    const auto ftokCont = getContainerFunction(tok, settings);
+    const auto ftokCont = getContainerFunction(tok, library);
     if (ftok)
         *ftok = ftokCont.first;
     if (!ftokCont.first)
@@ -311,9 +311,9 @@ Library::Container::Action astContainerAction(const Token* tok, const Token** ft
     return ftokCont.second->getAction(ftokCont.first->str());
 }
 
-Library::Container::Yield astContainerYield(const Token* tok, const Token** ftok, const Settings* settings)
+Library::Container::Yield astContainerYield(const Token* tok, const Library& library, const Token** ftok)
 {
-    const auto ftokCont = getContainerFunction(tok, settings);
+    const auto ftokCont = getContainerFunction(tok, library);
     if (ftok)
         *ftok = ftokCont.first;
     if (!ftokCont.first)
@@ -360,7 +360,7 @@ static bool match(const Token *tok, const std::string &rhs)
 {
     if (tok->str() == rhs)
         return true;
-    if (!tok->varId() && tok->hasKnownIntValue() && MathLib::toString(tok->values().front().intvalue) == rhs)
+    if (!tok->varId() && tok->hasKnownIntValue() && MathLib::toString(tok->getKnownIntValue()) == rhs)
         return true;
     return false;
 }
@@ -1524,7 +1524,7 @@ bool isUsedAsBool(const Token* const tok, const Settings& settings)
     if (parent->isUnaryOp("*"))
         return isUsedAsBool(parent, settings);
     if (Token::Match(parent, "==|!=") && (tok->astSibling()->isNumber() || tok->astSibling()->isKeyword()) && tok->astSibling()->hasKnownIntValue() &&
-        tok->astSibling()->values().front().intvalue == 0)
+        tok->astSibling()->getKnownIntValue() == 0)
         return true;
     if (parent->str() == "(" && astIsRHS(tok) && Token::Match(parent->astOperand1(), "if|while"))
         return true;
@@ -1656,11 +1656,11 @@ bool isSameExpression(bool macro, const Token *tok1, const Token *tok2, const Se
             const Token* varTok1 = nullptr;
             const Token* varTok2 = exprTok;
             const ValueFlow::Value* value = nullptr;
-            if (condTok->astOperand1()->hasKnownIntValue()) {
-                value = &condTok->astOperand1()->values().front();
+            if (const ValueFlow::Value* vi1 = condTok->astOperand1()->getKnownValue(ValueFlow::Value::ValueType::INT)) {
+                value = vi1;
                 varTok1 = condTok->astOperand2();
-            } else if (condTok->astOperand2()->hasKnownIntValue()) {
-                value = &condTok->astOperand2()->values().front();
+            } else if (const ValueFlow::Value* vi2 = condTok->astOperand2()->getKnownValue(ValueFlow::Value::ValueType::INT)) {
+                value = vi2;
                 varTok1 = condTok->astOperand1();
             }
             const bool exprIsNot = Token::simpleMatch(exprTok, "!");
@@ -2171,7 +2171,7 @@ static bool isEscapedOrJump(const Token* tok, bool functionsScope, const Library
     return Token::Match(tok, "return|goto|throw|continue|break");
 }
 
-bool isEscapeFunction(const Token* ftok, const Library* library)
+bool isEscapeFunction(const Token* ftok, const Library& library)
 {
     if (!Token::Match(ftok, "%name% ("))
         return false;
@@ -2181,8 +2181,8 @@ bool isEscapeFunction(const Token* ftok, const Library* library)
             return true;
         if (function->isAttributeNoreturn())
             return true;
-    } else if (library) {
-        if (library->isnoreturn(ftok))
+    } else {
+        if (library.isnoreturn(ftok))
             return true;
     }
     return false;
@@ -2840,7 +2840,7 @@ const Token* findExpression(const Token* start, const nonneg int exprid)
     return nullptr;
 }
 
-const Token* findEscapeStatement(const Scope* scope, const Library* library)
+const Token* findEscapeStatement(const Scope* scope, const Library& library)
 {
     if (!scope)
         return nullptr;
@@ -2895,7 +2895,7 @@ static bool isExpressionChangedAt(const F& getExprTok,
             (!(tok->function() && (tok->function()->isAttributePure() || tok->function()->isAttributeConst())))) {
             if (!Token::simpleMatch(tok->astParent(), "."))
                 return true;
-            const auto yield = astContainerYield(tok->astParent()->astOperand1());
+            const auto yield = astContainerYield(tok->astParent()->astOperand1(), settings.library);
             if (yield != Library::Container::Yield::SIZE && yield != Library::Container::Yield::EMPTY &&
                 yield != Library::Container::Yield::BUFFER && yield != Library::Container::Yield::BUFFER_NT)
                 // TODO: Is global variable really changed by function call?
@@ -3715,8 +3715,8 @@ static std::set<MathLib::bigint> getSwitchValues(const Token *startbrace, bool &
         }
         if (Token::simpleMatch(tok, "case")) {
             const Token *valueTok = tok->astOperand1();
-            if (valueTok->hasKnownIntValue())
-                values.insert(valueTok->getKnownIntValue());
+            if (const ValueFlow::Value* v = valueTok->getKnownValue(ValueFlow::Value::ValueType::INT))
+                values.insert(v->intvalue);
             continue;
         }
     }

@@ -30,7 +30,6 @@
 #include "tokenlist.h"
 #include "utils.h"
 #include "valueptr.h"
-#include "vfvalue.h"
 
 #include <algorithm>
 #include <cassert>
@@ -143,7 +142,7 @@ namespace {
                 traverseRecursive(tok->astOperand2(), f, traverseUnknown);
                 traverseRecursive(tok->astOperand1(), f, traverseUnknown);
                 return Break(Analyzer::Terminate::Escape);
-            } else if (Token::Match(tok, "%name% (") && isEscapeFunction(tok, &settings.library)) {
+            } else if (Token::Match(tok, "%name% (") && isEscapeFunction(tok, settings.library)) {
                 // Traverse the parameters of the function before escaping
                 traverseRecursive(tok->next()->astOperand2(), f, traverseUnknown);
                 return Break(Analyzer::Terminate::Escape);
@@ -617,7 +616,7 @@ namespace {
                         if (!condTok->hasKnownIntValue() || inLoop) {
                             if (!analyzer->lowerToPossible())
                                 return Break(Analyzer::Terminate::Bail);
-                        } else if (condTok->values().front().intvalue == inElse) {
+                        } else if (condTok->getKnownIntValue() == inElse) {
                             return Break();
                         }
                         // Handle loop

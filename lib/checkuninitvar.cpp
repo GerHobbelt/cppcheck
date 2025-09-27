@@ -292,8 +292,8 @@ static void conditionAlwaysTrueOrFalse(const Token *tok, const std::map<nonneg i
     if (!tok)
         return;
 
-    if (tok->hasKnownIntValue()) {
-        if (tok->getKnownIntValue() == 0)
+    if (const ValueFlow::Value* v = tok->getKnownValue(ValueFlow::Value::ValueType::INT)) {
+        if (v->intvalue == 0)
             *alwaysFalse = true;
         else
             *alwaysTrue = true;
@@ -1660,7 +1660,7 @@ void CheckUninitVar::valueFlowUninit()
                     if (isarray && tok->variable()->isMember())
                         continue; // Todo: this is a bailout
                     if (isarray && tok->variable()->isStlType() && Token::simpleMatch(tok->astParent(), ".")) {
-                        const auto yield = astContainerYield(tok);
+                        const auto yield = astContainerYield(tok, mSettings->library);
                         if (yield != Library::Container::Yield::AT_INDEX && yield != Library::Container::Yield::ITEM)
                             continue;
                     }

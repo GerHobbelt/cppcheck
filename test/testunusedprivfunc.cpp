@@ -22,7 +22,6 @@
 #include "platform.h"
 #include "settings.h"
 #include "fixture.h"
-#include "tokenize.h"
 
 #include <string>
 #include <vector>
@@ -35,6 +34,7 @@ private:
     const Settings settings = settingsBuilder().severity(Severity::style).build();
 
     void run() override {
+        mNewTemplate = true;
         TEST_CASE(test1);
         TEST_CASE(test2);
         TEST_CASE(test3);
@@ -96,9 +96,7 @@ private:
     void check_(const char* file, int line, const char code[], const CheckOptions& options = make_default_obj()) {
         const Settings settings1 = settingsBuilder(settings).platform(options.platform).build();
 
-        std::vector<std::string> files(1, "test.cpp");
-        Tokenizer tokenizer(settings1, *this);
-        PreprocessorHelper::preprocess(code, files, tokenizer, *this);
+        SimpleTokenizer2 tokenizer(settings1, *this, code, "test.cpp");
 
         // Tokenize..
         ASSERT_LOC(tokenizer.simplifyTokens1(""), file, line);
@@ -123,7 +121,7 @@ private:
               "unsigned int Fred::f()\n"
               "{ }");
 
-        ASSERT_EQUALS("[test.cpp:4]: (style) Unused private function: 'Fred::f'\n", errout_str());
+        ASSERT_EQUALS("[test.cpp:4:18]: (style) Unused private function: 'Fred::f' [unusedPrivateFunction]\n", errout_str());
 
         check("#line 1 \"p.h\"\n"
               "class Fred\n"
@@ -141,7 +139,7 @@ private:
               "unsigned int Fred::f()\n"
               "{ }");
 
-        ASSERT_EQUALS("[p.h:4]: (style) Unused private function: 'Fred::f'\n", errout_str());
+        ASSERT_EQUALS("[p.h:4:18]: (style) Unused private function: 'Fred::f' [unusedPrivateFunction]\n", errout_str());
 
         check("#line 1 \"p.h\"\n"
               "class Fred\n"
@@ -156,7 +154,7 @@ private:
               "void Fred::f()\n"
               "{\n"
               "}");
-        ASSERT_EQUALS("[p.h:4]: (style) Unused private function: 'Fred::f'\n", errout_str());
+        ASSERT_EQUALS("[p.h:4:6]: (style) Unused private function: 'Fred::f' [unusedPrivateFunction]\n", errout_str());
 
         // Don't warn about include files which implementation we don't see
         check("#line 1 \"p.h\"\n"
@@ -276,7 +274,7 @@ private:
               "Fred::Fred()\n"
               "{}");
 
-        ASSERT_EQUALS("[test.cpp:6]: (style) Unused private function: 'Fred::get'\n", errout_str());
+        ASSERT_EQUALS("[test.cpp:6:12]: (style) Unused private function: 'Fred::get' [unusedPrivateFunction]\n", errout_str());
     }
 
 
@@ -418,7 +416,7 @@ private:
               "    static void f()\n"
               "    { }\n"
               "};");
-        ASSERT_EQUALS("[test.cpp:10]: (style) Unused private function: 'A::f'\n", errout_str());
+        ASSERT_EQUALS("[test.cpp:10:17]: (style) Unused private function: 'A::f' [unusedPrivateFunction]\n", errout_str());
 
         check("class A\n"
               "{\n"
@@ -507,7 +505,7 @@ private:
               "    void foo() {}\n" // Skip for overrides of virtual functions of base
               "    void bar() {}\n" // Don't skip if no function is overridden
               "};");
-        ASSERT_EQUALS("[test.cpp:9]: (style) Unused private function: 'derived::bar'\n", errout_str());
+        ASSERT_EQUALS("[test.cpp:9:10]: (style) Unused private function: 'derived::bar' [unusedPrivateFunction]\n", errout_str());
 
         check("class Base {\n"
               "private:\n"
@@ -582,7 +580,7 @@ private:
               "    friend Bar;\n"
               "    void f() { }\n"
               "};");
-        ASSERT_EQUALS("[test.cpp:5]: (style) Unused private function: 'Foo::f'\n", errout_str());
+        ASSERT_EQUALS("[test.cpp:5:10]: (style) Unused private function: 'Foo::f' [unusedPrivateFunction]\n", errout_str());
 
         check("struct F;\n" // #10265
               "struct S {\n"
@@ -669,7 +667,7 @@ private:
               "    void startListening() {\n"
               "    }\n"
               "};");
-        ASSERT_EQUALS("[test.cpp:8]: (style) Unused private function: 'Fred::startListening'\n", errout_str());
+        ASSERT_EQUALS("[test.cpp:8:10]: (style) Unused private function: 'Fred::startListening' [unusedPrivateFunction]\n", errout_str());
 
         // #5059
         check("class Fred {\n"
@@ -838,7 +836,7 @@ private:
               "};\n"
               "int Foo::i = sth();"
               "int i = F();");
-        ASSERT_EQUALS("[test.cpp:3]: (style) Unused private function: 'Foo::F'\n", errout_str());
+        ASSERT_EQUALS("[test.cpp:3:16]: (style) Unused private function: 'Foo::F' [unusedPrivateFunction]\n", errout_str());
     }
 
     void templateSimplification() { //ticket #6183

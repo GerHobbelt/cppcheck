@@ -107,6 +107,8 @@ static const std::unordered_set<std::string> controlFlowKeywords = {
 
 void Token::update_property_info()
 {
+    assert(mImpl);
+
     setFlag(fIsControlFlowKeyword, false);
     // TODO: clear fIsLong
     isStandardType(false);
@@ -122,7 +124,7 @@ void Token::update_property_info()
             tokType(eChar);
             isLong(isPrefixStringCharLiteral(mStr, '\'', "L"));
         }
-        else if (std::isalpha((unsigned char)mStr[0]) || mStr[0] == '_' || mStr[0] == '$') { // Name
+        else if (std::isalpha(static_cast<unsigned char>(mStr[0])) || mStr[0] == '_' || mStr[0] == '$') { // Name
             if (mImpl->mVarId)
                 tokType(eVariable);
             else if (mTokensFrontBack.list.isKeyword(mStr)) {
@@ -134,8 +136,7 @@ void Token::update_property_info()
             else if (mStr == "asm") { // TODO: not a keyword
                 tokType(eKeyword);
             }
-            // TODO: remove condition? appears to be (no longer necessary) protection for reset of varids in Tokenizer::setVarId()
-            else if (mTokType != eVariable && mTokType != eFunction && mTokType != eType && mTokType != eKeyword) {
+            else {
                 tokType(eName);
                 // some types are not being treated as keywords
                 update_property_isStandardType();
@@ -183,8 +184,7 @@ void Token::update_property_info()
     } else {
         tokType(eNone);
     }
-    // TODO: make sure varid is only set for eVariable
-    //assert(!mImpl->mVarId || mTokType == eVariable);
+    assert(!mImpl->mVarId || mTokType == eVariable);
     // TODO: validate type for linked token?
 }
 
@@ -761,7 +761,7 @@ nonneg int Token::getStrArraySize(const Token *tok)
     // cppcheck-suppress shadowFunction - TODO: fix this
     const std::string str(getStringLiteral(tok->str()));
     int sizeofstring = 1;
-    for (int i = 0; i < (int)str.size(); i++) {
+    for (int i = 0; i < static_cast<int>(str.size()); i++) {
         if (str[i] == '\\')
             ++i;
         ++sizeofstring;
@@ -2503,13 +2503,15 @@ std::shared_ptr<ScopeInfo2> Token::scopeInfo() const
     return mImpl->mScopeInfo;
 }
 
+// if there is a known INT value it will always be the first entry
 bool Token::hasKnownIntValue() const
 {
     if (!mImpl->mValues)
         return false;
-    return std::any_of(mImpl->mValues->begin(), mImpl->mValues->end(), [](const ValueFlow::Value& value) {
-        return value.isKnown() && value.isIntValue();
-    });
+    if (mImpl->mValues->empty())
+        return false;
+    const ValueFlow::Value& value = mImpl->mValues->front();
+    return value.isIntValue() && value.isKnown();
 }
 
 bool Token::hasKnownValue() const
@@ -2540,6 +2542,15 @@ const ValueFlow::Value* Token::getKnownValue(ValueFlow::Value::ValueType t) cons
 {
     if (!mImpl->mValues)
         return nullptr;
+    if (mImpl->mValues->empty())
+        return nullptr;
+    // known INT values are always the first entry
+    if (t == ValueFlow::Value::ValueType::INT) {
+        const auto& v = mImpl->mValues->front();
+        if (!v.isKnown() || !v.isIntValue())
+            return nullptr;
+        return &v;
+    }
     auto it = std::find_if(mImpl->mValues->begin(), mImpl->mValues->end(), [&](const ValueFlow::Value& value) {
         return value.isKnown() && value.valueType == t;
     });

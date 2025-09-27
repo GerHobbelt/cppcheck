@@ -23,7 +23,6 @@
 #include "platform.h"
 #include "settings.h"
 #include "standards.h"
-#include "tokenize.h"
 
 #include <cstddef>
 #include <string>
@@ -278,6 +277,7 @@ private:
         TEST_CASE(moveAndReference);
         TEST_CASE(moveForRange);
         TEST_CASE(moveTernary);
+        TEST_CASE(movePointerAlias);
 
         TEST_CASE(funcArgNamesDifferent);
         TEST_CASE(funcArgOrderDifferent);
@@ -336,9 +336,15 @@ private:
         check_(file, line, code, true, true, true, false, s);
     }
 
+    struct CheckPOptions
+    {
+        CheckPOptions() = default;
+        bool cpp = true;
+    };
+
 #define checkP(...) checkP_(__FILE__, __LINE__, __VA_ARGS__)
     template<size_t size>
-    void checkP_(const char* file, int line, const char (&code)[size], const char *filename = "test.cpp") {
+    void checkP_(const char* file, int line, const char (&code)[size], const CheckPOptions& options = make_default_obj()) {
         Settings* settings = &_settings;
         settings->severity.enable(Severity::style);
         settings->severity.enable(Severity::warning);
@@ -348,9 +354,7 @@ private:
         settings->standards.cpp = Standards::CPPLatest;
         settings->certainty.enable(Certainty::inconclusive);
 
-        std::vector<std::string> files(1, filename);
-        Tokenizer tokenizer(*settings, *this);
-        PreprocessorHelper::preprocess(code, files, tokenizer, *this);
+        SimpleTokenizer2 tokenizer(*settings, *this, code, options.cpp ? "test.cpp" : "test.c");
 
         // Tokenizer..
         ASSERT_LOC(tokenizer.simplifyTokens1(""), file, line);
@@ -5601,7 +5605,7 @@ private:
                "    }\n"
                "    OUTB(index, port_0);\n"
                "    return INB(port_1);\n"
-               "}\n", "test.c");
+               "}\n", dinit(CheckPOptions, $.cpp = false));
         ASSERT_EQUALS("", errout_str());
 
         check("[[noreturn]] void n();\n"
@@ -8852,6 +8856,13 @@ private:
               "    f<uint32_t>(0);\n"
               "}");
         ASSERT_EQUALS("", errout_str());
+
+        // #13734
+        check("void f() {\n"
+              "    uint8_t a[N + 1];\n"
+              "    for (unsigned p = 0; p < (sizeof(a) / sizeof((a)[0])); ++p) {}\n"
+              "}");
+        ASSERT_EQUALS("", errout_str());
     }
 
     void checkSignOfPointer() {
@@ -11665,7 +11676,7 @@ private:
         checkP("#define X x\n"
                "void f(int x) {\n"
                "  return x + X++;\n"
-               "}", "test.c");
+               "}", dinit(CheckPOptions, $.cpp = false));
         ASSERT_EQUALS("[test.c:3]: (error) Expression 'x+x++' depends on order of evaluation of side effects\n", errout_str());
     }
 
@@ -12099,6 +12110,17 @@ private:
               "    h(b ? h(gA(5, std::move(s))) : h(gB(7, std::move(s))));\n"
               "}\n");
         ASSERT_EQUALS("", errout_str());
+    }
+
+    void movePointerAlias()
+    {
+        check("void f() {\n"
+              "    std::string s;\n"
+              "    std::string s1 = std::move(s);\n"
+              "    const std::string* s_p = &s;\n"
+              "    s_p->size();\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:5]: (warning) Access of moved variable '.'.\n", errout_str());
     }
 
     void funcArgNamesDifferent() {

@@ -322,8 +322,8 @@ void CheckCondition::checkBadBitmaskCheck()
                                    (parent->str() == "(" && Token::Match(parent->astOperand1(), "if|while")) ||
                                    (parent->str() == "return" && parent->astOperand1() == tok && inBooleanFunction(tok));
 
-            const bool isTrue = (tok->astOperand1()->hasKnownIntValue() && tok->astOperand1()->values().front().intvalue != 0) ||
-                                (tok->astOperand2()->hasKnownIntValue() && tok->astOperand2()->values().front().intvalue != 0);
+            const bool isTrue = (tok->astOperand1()->hasKnownIntValue() && tok->astOperand1()->getKnownIntValue() != 0) ||
+                                (tok->astOperand2()->hasKnownIntValue() && tok->astOperand2()->getKnownIntValue() != 0);
 
             if (isBoolean && isTrue)
                 badBitmaskCheckError(tok);
@@ -333,8 +333,8 @@ void CheckCondition::checkBadBitmaskCheck()
             if (mTokenizer->hasIfdef(startStop.first, startStop.second))
                 continue;
 
-            const bool isZero1 = (tok->astOperand1()->hasKnownIntValue() && tok->astOperand1()->values().front().intvalue == 0);
-            const bool isZero2 = (tok->astOperand2()->hasKnownIntValue() && tok->astOperand2()->values().front().intvalue == 0);
+            const bool isZero1 = (tok->astOperand1()->hasKnownIntValue() && tok->astOperand1()->getKnownIntValue() == 0);
+            const bool isZero2 = (tok->astOperand2()->hasKnownIntValue() && tok->astOperand2()->getKnownIntValue() == 0);
             if (!isZero1 && !isZero2)
                 continue;
 
@@ -615,6 +615,16 @@ static bool isNonConstFunctionCall(const Token *ftok, const Library &library)
     return true;
 }
 
+static bool isNestedInLambda(const Scope* inner, const Scope* outer)
+{
+    while (inner && inner != outer) {
+        if (inner->type == ScopeType::eLambda)
+            return true;
+        inner = inner->nestedIn;
+    }
+    return false;
+}
+
 void CheckCondition::multiCondition2()
 {
     if (!mSettings->severity.isEnabled(Severity::warning) &&
@@ -709,6 +719,8 @@ void CheckCondition::multiCondition2()
             const Token * const endToken = tok->scope()->bodyEnd;
 
             for (; tok && tok != endToken; tok = tok->next()) {
+                if (isNestedInLambda(tok->scope(), cond1->scope()))
+                    continue;
                 if (isExpressionChangedAt(cond1, tok, 0, false, *mSettings))
                     break;
                 if (Token::Match(tok, "if|return")) {
@@ -1700,7 +1712,7 @@ void CheckCondition::checkInvalidTestForOverflow()
                 const Token * const other = expr->astSibling();
 
                 // x [+-] c cmp x
-                if ((other->isNumber() && other->getKnownIntValue() > 0) ||
+                if ((other->isNumber() && other->hasKnownIntValue() && other->getKnownIntValue() > 0) ||
                     (!other->isNumber() && other->valueType() && other->valueType()->isIntegral() && other->valueType()->sign == ValueType::Sign::UNSIGNED)) {
                     bool result;
                     if (lhs->str() == "+")

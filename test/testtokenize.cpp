@@ -299,6 +299,7 @@ private:
         TEST_CASE(bitfields13); // ticket #3502 (segmentation fault)
         TEST_CASE(bitfields15); // ticket #7747 (enum Foo {A,B}:4;)
         TEST_CASE(bitfields16); // Save bitfield bit count
+        TEST_CASE(bitfields17);
 
         TEST_CASE(simplifyNamespaceStd);
 
@@ -474,6 +475,8 @@ private:
 
         TEST_CASE(atomicCast); // #12605
         TEST_CASE(constFunctionPtrTypedef); // #12135
+
+        TEST_CASE(simplifyPlatformTypes);
     }
 
 #define tokenizeAndStringify(...) tokenizeAndStringify_(__FILE__, __LINE__, __VA_ARGS__)
@@ -1816,6 +1819,15 @@ private:
                                            "  };\n"
                                            "} catch (long) {\n"
                                            "}"));
+
+        ASSERT_EQUALS("struct S { void func ( ) const ; } ;\n"
+                      "void S :: func ( ) const {\n"
+                      "try { f ( ) ; }\n"
+                      "catch ( ... ) { g ( ) ; } }",
+                      tokenizeAndStringify("struct S { void func() const; };\n"
+                                           "void S::func() const\n"
+                                           "try { f(); }\n"
+                                           "catch (...) { g(); }\n"));
     }
 
     // Simplify "((..))" into "(..)"
@@ -4755,6 +4767,32 @@ private:
         ASSERT(tokenizer.tokenize(code));
         const Token *x = Token::findsimplematch(tokenizer.tokens(), "x");
         ASSERT_EQUALS(1, x->bits());
+    }
+
+    void bitfields17() {
+        const char code[] = "struct S {\n" // #13722
+                            "    volatile uint32_t a : 10;\n"
+                            "    volatile uint32_t   : 6;\n"
+                            "    volatile uint32_t b : 10;\n"
+                            "    volatile uint32_t   : 6;\n"
+                            "};\n";
+        const char expected[] = "struct S {\n"
+                                "volatile uint32_t a ;\n"
+                                "\n"
+                                "volatile uint32_t b ;\n"
+                                "\n"
+                                "} ;";
+        ASSERT_EQUALS(expected, tokenizeAndStringify(code));
+
+        const char code2[] = "struct S {\n"
+                             "    const volatile uint32_t a : 10;\n"
+                             "    const volatile uint32_t   : 6;\n"
+                             "};\n";
+        const char expected2[] = "struct S {\n"
+                                 "const volatile uint32_t a ;\n"
+                                 "\n"
+                                 "} ;";
+        ASSERT_EQUALS(expected2, tokenizeAndStringify(code2));
     }
 
     void simplifyNamespaceStd() {
@@ -7912,9 +7950,7 @@ private:
     std::string checkHdrs_(const char* file, int line, const char code[], bool checkHeadersFlag) {
         const Settings settings = settingsBuilder().checkHeaders(checkHeadersFlag).build();
 
-        std::vector<std::string> files(1, "test.cpp");
-        Tokenizer tokenizer(settings, *this);
-        PreprocessorHelper::preprocess(code, files, tokenizer, *this);
+        SimpleTokenizer2 tokenizer(settings, *this, code, "test.cpp");
 
         // Tokenizer..
         ASSERT_LOC(tokenizer.simplifyTokens1(""), file, line);
@@ -8458,6 +8494,24 @@ private:
                             "}\n";
         ASSERT_NO_THROW(tokenizeAndStringify(code));
         ASSERT_EQUALS("void ( * const f ) ( ) ;", tokenizeAndStringify("typedef void (*fp_t)(); fp_t const f;"));
+    }
+
+    void simplifyPlatformTypes() {
+        {
+            const char code[] = "size_t f();";
+            ASSERT_EQUALS("unsigned long f ( ) ;", tokenizeAndStringify(code, true, Platform::Type::Unix32));
+            ASSERT_EQUALS("unsigned long f ( ) ;", tokenizeAndStringify(code, true, Platform::Type::Unix64));
+        }
+        {
+            const char code[] = "ssize_t f();";
+            ASSERT_EQUALS("long f ( ) ;", tokenizeAndStringify(code, true, Platform::Type::Unix32));
+            ASSERT_EQUALS("long f ( ) ;", tokenizeAndStringify(code, true, Platform::Type::Unix64));
+        }
+        {
+            const char code[] = "std::ptrdiff_t f();";
+            ASSERT_EQUALS("long f ( ) ;", tokenizeAndStringify(code, true, Platform::Type::Unix32));
+            ASSERT_EQUALS("long f ( ) ;", tokenizeAndStringify(code, true, Platform::Type::Unix64));
+        }
     }
 };
 

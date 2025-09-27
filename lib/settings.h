@@ -69,16 +69,16 @@ public:
         mFlags = 0xFFFFFFFF;
     }
     bool isEnabled(T flag) const {
-        return (mFlags & (1U << (uint32_t)flag)) != 0;
+        return (mFlags & (1U << static_cast<uint32_t>(flag))) != 0;
     }
     void enable(T flag) {
-        mFlags |= (1U << (uint32_t)flag);
+        mFlags |= (1U << static_cast<uint32_t>(flag));
     }
     void enable(SimpleEnableGroup<T> group) {
         mFlags |= group.intValue();
     }
     void disable(T flag) {
-        mFlags &= ~(1U << (uint32_t)flag);
+        mFlags &= ~(1U << static_cast<uint32_t>(flag));
     }
     void disable(SimpleEnableGroup<T> group) {
         mFlags &= ~(group.intValue());
@@ -97,6 +97,7 @@ public:
  * to pass individual values to functions or constructors now or in the
  * future when we might have even more detailed settings.
  */
+// NOLINTNEXTLINE(clang-analyzer-optin.performance.Padding)
 class CPPCHECKLIB WARN_UNUSED Settings {
 private:
 
@@ -161,7 +162,10 @@ public:
     std::string clangExecutable = "clang";
 
     /** Use clang-tidy */
-    bool clangTidy{}; // TODO: CLI
+    bool clangTidy{};
+
+    /** Custom clang-tidy executable */
+    std::string clangTidyExecutable = "clang-tidy";
 
     /** Internal: Clear the simplecpp non-existing include cache */
     bool clearIncludeCache{}; // internal

@@ -2821,7 +2821,7 @@ static bool scopesMatch(const std::string &scope1, const std::string &scope2, co
     return false;
 }
 
-static unsigned int tokDistance(const Token* tok1, const Token* tok2) { // TODO: use index()
+static unsigned int tokDistance(const Token* tok1, const Token* tok2) { // use when index() is not available yet
     unsigned int dist = 0;
     const Token* tok = tok1;
     while (tok != tok2) {
@@ -3543,6 +3543,7 @@ void Tokenizer::combineOperators()
             }
             if (simplify) {
                 tok->str(tok->str() + ":");
+                tok->tokType(Token::Type::eKeyword); // we need to preserve the keyword type after setting a non-keyword string
                 tok->deleteNext();
             }
         } else if (tok->str() == "->") {
@@ -3839,6 +3840,7 @@ void Tokenizer::arraySize()
     }
 }
 
+// cppcheck-suppress functionConst
 void Tokenizer::arraySizeAfterValueFlow()
 {
     // After ValueFlow, adjust array sizes.
@@ -4425,6 +4427,10 @@ static bool setVarIdClassDeclaration(Token* const startToken,
         }
         if (tok->str() == "{") {
             inEnum = isEnumStart(tok);
+            if (!inEnum && isClassStructUnionEnumStart(tok)) { // nested type
+                tok = tok->link();
+                continue;
+            }
             if (initList && !initListArgLastToken)
                 initList = false;
             ++indentlevel;
@@ -7087,6 +7093,7 @@ void Tokenizer::simplifyVarDecl(const bool only_k_r_fpar)
     simplifyVarDecl(list.front(), nullptr, only_k_r_fpar);
 }
 
+// cppcheck-suppress functionConst - has side effects
 void Tokenizer::simplifyVarDecl(Token * tokBegin, const Token * const tokEnd, const bool only_k_r_fpar)
 {
     const bool cpp = isCPP();
@@ -8142,7 +8149,7 @@ void Tokenizer::unhandledCharLiteral(const Token *tok, const std::string& msg) c
 {
     std::string s = tok ? (" " + tok->str()) : "";
     for (std::size_t i = 0; i < s.size(); ++i) {
-        if ((unsigned char)s[i] >= 0x80)
+        if (static_cast<unsigned char>(s[i]) >= 0x80)
             s.clear();
     }
 
@@ -8944,7 +8951,7 @@ std::string Tokenizer::simplifyString(const std::string &source)
         int sz = 0;    // size of stringdata
         if (str[i+1] == 'x') {
             sz = 2;
-            while (sz < 4 && std::isxdigit((unsigned char)str[i+sz]))
+            while (sz < 4 && std::isxdigit(static_cast<unsigned char>(str[i+sz])))
                 sz++;
             if (sz > 2) {
                 std::istringstream istr(str.substr(i+2, sz-2));
@@ -8956,14 +8963,14 @@ std::string Tokenizer::simplifyString(const std::string &source)
                 sz++;
             std::istringstream istr(str.substr(i+1, sz-1));
             istr >> std::oct >> c;
-            str = str.replace(i, sz, std::string(1U, (char)c));
+            str = str.replace(i, sz, std::string(1U, static_cast<char>(c)));
             continue;
         }
 
         if (sz <= 2)
             i++;
         else if (i+sz < str.size())
-            str.replace(i, sz, std::string(1U, (char)c));
+            str.replace(i, sz, std::string(1U, static_cast<char>(c)));
         else
             str.replace(i, str.size() - i - 1U, "a");
     }
@@ -8979,7 +8986,10 @@ void Tokenizer::simplifyFunctionTryCatch()
     for (Token * tok = list.front(); tok; tok = tok->next()) {
         if (!Token::Match(tok, "try {|:"))
             continue;
-        if (!TokenList::isFunctionHead(tok->previous(), "try")) // TODO: this is supposed to a list of characters and not strings
+        const Token* par = tok->previous();
+        while (par && par->isKeyword())
+            par = par->previous();
+        if (!TokenList::isFunctionHead(par, "try")) // TODO: this is supposed to a list of characters and not strings
             continue;
 
         Token* tryStartToken = skipInitializerList(tok->next());
@@ -9924,10 +9934,13 @@ void Tokenizer::simplifyBitfields()
             }
         }
 
-        if (Token::Match(tok->next(), "const| %type% %name% :") &&
+        Token* typeTok = tok->next();
+        while (Token::Match(typeTok, "const|volatile"))
+            typeTok = typeTok->next();
+        if (Token::Match(typeTok, "%type% %name% :") &&
             !Token::Match(tok->next(), "case|public|protected|private|class|struct") &&
             !Token::simpleMatch(tok->tokAt(2), "default :")) {
-            Token *tok1 = (tok->strAt(1) == "const") ? tok->tokAt(3) : tok->tokAt(2);
+            Token *tok1 = typeTok->next();
             if (Token::Match(tok1, "%name% : %num% [;=]"))
                 tok1->setBits(static_cast<unsigned char>(MathLib::toBigNumber(tok1->tokAt(2))));
             if (tok1 && tok1->tokAt(2) &&
@@ -9948,13 +9961,10 @@ void Tokenizer::simplifyBitfields()
             } else {
                 tok->next()->deleteNext(2);
             }
-        } else if (Token::Match(tok->next(), "const| %type% : %num%|%bool% ;") &&
-                   tok->strAt(1) != "default") {
-            const int offset = (tok->strAt(1) == "const") ? 1 : 0;
-            if (!Token::Match(tok->tokAt(3 + offset), "[{};()]")) {
-                tok->deleteNext(4 + offset);
-                goback = true;
-            }
+        } else if (Token::Match(typeTok, "%type% : %num%|%bool% ;") &&
+                   typeTok->str() != "default") {
+            tok->deleteNext(4 + tokDistance(tok, typeTok) - 1);
+            goback = true;
         }
 
         if (last && last->str() == ",") {
@@ -10271,6 +10281,8 @@ void Tokenizer::simplifyOperatorName()
     for (Token *tok = list.front(); tok; tok = tok->next()) {
         if (Token::Match(tok, "using|:: operator %op%|%name% ;")) {
             tok->next()->str("operator" + tok->strAt(2));
+            tok->next()->tokType(Token::Type::eKeyword); // we need to preserve the keyword type after setting a non-keyword string
+            // TODO: tok->next()->isOperatorKeyword(true);
             tok->next()->deleteNext();
             continue;
         }
@@ -10280,6 +10292,8 @@ void Tokenizer::simplifyOperatorName()
         // operator op
         if (Token::Match(tok, "operator %op% (") && !operatorEnd(tok->linkAt(2))) {
             tok->str(tok->str() + tok->strAt(1));
+            tok->tokType(Token::Type::eKeyword); // we need to preserve the keyword type after setting a non-keyword string
+            // TODO: tok->isOperatorKeyword(true);
             tok->deleteNext();
             continue;
         }
@@ -10352,11 +10366,15 @@ void Tokenizer::simplifyOperatorName()
         const bool returnsRef = Token::simpleMatch(par, "( & (") && tok->next()->isName();
         if (par && !op.empty()) {
             if (returnsRef) {
-                par->next()->insertToken("operator" + op)->isOperatorKeyword(true);
+                Token* tok_op = par->next()->insertToken("operator" + op);
+                // TODO: tok_op->tokType(Token::Type::eKeyword); // the given token is not a keyword but should be treated as such
+                tok_op->isOperatorKeyword(true);
                 tok->deleteThis();
             }
             else {
                 tok->str("operator" + op);
+                tok->tokType(Token::Type::eKeyword); // we need to preserve the keyword type after setting a non-keyword string
+                // TODO: tok->isOperatorKeyword(true);
                 Token::eraseTokens(tok, par);
             }
         }

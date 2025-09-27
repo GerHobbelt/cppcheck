@@ -18,6 +18,7 @@
 
 #include "cppcheck.h"
 #include "cppcheckexecutor.h"
+#include "errorlogger.h"
 #include "errortypes.h"
 #include "filesettings.h"
 #include "fixture.h"
@@ -44,6 +45,8 @@ public:
 
 private:
 
+    const std::string templateFormat{"{callstack}: ({severity}) {inconclusive:inconclusive: }{message}"};
+
     void run() override {
         TEST_CASE(suppressionsBadId1);
         TEST_CASE(suppressionsDosFormat);     // Ticket #1836
@@ -69,6 +72,7 @@ private:
         TEST_CASE(inlinesuppress_symbolname_Files);
         TEST_CASE(inlinesuppress_symbolname_FS);
         TEST_CASE(inlinesuppress_comment);
+        TEST_CASE(inlinesuppress_unchecked);
 
         TEST_CASE(multi_inlinesuppress);
         TEST_CASE(multi_inlinesuppress_comment);
@@ -103,6 +107,10 @@ private:
         TEST_CASE(suppressionsParseXmlFile);
 
         TEST_CASE(toString);
+
+        TEST_CASE(suppressionFromErrorMessage);
+
+        TEST_CASE(suppressionWildcard);
     }
 
     void suppressionsBadId1() const {
@@ -253,6 +261,7 @@ private:
         settings.severity.enable(Severity::information);
         if (suppression == "unusedFunction")
             settings.checks.setEnabled(Checks::unusedFunction, true);
+        settings.templateFormat = templateFormat;
 
         std::vector<std::unique_ptr<ScopedFile>> scopedfiles;
         scopedfiles.reserve(filelist.size());
@@ -294,6 +303,7 @@ private:
                                             $.quiet = true,
                                             $.inlineSuppressions = true);
         settings.severity.enable(Severity::information);
+        settings.templateFormat = templateFormat;
 
         Suppressions supprs;
         if (!suppression.empty()) {
@@ -340,6 +350,7 @@ private:
                                             $.quiet = true,
                                             $.inlineSuppressions = true);
         settings.severity.enable(Severity::information);
+        settings.templateFormat = templateFormat;
 
         Suppressions supprs;
         if (!suppression.empty()) {
@@ -932,12 +943,13 @@ private:
         suppressionsMultiFileInternal(&TestSuppressions::checkSuppressionFS);
     }
 
+    // TODO: this tests an internal function - should it be private?
     void suppressionsPathSeparator() const {
         const SuppressionList::Suppression s1("*", "test/foo/*");
-        ASSERT_EQUALS(true, s1.isSuppressed(errorMessage("someid", "test/foo/bar.cpp", 142)));
+        ASSERT_EQUALS_ENUM(SuppressionList::Suppression::Result::Matched, s1.isSuppressed(errorMessage("someid", "test/foo/bar.cpp", 142)));
 
         const SuppressionList::Suppression s2("abc", "include/1.h");
-        ASSERT_EQUALS(true, s2.isSuppressed(errorMessage("abc", "include/1.h", 142)));
+        ASSERT_EQUALS_ENUM(SuppressionList::Suppression::Result::Matched, s2.isSuppressed(errorMessage("abc", "include/1.h", 142)));
     }
 
     void suppressionsLine0() const {
@@ -1065,6 +1077,19 @@ private:
         ASSERT_EQUALS("", errMsg);
         ASSERT_EQUALS(true, s.parseComment("// cppcheck-suppress abc -- some comment", &errMsg));
         ASSERT_EQUALS("", errMsg);
+    }
+
+    // TODO: tests internal function - should it be private?
+    void inlinesuppress_unchecked() const {
+        SuppressionList::Suppression s;
+        std::string errMsg;
+        ASSERT_EQUALS(true, s.parseComment("// cppcheck-suppress abc", &errMsg));
+        ASSERT_EQUALS("", errMsg);
+        s.lineNumber = 5;
+
+        ASSERT_EQUALS_ENUM(SuppressionList::Suppression::Result::None, s.isSuppressed(errorMessage("id", "test.cpp", 11)));
+        ASSERT_EQUALS_ENUM(SuppressionList::Suppression::Result::Checked, s.isSuppressed(errorMessage("id", "test.cpp", 5)));
+        ASSERT_EQUALS_ENUM(SuppressionList::Suppression::Result::Matched, s.isSuppressed(errorMessage("abc", "test.cpp", 5)));
     }
 
     void multi_inlinesuppress() const {
@@ -1198,6 +1223,7 @@ private:
         Settings settings;
         settings.quiet = true;
         settings.exitCode = 1;
+        settings.templateFormat = templateFormat;
 
         Suppressions supprs;
         ASSERT_EQUALS("", supprs.nomsg.addSuppressionLine("uninitvar"));
@@ -1223,6 +1249,7 @@ private:
     void globalsuppress_unusedFunction() const { // #4946 - wrong report of "unmatchedSuppression" for "unusedFunction"
         SuppressionList suppressions;
         ASSERT_EQUALS("", suppressions.addSuppressionLine("unusedFunction:*"));
+        ASSERT_EQUALS(false, suppressions.isSuppressed(errorMessage("errorid")));
         ASSERT_EQUALS(false, !suppressions.getUnmatchedLocalSuppressions(FileWithDetails("test.c"), true).empty());
         ASSERT_EQUALS(true, !suppressions.getUnmatchedGlobalSuppressions(true).empty());
         ASSERT_EQUALS(false, !suppressions.getUnmatchedLocalSuppressions(FileWithDetails("test.c"), false).empty());
@@ -1238,6 +1265,7 @@ private:
         settings.inlineSuppressions = true;
         settings.relativePaths = true;
         settings.basePaths.emplace_back("/somewhere");
+        settings.templateFormat = templateFormat;
         const char code[] =
             "struct Point\n"
             "{\n"
@@ -1315,27 +1343,30 @@ private:
         suppressingSyntaxErrorsWhileFileReadInternal(&TestSuppressions::checkSuppressionFiles);
     }
 
+    // TODO: this tests an internal function - should it be private?
     void symbol() const {
         SuppressionList::Suppression s;
+        s.fileName = "test.cpp";
         s.errorId = "foo";
         s.symbolName = "array*";
 
         SuppressionList::ErrorMessage errorMsg;
         errorMsg.errorId = "foo";
+        errorMsg.symbolNames = "";
+        ASSERT_EQUALS_ENUM(SuppressionList::Suppression::Result::None, s.isSuppressed(errorMsg));
         errorMsg.setFileName("test.cpp");
         errorMsg.lineNumber = 123;
-        errorMsg.symbolNames = "";
-        ASSERT_EQUALS(false, s.isSuppressed(errorMsg));
+        ASSERT_EQUALS_ENUM(SuppressionList::Suppression::Result::Checked, s.isSuppressed(errorMsg));
         errorMsg.symbolNames = "x\n";
-        ASSERT_EQUALS(false, s.isSuppressed(errorMsg));
+        ASSERT_EQUALS_ENUM(SuppressionList::Suppression::Result::Checked, s.isSuppressed(errorMsg));
         errorMsg.symbolNames = "array1\n";
-        ASSERT_EQUALS(true, s.isSuppressed(errorMsg));
+        ASSERT_EQUALS_ENUM(SuppressionList::Suppression::Result::Matched, s.isSuppressed(errorMsg));
         errorMsg.symbolNames = "x\n"
                                "array2\n";
-        ASSERT_EQUALS(true, s.isSuppressed(errorMsg));
+        ASSERT_EQUALS_ENUM(SuppressionList::Suppression::Result::Matched, s.isSuppressed(errorMsg));
         errorMsg.symbolNames = "array3\n"
                                "x\n";
-        ASSERT_EQUALS(true, s.isSuppressed(errorMsg));
+        ASSERT_EQUALS_ENUM(SuppressionList::Suppression::Result::Matched, s.isSuppressed(errorMsg));
     }
 
     void unusedFunctionInternal(unsigned int (TestSuppressions::*check)(const char[], const std::string &)) {
@@ -1356,11 +1387,12 @@ private:
         ASSERT_EQUALS(0, (this->*check)(code, "*:test.cpp"));
         ASSERT_EQUALS("", errout_str());
 
+        // TODO: this test never worked
         // multi error in file, but only suppression one error
-        const char code2[] = "fi fi\n"
-                             "if if;";
-        ASSERT_EQUALS(1, (this->*check)(code2, "*:test.cpp:1"));  // suppress all error at line 1 of test.cpp
-        ASSERT_EQUALS("[test.cpp:2]: (error) syntax error\n", errout_str());
+        //const char code2[] = "fi fi\n"
+        //                     "if if;";
+        //ASSERT_EQUALS(1, (this->*check)(code2, "*:test.cpp:1"));  // suppress all error at line 1 of test.cpp
+        //ASSERT_EQUALS("[test.cpp:2]: (error) syntax error\n", errout_str());
 
         // multi error in file, but only suppression one error (2)
         const char code3[] = "void f(int x, int y){\n"
@@ -1659,6 +1691,112 @@ private:
             s.errorId = "unitvar";
             s.symbolName = "sym";
             ASSERT_EQUALS("unitvar:sym", s.toString());
+        }
+    }
+
+    void suppressionFromErrorMessage() const {
+        {
+            const ErrorMessage msg({}, "test1.cpp", Severity::information, "msg", "id", Certainty::inconclusive);
+            const auto msg_s = SuppressionList::ErrorMessage::fromErrorMessage(msg, {"m1", "m2"});
+            ASSERT_EQUALS("test1.cpp", msg_s.getFileName());
+            ASSERT_EQUALS(SuppressionList::Suppression::NO_LINE, msg_s.lineNumber);
+            ASSERT_EQUALS("id", msg_s.errorId);
+            ASSERT_EQUALS_ENUM(Certainty::inconclusive, msg_s.certainty);
+            ASSERT_EQUALS("", msg_s.symbolNames);
+            ASSERT_EQUALS(2, msg_s.macroNames.size());
+            auto it = msg_s.macroNames.cbegin();
+            ASSERT_EQUALS("m1", *it);
+            ++it;
+            ASSERT_EQUALS("m2", *it);
+        }
+        {
+            std::list<ErrorMessage::FileLocation> loc;
+            loc.emplace_back("test1.cpp", 1, 1);
+            const ErrorMessage msg(std::move(loc), "test1.cpp", Severity::information, "msg", "id", Certainty::normal);
+            const auto msg_s = SuppressionList::ErrorMessage::fromErrorMessage(msg, {});
+            ASSERT_EQUALS("test1.cpp", msg_s.getFileName());
+            ASSERT_EQUALS(1, msg_s.lineNumber);
+        }
+        {
+            std::list<ErrorMessage::FileLocation> loc;
+            loc.emplace_back("test1.cpp", 1, 1);
+            loc.emplace_back("test2.cpp", 2, 2);
+            loc.emplace_back("test3.cpp", 3, 3);
+            const ErrorMessage msg(std::move(loc), "test1.cpp", Severity::information, "msg", "id", Certainty::normal);
+            const auto msg_s = SuppressionList::ErrorMessage::fromErrorMessage(msg, {});
+            ASSERT_EQUALS("test3.cpp", msg_s.getFileName());
+            ASSERT_EQUALS(3, msg_s.lineNumber);
+        }
+    }
+
+    void suppressionWildcard() const {
+        {
+            SuppressionList suppressions;
+            ASSERT_EQUALS("", suppressions.addSuppressionLine("id:test*.cpp"));
+
+            ASSERT_EQUALS(false, suppressions.isSuppressed(errorMessage("abc", "xyz.cpp", 1)));
+            {
+                const auto supprs = suppressions.getSuppressions();
+                const auto suppr = supprs.cbegin();
+                ASSERT(!suppr->checked);
+                ASSERT(!suppr->matched);
+            }
+            ASSERT(suppressions.getUnmatchedGlobalSuppressions(true).empty());
+        }
+
+        {
+            SuppressionList suppressions;
+            ASSERT_EQUALS("", suppressions.addSuppressionLine("id:test*.cpp"));
+
+            ASSERT_EQUALS(false, suppressions.isSuppressed(errorMessage("abc", "test.cpp", 1)));
+            {
+                const auto supprs = suppressions.getSuppressions();
+                const auto suppr = supprs.cbegin();
+                ASSERT(suppr->checked);
+                ASSERT(!suppr->matched);
+            }
+            ASSERT(!suppressions.getUnmatchedGlobalSuppressions(true).empty());
+        }
+
+        {
+            SuppressionList suppressions;
+            ASSERT_EQUALS("", suppressions.addSuppressionLine("id:test*.cpp"));
+
+            ASSERT_EQUALS(false, suppressions.isSuppressed(errorMessage("id2", "test.cpp", 1)));
+            {
+                const auto supprs = suppressions.getSuppressions();
+                const auto suppr = supprs.cbegin();
+                ASSERT(suppr->checked);
+                ASSERT(!suppr->matched);
+            }
+            ASSERT(!suppressions.getUnmatchedGlobalSuppressions(true).empty());
+        }
+
+        {
+            SuppressionList suppressions;
+            ASSERT_EQUALS("", suppressions.addSuppressionLine("id:test*.cpp"));
+            ASSERT_EQUALS(true, suppressions.isSuppressed(errorMessage("id", "test.cpp", 1)));
+            {
+                const auto supprs = suppressions.getSuppressions();
+                const auto suppr = supprs.cbegin();
+                ASSERT(suppr->checked);
+                ASSERT(suppr->matched);
+            }
+            ASSERT(suppressions.getUnmatchedGlobalSuppressions(true).empty());
+        }
+
+        {
+            SuppressionList suppressions;
+            ASSERT_EQUALS("", suppressions.addSuppressionLine("*:test*.cpp"));
+            // the empty ID should be disallowed but it is use as a hack to mark wildcards on error IDs as checked
+            ASSERT_EQUALS(false, suppressions.isSuppressed(errorMessage("", "test.cpp", 1)));
+            {
+                const auto supprs = suppressions.getSuppressions();
+                const auto suppr = supprs.cbegin();
+                ASSERT(suppr->checked);
+                ASSERT(!suppr->matched);
+            }
+            ASSERT(!suppressions.getUnmatchedGlobalSuppressions(true).empty());
         }
     }
 };

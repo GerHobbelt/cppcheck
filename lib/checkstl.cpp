@@ -304,7 +304,7 @@ bool CheckStl::isContainerSizeGE(const Token * containerToken, const Token *expr
             mul = expr->astOperand1();
         else
             return false;
-        return mul && (!mul->hasKnownIntValue() || mul->values().front().intvalue != 0);
+        return mul && (!mul->hasKnownIntValue() || mul->getKnownIntValue() != 0);
     }
     if (expr->str() == "+") {
         const Token *op;
@@ -713,7 +713,7 @@ static bool isSameIteratorContainerExpression(const Token* tok1,
     if (isSameExpression(false, tok1, tok2, settings, false, false)) {
         return !astIsContainerOwned(tok1) || !isTemporary(tok1, &settings.library);
     }
-    if (astContainerYield(tok2) == Library::Container::Yield::ITEM)
+    if (astContainerYield(tok2, settings.library) == Library::Container::Yield::ITEM)
         return true;
     if (kind == ValueFlow::Value::LifetimeKind::Address || kind == ValueFlow::Value::LifetimeKind::Iterator) {
         const auto address1 = getAddressContainer(tok1);
@@ -1136,7 +1136,6 @@ void CheckStl::invalidContainer()
 {
     logChecker("CheckStl::invalidContainer");
     const SymbolDatabase *symbolDatabase = mTokenizer->getSymbolDatabase();
-    const Library& library = mSettings->library;
     InvalidContainerAnalyzer analyzer;
     analyzer.analyze(symbolDatabase);
     for (const Scope * scope : symbolDatabase->functionScopes) {
@@ -1189,7 +1188,7 @@ void CheckStl::invalidContainer()
                     const ValueFlow::Value* v = nullptr;
                     ErrorPath errorPath;
                     PathAnalysis::Info info =
-                        PathAnalysis{endToken, library}.forwardFind([&](const PathAnalysis::Info& info) {
+                        PathAnalysis{endToken}.forwardFind([&](const PathAnalysis::Info& info) {
                         if (!info.tok->variable())
                             return false;
                         if (info.tok->varId() == 0)
@@ -1201,7 +1200,7 @@ void CheckStl::invalidContainer()
                         if (Token::Match(info.tok->astParent(), "%assign%") && astIsLHS(info.tok))
                             skipVarIds.insert(info.tok->varId());
                         if (info.tok->variable()->isReference() && !isVariableDecl(info.tok) &&
-                            reaches(info.tok->variable()->nameToken(), tok, library, nullptr)) {
+                            reaches(info.tok->variable()->nameToken(), tok, nullptr)) {
 
                             ErrorPath ep;
                             bool addressOf = false;
@@ -1211,7 +1210,7 @@ void CheckStl::invalidContainer()
                                 // An argument always reaches
                                 if (var->isArgument() ||
                                     (!var->isReference() && !var->isRValueReference() && !isVariableDecl(tok) &&
-                                     reaches(var->nameToken(), tok, library, &ep))) {
+                                     reaches(var->nameToken(), tok, &ep))) {
                                     errorPath = std::move(ep);
                                     return true;
                                 }
@@ -1220,7 +1219,7 @@ void CheckStl::invalidContainer()
                         ErrorPath ep;
                         const ValueFlow::Value* val = getInnerLifetime(info.tok, r.tok->varId(), &ep);
                         // Check the iterator is created before the change
-                        if (val && val->tokvalue != tok && reaches(val->tokvalue, tok, library, &ep)) {
+                        if (val && val->tokvalue != tok && reaches(val->tokvalue, tok, &ep)) {
                             v = val;
                             errorPath = std::move(ep);
                             return true;
@@ -2492,7 +2491,7 @@ void CheckStl::checkDereferenceInvalidIterator2()
             if (cValue && cValue->intvalue == 0) {
                 if (Token::Match(tok->astParent(), "+|-") && astIsIntegral(tok->astSibling(), false)) {
                     if (tok->astSibling() && tok->astSibling()->hasKnownIntValue()) {
-                        if (tok->astSibling()->values().front().intvalue == 0)
+                        if (tok->astSibling()->getKnownIntValue() == 0)
                             continue;
                     } else {
                         advanceIndex = tok->astSibling();
@@ -2906,8 +2905,8 @@ namespace {
                         alwaysFalse = false;
                         return;
                     }
-                    (returnTok->values().front().intvalue ? alwaysTrue : alwaysFalse) &= true;
-                    (returnTok->values().front().intvalue ? alwaysFalse : alwaysTrue) &= false;
+                    (returnTok->getKnownIntValue() ? alwaysTrue : alwaysFalse) &= true;
+                    (returnTok->getKnownIntValue() ? alwaysFalse : alwaysTrue) &= false;
                 });
                 if (alwaysTrue == alwaysFalse)
                     return "";

@@ -347,7 +347,7 @@ void CheckOther::warningOldStylePointerCast()
                 tok = tok->next();
 
             const Token *p = tok->tokAt(4);
-            if (p->hasKnownIntValue() && p->values().front().intvalue==0) // Casting nullpointers is safe
+            if (p->hasKnownIntValue() && p->getKnownIntValue()==0) // Casting nullpointers is safe
                 continue;
 
             if (typeTok->tokType() == Token::eType || typeTok->tokType() == Token::eName)
@@ -1311,7 +1311,7 @@ bool CheckOther::checkInnerScope(const Token *tok, const Variable* var, bool& us
                     }
                 }
             }
-            const auto yield = astContainerYield(tok);
+            const auto yield = astContainerYield(tok, mSettings->library);
             if (yield == Library::Container::Yield::BUFFER || yield == Library::Container::Yield::BUFFER_NT)
                 return false;
         }
@@ -1391,21 +1391,21 @@ void CheckOther::commaSeparatedReturnError(const Token *tok)
                 "macro is then used in a return statement, it is less likely such code is misunderstood.", CWE398, Certainty::normal);
 }
 
-static bool isLargeContainer(const Variable* var, const Settings* settings)
+static bool isLargeContainer(const Variable* var, const Settings& settings)
 {
     const ValueType* vt = var->valueType();
     if (vt->container->size_templateArgNo < 0)
         return true;
-    const std::size_t maxByValueSize = 2 * settings->platform.sizeof_pointer;
+    const std::size_t maxByValueSize = 2 * settings.platform.sizeof_pointer;
     if (var->dimensions().empty()) {
         if (vt->container->startPattern == "std :: bitset <") {
-            if (vt->containerTypeToken->hasKnownIntValue())
-                return vt->containerTypeToken->getKnownIntValue() / 8 > maxByValueSize;
+            if (const ValueFlow::Value* v = vt->containerTypeToken->getKnownValue(ValueFlow::Value::ValueType::INT))
+                return v->intvalue / 8 > maxByValueSize;
         }
         return false;
     }
-    const ValueType vtElem = ValueType::parseDecl(vt->containerTypeToken, *settings);
-    const auto elemSize = std::max<std::size_t>(ValueFlow::getSizeOf(vtElem, *settings), 1);
+    const ValueType vtElem = ValueType::parseDecl(vt->containerTypeToken, settings);
+    const auto elemSize = std::max<std::size_t>(ValueFlow::getSizeOf(vtElem, settings), 1);
     const auto arraySize = var->dimension(0) * elemSize;
     return arraySize > maxByValueSize;
 }
@@ -1438,7 +1438,7 @@ void CheckOther::checkPassByReference()
         bool inconclusive = false;
 
         const bool isContainer = var->valueType() && var->valueType()->type == ValueType::Type::CONTAINER && var->valueType()->container && !var->valueType()->container->view;
-        if (isContainer && !isLargeContainer(var, mSettings))
+        if (isContainer && !isLargeContainer(var, *mSettings))
             continue;
         if (!isContainer) {
             if (var->type() && !var->type()->isEnumType()) { // Check if type is a struct or class.

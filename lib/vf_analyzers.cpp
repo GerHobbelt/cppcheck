@@ -47,6 +47,17 @@
 #include <set>
 #include <type_traits>
 
+static bool isDereferenceOp(const Token* tok)
+{
+    if (!tok)
+        return false;
+    if (!tok->astOperand1())
+        return false;
+    if (tok->str() == "*")
+        return true;
+    return tok->str() == "." && tok->originalName() == "->";
+}
+
 struct ValueFlowAnalyzer : Analyzer {
     const Settings& settings;
     ProgramMemoryState pms;
@@ -85,7 +96,7 @@ struct ValueFlowAnalyzer : Analyzer {
     virtual bool dependsOnThis() const {
         return false;
     }
-    virtual bool isVariable() const {
+    virtual bool isClassVariable() const {
         return false;
     }
 
@@ -203,7 +214,7 @@ struct ValueFlowAnalyzer : Analyzer {
                           Library::Container::Action::INSERT,
                           Library::Container::Action::APPEND,
                           Library::Container::Action::CHANGE_INTERNAL},
-                         astContainerAction(tok)))
+                         astContainerAction(tok, getSettings().library)))
                 return read;
         }
         bool inconclusive = false;
@@ -586,7 +597,7 @@ private:
             } else {
                 return analyzeMatch(tok, d) | Action::Match;
             }
-        } else if (ref->isUnaryOp("*") && !match(ref->astOperand1())) {
+        } else if (isDereferenceOp(ref) && !match(ref->astOperand1())) {
             const Token* lifeTok = nullptr;
             for (const ValueFlow::Value& v:ref->astOperand1()->values()) {
                 if (!v.isLocalLifetimeValue())
@@ -643,7 +654,7 @@ private:
             if (a != Action::None)
                 return a;
         }
-        if (dependsOnThis() && exprDependsOnThis(tok, !isVariable()))
+        if (dependsOnThis() && exprDependsOnThis(tok, !isClassVariable()))
             return isThisModified(tok);
 
         // bailout: global non-const variables
@@ -657,8 +668,8 @@ private:
     template<class F>
     std::vector<MathLib::bigint> evaluateInt(const Token* tok, F getProgramMemory) const
     {
-        if (tok->hasKnownIntValue())
-            return {static_cast<int>(tok->values().front().intvalue)};
+        if (const ValueFlow::Value* v = tok->getKnownValue(ValueFlow::Value::ValueType::INT))
+            return {static_cast<int>(v->intvalue)};
         std::vector<MathLib::bigint> result;
         ProgramMemory pm = getProgramMemory();
         if (Token::Match(tok, "&&|%oror%")) {
@@ -1315,7 +1326,12 @@ struct ExpressionAnalyzer : SingleValueFlowAnalyzer {
         return !local;
     }
 
-    bool isVariable() const override {
+    bool isClassVariable() const override
+    {
+        if (expr->variable()) {
+            const Variable* var = expr->variable();
+            return !var->isLocal() && !var->isArgument() && !var->isStatic() && !var->isGlobal();
+        }
         return expr->varId() > 0;
     }
 
@@ -1554,8 +1570,8 @@ static const Token* solveExprValue(const Token* expr, ValueFlow::Value& value)
     return ValueFlow::solveExprValue(
         expr,
         [](const Token* tok) -> std::vector<MathLib::bigint> {
-        if (tok->hasKnownIntValue())
-            return {tok->values().front().intvalue};
+        if (const ValueFlow::Value* v = tok->getKnownValue(ValueFlow::Value::ValueType::INT))
+            return {v->intvalue};
         return {};
     },
         value);

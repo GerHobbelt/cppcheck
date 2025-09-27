@@ -5,6 +5,7 @@ import os
 import sys
 import pytest
 import json
+import subprocess
 
 from testutils import cppcheck, assert_cppcheck, cppcheck_ex
 from xml.etree import ElementTree
@@ -3370,3 +3371,115 @@ void f() {}
     assert exitcode == 0, stdout
     assert stdout.splitlines() == []
     assert stderr.splitlines() == []  # no error since the unused templates are not being checked
+
+try:
+    # TODO: handle exitcode?
+    subprocess.call(['clang-tidy', '--version'])
+    has_clang_tidy = True
+except OSError:
+    has_clang_tidy = False
+
+def __test_clang_tidy(tmpdir, use_compdb):
+    test_file = os.path.join(tmpdir, 'test.cpp')
+    with open(test_file, 'wt') as f:
+        f.write(
+"""static void foo() // NOLINT(misc-use-anonymous-namespace)
+{
+    (void)(*((int*)nullptr));
+}""")
+
+    project_file = __write_compdb(tmpdir, test_file) if use_compdb else None
+
+    args = [
+        '-q',
+        '--template=simple',
+        '--clang-tidy'
+    ]
+    if project_file:
+        args += ['--project={}'.format(project_file)]
+    else:
+        args += [str(test_file)]
+    exitcode, stdout, stderr = cppcheck(args)
+    assert exitcode == 0, stdout
+    assert stdout.splitlines() == [
+    ]
+    assert stderr.splitlines() == [
+        '{}:3:14: error: Null pointer dereference: (int*)nullptr [nullPointer]'.format(test_file),
+        '{}:3:14: style: C-style casts are discouraged; use static_cast/const_cast/reinterpret_cast [clang-tidy-google-readability-casting]'.format(test_file)
+    ]
+
+
+@pytest.mark.skipif(not has_clang_tidy, reason='clang-tidy is not available')
+@pytest.mark.xfail(strict=True)  # TODO: clang-tidy is only invoked with FileSettings - see #12053
+def test_clang_tidy(tmpdir):  # #12053
+    __test_clang_tidy(tmpdir, False)
+
+
+@pytest.mark.skipif(not has_clang_tidy, reason='clang-tidy is not available')
+def test_clang_tidy_project(tmpdir):
+    __test_clang_tidy(tmpdir, True)
+
+
+def test_suppress_unmatched_wildcard(tmp_path):  # #13660
+    test_file = tmp_path / 'test.c'
+    with open(test_file, 'wt') as f:
+        f.write(
+"""void f()
+{
+    (void)(*((int*)0));
+}
+""")
+
+    # need to run in the temporary folder because the path of the suppression has to match
+    args = [
+        '-q',
+        '--template=simple',
+        '--enable=information',
+        '--suppress=nullPointer:test*.c',  # checked and matched
+        '--suppress=id:test*.c',  # checked and unmatched
+        '--suppress=id2:test*.c',  # checked and unmatched
+        '--suppress=id2:tes?.c',  # checked and unmatched
+        '--suppress=*:test*.c',  # checked and unmatched
+        '--suppress=id:test*.cpp',  # unchecked
+        '--suppress=id2:test?.cpp',  # unchecked
+        'test.c'
+    ]
+    exitcode, stdout, stderr = cppcheck(args, cwd=tmp_path)
+    assert exitcode == 0, stdout
+    assert stdout.splitlines() == []
+    # TODO: invalid locations - see #13659
+    assert stderr.splitlines() == [
+        'test*.c:-1:0: information: Unmatched suppression: id [unmatchedSuppression]',
+        'test*.c:-1:0: information: Unmatched suppression: id2 [unmatchedSuppression]',
+        'tes?.c:-1:0: information: Unmatched suppression: id2 [unmatchedSuppression]'
+    ]
+
+
+def test_suppress_unmatched_wildcard_unchecked(tmp_path):
+    # make sure that unmatched wildcards suppressions are reported if files matching the expressions were processesd
+    # but isSuppressed() has never been called (i.e. no findings in file at all)
+    test_file = tmp_path / 'test.c'
+    with open(test_file, 'wt') as f:
+        f.write("""void f() {}""")
+
+    # need to run in the temporary folder because the path of the suppression has to match
+    args = [
+        '-q',
+        '--template=simple',
+        '--enable=information',
+        '--suppress=id:test*.c',
+        '--suppress=id:tes?.c',
+        '--suppress=id2:*',
+        '--suppress=*:test*.c',
+        'test.c'
+    ]
+    exitcode, stdout, stderr = cppcheck(args, cwd=tmp_path)
+    assert exitcode == 0, stdout
+    assert stdout.splitlines() == []
+    # TODO: invalid locations - see #13659
+    assert stderr.splitlines() == [
+        'test*.c:-1:0: information: Unmatched suppression: id [unmatchedSuppression]',
+        'tes?.c:-1:0: information: Unmatched suppression: id [unmatchedSuppression]',
+        '*:-1:0: information: Unmatched suppression: id2 [unmatchedSuppression]',
+        'test*.c:-1:0: information: Unmatched suppression: * [unmatchedSuppression]'
+    ]

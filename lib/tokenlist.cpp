@@ -46,10 +46,10 @@
 static constexpr int AST_MAX_DEPTH = 150;
 
 
-TokenList::TokenList(const Settings* settings) :
-    mSettings(settings)
+TokenList::TokenList(const Settings* settings)
+    : mTokensFrontBack(*this)
+    , mSettings(settings)
 {
-    mTokensFrontBack.list = this;
     if (mSettings && (mSettings->enforcedLang != Standards::Language::None)) {
         mLang = mSettings->enforcedLang;
     }
@@ -223,13 +223,13 @@ void TokenList::addtoken(const Token *tok)
         return;
 
     if (mTokensFrontBack.back) {
-        mTokensFrontBack.back->insertToken(tok->str(), tok->originalName());
+        mTokensFrontBack.back->insertToken(tok->str(), tok->originalName(), tok->getMacroName());
     } else {
         mTokensFrontBack.front = new Token(&mTokensFrontBack);
         mTokensFrontBack.back = mTokensFrontBack.front;
         mTokensFrontBack.back->str(tok->str());
-        if (!tok->originalName().empty())
-            mTokensFrontBack.back->originalName(tok->originalName());
+        mTokensFrontBack.back->originalName(tok->originalName());
+        mTokensFrontBack.back->setMacroName(tok->getMacroName());
     }
 
     mTokensFrontBack.back->flags(tok->flags());

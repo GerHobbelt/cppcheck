@@ -34,7 +34,7 @@ public:
     TestStl() : TestFixture("TestStl") {}
 
 private:
-    Settings settings = settingsBuilder().severity(Severity::warning).severity(Severity::style).severity(Severity::performance).library("std.cfg").build();
+    /*const*/ Settings settings = settingsBuilder().severity(Severity::warning).severity(Severity::style).severity(Severity::performance).library("std.cfg").build();
 
     void run() override {
         TEST_CASE(outOfBounds);
@@ -74,6 +74,7 @@ private:
         TEST_CASE(iteratorExpression);
         TEST_CASE(iteratorSameExpression);
         TEST_CASE(mismatchingContainerIterator);
+        TEST_CASE(eraseIteratorOutOfBounds);
 
         TEST_CASE(dereference);
         TEST_CASE(dereference_break);  // #3644 - handle "break"
@@ -2031,17 +2032,14 @@ private:
               "}\n");
         ASSERT_EQUALS("", errout.str());
 
-        check("struct S {\n"
+        check("struct S {\n" // #11469
               "    const std::vector<int>* vec() const { return &v; }\n"
               "    const std::vector<int> v;\n"
               "};\n"
               "void f(const S& a, const S& b) {\n"
               "    if (a.vec()->begin() - a.vec()->end() != b.vec()->begin() - b.vec()->end()) {}\n"
               "}\n");
-        TODO_ASSERT_EQUALS("",
-                           "[test.cpp:6]: (warning) Iterators to containers from different expressions 'a.vec()' and 'a.vec()' are used together.\n"
-                           "[test.cpp:6]: (warning) Iterators to containers from different expressions 'b.vec()' and 'b.vec()' are used together.\n",
-                           errout.str());
+        ASSERT_EQUALS("", errout.str());
     }
 
     void iteratorSameExpression() {
@@ -2135,6 +2133,140 @@ private:
               "    s.v.erase(s.v.begin() + m);\n"
               "}\n");
         ASSERT_EQUALS("", errout.str());
+
+        // #11093
+        check("struct S {\n"
+              "    std::vector<int> v1, v2;\n"
+              "    void f(bool b) {\n"
+              "        std::vector<int>& v = b ? v1 : v2;\n"
+              "        v.erase(v.begin());\n"
+              "    }\n"
+              "};\n");
+        ASSERT_EQUALS("", errout.str());
+
+        // #12377
+        check("void f(bool b) {\n"
+              "    std::vector<int> *pv;\n"
+              "    if (b) {\n"
+              "        std::vector<int>& r = get1();\n"
+              "        pv = &r;\n"
+              "    }\n"
+              "    else {\n"
+              "        std::vector<int>& r = get2();\n"
+              "        pv = &r;\n"
+              "    }\n"
+              "    std::vector<int>::iterator it = pv->begin();\n"
+              "    it = pv->erase(it, it + 2);\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        check("struct S {\n"
+              "    std::vector<int> v;\n"
+              "    void f() {\n"
+              "        std::vector<int>* p = &v;\n"
+              "        p->insert(std::find(p->begin(), p->end(), 0), 1);\n"
+              "    }\n"
+              "};\n");
+        ASSERT_EQUALS("", errout.str());
+
+        check("struct S {\n"
+              "    std::vector<int> v;\n"
+              "    void f(int i) {\n"
+              "        std::vector<int>* p = &v;\n"
+              "        if (p->size() > i)\n"
+              "            p->erase(p->begin() + i, p->end());\n"
+              "    }\n"
+              "};\n");
+        ASSERT_EQUALS("", errout.str());
+
+        // #11067
+        check("struct S {\n"
+              "    std::vector<int> v;\n"
+              "    std::list<std::vector<int>::const_iterator> li;\n"
+              "    void f();\n"
+              "};\n"
+              "void S::f() {\n"
+              "    v.erase(*li.begin());\n"
+              "    li.pop_front();\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f(std::set<std::string>& a, std::stack<std::set<std::string>::iterator>& b) {\n"
+              "    while (!b.empty()) {\n"
+              "        a.erase(b.top());\n"
+              "        b.pop();\n"
+              "    }\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f(std::vector<int>& a, std::vector<std::vector<int>::iterator>& b) {\n"
+              "    auto it = b.begin();\n"
+              "    a.erase(*it);\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void eraseIteratorOutOfBounds() {
+        check("void f() {\n"
+              "    std::vector<int> v;\n"
+              "    v.erase(v.begin());\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:3]: (error) Calling function 'erase()' on the iterator 'v.begin()' which is out of bounds.\n", errout.str());
+
+        check("void f() {\n"
+              "    std::vector<int> v;\n"
+              "    v.erase(v.end());\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:3]: (error) Calling function 'erase()' on the iterator 'v.end()' which is out of bounds.\n", errout.str());
+
+        check("void f() {\n"
+              "    std::vector<int> v;\n"
+              "    auto it = v.begin();\n"
+              "    v.erase(it);\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:4]: (error) Calling function 'erase()' on the iterator 'it' which is out of bounds.\n", errout.str());
+
+        check("void f() {\n"
+              "    std::vector<int> v{ 1, 2, 3 };\n"
+              "    auto it = v.end();\n"
+              "    v.erase(it);\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:4]: (error) Calling function 'erase()' on the iterator 'it' which is out of bounds.\n", errout.str());
+
+        check("void f() {\n"
+              "    std::vector<int> v{ 1, 2, 3 };\n"
+              "    auto it = v.begin();\n"
+              "    v.erase(it);\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f() {\n"
+              "    std::vector<int> v{ 1, 2, 3 };\n"
+              "    v.erase(v.end() - 1);\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f() {\n"
+              "    std::vector<int> v{ 1, 2, 3 };\n"
+              "    v.erase(v.begin() - 1);\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:3]: (error) Calling function 'erase()' on the iterator 'v.begin()-1' which is out of bounds.\n"
+                      "[test.cpp:3]: (error) Dereference of an invalid iterator: v.begin()-1\n",
+                      errout.str());
+
+        check("void f(std::vector<int>& v, std::vector<int>::iterator it) {\n"
+              "    if (it == v.end()) {}\n"
+              "    v.erase(it);\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:3]: (warning) Either the condition 'it==v.end()' is redundant or function 'erase()' is called on the iterator 'it' which is out of bounds.\n",
+                      errout.str());
+
+        check("void f() {\n"
+              "    std::vector<int> v;\n"
+              "    ((v).erase)(v.begin());\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:3]: (error) Calling function 'erase()' on the iterator 'v.begin()' which is out of bounds.\n",
+                      errout.str());
     }
 
     // Dereferencing invalid pointer
@@ -2196,7 +2328,9 @@ private:
               "    ints.erase(iter);\n"
               "    std::cout << iter->first << std::endl;\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:7] -> [test.cpp:6]: (error) Iterator 'iter' used after element has been erased.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:7] -> [test.cpp:6]: (error) Iterator 'iter' used after element has been erased.\n"
+                      "[test.cpp:6]: (error) Calling function 'erase()' on the iterator 'iter' which is out of bounds.\n",
+                      errout.str());
 
         // Reverse iterator
         check("void f()\n"
@@ -2207,7 +2341,9 @@ private:
               "    ints.erase(iter);\n"
               "    std::cout << iter->first << std::endl;\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:7] -> [test.cpp:6]: (error) Iterator 'iter' used after element has been erased.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:7] -> [test.cpp:6]: (error) Iterator 'iter' used after element has been erased.\n"
+                      "[test.cpp:6]: (error) Calling function 'erase()' on the iterator 'iter' which is out of bounds.\n",
+                      errout.str());
     }
 
     void dereference_auto() {

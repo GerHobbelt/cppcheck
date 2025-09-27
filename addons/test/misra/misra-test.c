@@ -441,7 +441,10 @@ static void misra_9_empty_or_zero_initializers(void) {
     int e[2][2] = { { 1 , 2 }, {} };           // 9.2
 
     int f[5]    = { 0 };
-    int f1[5]   = { 0u };                     // no-warning  #11298
+    int f1[5]   = { 0u };                     // 9.3
+    unsigned int f1[ 3 ][ 2 ] = { 0U };       // 9.3 9.2
+    unsigned int f2[ 3 ] = { 0U };            // 9.3
+    float f3[ 3 ][ 2 ]  = { 0.0F };           // 9.3 9.2
     int g[5][2] = { 0 };
     int h[2][2] = { { 0 } };                   // 9.3
     int i[2][2] = { { 0 }, { 0 } };
@@ -498,6 +501,7 @@ static void misra_9_array_initializers_with_designators(void) {
     char    c[2][2]     = { [0] = {1, 2, 3} };
     char    d[1][2]     = { [0] = 1 };                                      // 9.2
     char    e[2][2]     = { { 1, 2 }, [1][0] = {3, 4} };                    // 9.2
+    int     e1[2][2]    = { [ 0 ][ 1 ] = 0, { 5, 6 } };                     // no warning #12419
     char    f[2]        = { [0] = 1, 2 };
     char    g[2]        = { [1] = 2, [0] = 1 };
     char    h[2][2]     = { { 1, 2 }, [1] = { 3 } };                        // 9.3
@@ -712,6 +716,7 @@ static void misra_10_3(uint32_t u32a, uint32_t u32b) {
     res = 2U + 3U; // no warning, utlr=unsigned char
     res = 0.1f; // 10.3
     const char c = '0'; // no-warning
+    bool b = true; // no-warning
     uint32_t u = UINT32_C(10); // no-warning
 }
 
@@ -1354,6 +1359,16 @@ static void misra_14_4(bool b) {
 
   // #12079
   if (z) {} //config
+}
+
+// #12417
+struct bar_12417{ int a; };
+static int foo_12417(void){
+    int ret = 1;
+    if (sizeof(struct bar_12417) == 0U){ // no warning for misra-config
+        ret = 0;
+    }
+    return ret;
 }
 
 static void misra_15_1(void) {

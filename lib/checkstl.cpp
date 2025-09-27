@@ -260,11 +260,11 @@ void CheckStl::outOfBoundsError(const Token *tok, const std::string &containerNa
         ErrorPath errorPath1 = getErrorPath(tok, containerSize, "Access out of bounds");
         ErrorPath errorPath2 = getErrorPath(tok, indexValue, "Access out of bounds");
         if (errorPath1.size() <= 1)
-            errorPath = errorPath2;
+            errorPath = std::move(errorPath2);
         else if (errorPath2.size() <= 1)
-            errorPath = errorPath1;
+            errorPath = std::move(errorPath1);
         else {
-            errorPath = errorPath1;
+            errorPath = std::move(errorPath1);
             errorPath.splice(errorPath.end(), errorPath2);
         }
     }
@@ -686,11 +686,19 @@ void CheckStl::sameIteratorExpressionError(const Token *tok)
     reportError(tok, Severity::style, "sameIteratorExpression", "Same iterators expression are used for algorithm.", CWE664, Certainty::normal);
 }
 
-static const Token* getAddressContainer(const Token* tok)
+static std::vector<const Token*> getAddressContainer(const Token* tok)
 {
     if (Token::simpleMatch(tok, "[") && tok->astOperand1())
-        return tok->astOperand1();
-    return tok;
+        return { tok->astOperand1() };
+    std::vector<ValueFlow::Value> values = ValueFlow::getLifetimeObjValues(tok, /*inconclusive*/ false);
+    std::vector<const Token*> res;
+    for (const auto& v : values) {
+        if (v.tokvalue)
+            res.emplace_back(v.tokvalue);
+    }
+    if (res.empty())
+        res.emplace_back(tok);
+    return res;
 }
 
 static bool isSameIteratorContainerExpression(const Token* tok1,
@@ -701,8 +709,16 @@ static bool isSameIteratorContainerExpression(const Token* tok1,
     if (isSameExpression(true, false, tok1, tok2, library, false, false)) {
         return !astIsContainerOwned(tok1) || !isTemporary(true, tok1, &library);
     }
-    if (kind == ValueFlow::Value::LifetimeKind::Address) {
-        return isSameExpression(true, false, getAddressContainer(tok1), getAddressContainer(tok2), library, false, false);
+    if (astContainerYield(tok2) == Library::Container::Yield::ITEM)
+        return true;
+    if (kind == ValueFlow::Value::LifetimeKind::Address || kind == ValueFlow::Value::LifetimeKind::Iterator) {
+        const auto address1 = getAddressContainer(tok1);
+        const auto address2 = getAddressContainer(tok2);
+        return std::any_of(address1.begin(), address1.end(), [&](const Token* tok1) {
+            return std::any_of(address2.begin(), address2.end(), [&](const Token* tok2) {
+                return isSameExpression(true, false, tok1, tok2, library, false, false);
+            });
+        });
     }
     return false;
 }
@@ -866,7 +882,11 @@ void CheckStl::mismatchingContainerIterator()
             ValueFlow::Value val = getLifetimeIteratorValue(iterTok);
             if (!val.tokvalue)
                 continue;
+            if (!val.isKnown() && Token::simpleMatch(val.tokvalue->astParent(), ":"))
+                continue;
             if (val.lifetimeKind != ValueFlow::Value::LifetimeKind::Iterator)
+                continue;
+            if (iterTok->str() == "*" && iterTok->astOperand1()->valueType() && iterTok->astOperand1()->valueType()->type == ValueType::ITERATOR)
                 continue;
             if (isSameIteratorContainerExpression(tok, val.tokvalue, mSettings->library))
                 continue;
@@ -991,7 +1011,7 @@ namespace {
                     ep.emplace_front(ftok,
                                      "After calling '" + ftok->expressionString() +
                                      "', iterators or references to the container's data may be invalid .");
-                    result.emplace_back(Info::Reference{tok, ep, ftok});
+                    result.emplace_back(Info::Reference{tok, std::move(ep), ftok});
                 }
             }
             return result;
@@ -1153,7 +1173,7 @@ void CheckStl::invalidContainer()
                                 if (var->isArgument() ||
                                     (!var->isReference() && !var->isRValueReference() && !isVariableDecl(tok) &&
                                      reaches(var->nameToken(), tok, library, &ep))) {
-                                    errorPath = ep;
+                                    errorPath = std::move(ep);
                                     return true;
                                 }
                             }
@@ -1163,7 +1183,7 @@ void CheckStl::invalidContainer()
                         // Check the iterator is created before the change
                         if (val && val->tokvalue != tok && reaches(val->tokvalue, tok, library, &ep)) {
                             v = val;
-                            errorPath = ep;
+                            errorPath = std::move(ep);
                             return true;
                         }
                         return false;
@@ -1173,9 +1193,9 @@ void CheckStl::invalidContainer()
                     errorPath.insert(errorPath.end(), info.errorPath.cbegin(), info.errorPath.cend());
                     errorPath.insert(errorPath.end(), r.errorPath.cbegin(), r.errorPath.cend());
                     if (v) {
-                        invalidContainerError(info.tok, r.tok, v, errorPath);
+                        invalidContainerError(info.tok, r.tok, v, std::move(errorPath));
                     } else {
-                        invalidContainerReferenceError(info.tok, r.tok, errorPath);
+                        invalidContainerReferenceError(info.tok, r.tok, std::move(errorPath));
                     }
                 }
             }
@@ -3113,6 +3133,77 @@ void CheckStl::knownEmptyContainer()
 
                 }
             }
+        }
+    }
+}
+
+void CheckStl::eraseIteratorOutOfBoundsError(const Token *ftok, const Token* itertok, const ValueFlow::Value* val)
+{
+    if (!ftok || !itertok || !val) {
+        reportError(ftok, Severity::error, "eraseIteratorOutOfBounds",
+                    "Calling function 'erase()' on the iterator 'iter' which is out of bounds.", CWE628, Certainty::normal);
+        reportError(ftok, Severity::warning, "eraseIteratorOutOfBoundsCond",
+                    "Either the condition 'x' is redundant or function 'erase()' is called on the iterator 'iter' which is out of bounds.", CWE628, Certainty::normal);
+        return;
+    }
+    const std::string& func = ftok->str();
+    const std::string iter = itertok->expressionString();
+
+    const bool isConditional = val->isPossible();
+    std::string msg;
+    if (isConditional) {
+        msg = ValueFlow::eitherTheConditionIsRedundant(val->condition) + " or function '" + func + "()' is called on the iterator '" + iter + "' which is out of bounds.";
+    } else {
+        msg = "Calling function '" + func + "()' on the iterator '" + iter + "' which is out of bounds.";
+    }
+
+    const Severity severity = isConditional ? Severity::warning : Severity::error;
+    const std::string id = isConditional ? "eraseIteratorOutOfBoundsCond" : "eraseIteratorOutOfBounds";
+    reportError(ftok, severity,
+                id,
+                msg, CWE628, Certainty::normal);
+}
+
+static const ValueFlow::Value* getOOBIterValue(const Token* tok, const ValueFlow::Value* sizeVal)
+{
+    auto it = std::find_if(tok->values().begin(), tok->values().end(), [&](const ValueFlow::Value& v) {
+        if (v.isPossible() || v.isKnown()) {
+            switch (v.valueType) {
+            case ValueFlow::Value::ValueType::ITERATOR_END:
+                return v.intvalue >= 0;
+            case ValueFlow::Value::ValueType::ITERATOR_START:
+                return (v.intvalue < 0) || (sizeVal && v.intvalue >= sizeVal->intvalue);
+            default:
+                break;
+            }
+        }
+        return false;
+    });
+    return it != tok->values().end() ? &*it : nullptr;
+}
+
+void CheckStl::eraseIteratorOutOfBounds()
+{
+    logChecker("CheckStl::eraseIteratorOutOfBounds");
+    for (const Scope *function : mTokenizer->getSymbolDatabase()->functionScopes) {
+        for (const Token *tok = function->bodyStart; tok != function->bodyEnd; tok = tok->next()) {
+
+            if (!tok->valueType())
+                continue;
+            const Library::Container* container = tok->valueType()->container;
+            if (!container || !astIsLHS(tok) || !Token::simpleMatch(tok->astParent(), "."))
+                continue;
+            const Token* const ftok = tok->astParent()->astOperand2();
+            const Library::Container::Action action = container->getAction(ftok->str());
+            if (action != Library::Container::Action::ERASE)
+                continue;
+            const std::vector<const Token*> args = getArguments(ftok);
+            if (args.size() != 1) // TODO: check range overload
+                continue;
+
+            const ValueFlow::Value* sizeVal = tok->getKnownValue(ValueFlow::Value::ValueType::CONTAINER_SIZE);
+            if (const ValueFlow::Value* errVal = getOOBIterValue(args[0], sizeVal))
+                eraseIteratorOutOfBoundsError(ftok, args[0], errVal);
         }
     }
 }

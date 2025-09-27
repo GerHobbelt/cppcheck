@@ -439,7 +439,15 @@ bool isTemporary(bool cpp, const Token* tok, const Library* library, bool unknow
         if (Token::simpleMatch(tok->astOperand1(), "typeid"))
             return false;
         if (tok->valueType()) {
-            return tok->valueType()->reference == Reference::None;
+            if (tok->valueType()->pointer > 0) {
+                const Token* const parent = tok->astParent();
+                if (Token::simpleMatch(parent, "&"))
+                    return true;
+                if (Token::simpleMatch(parent, "return") && parent->valueType()->reference != Reference::None &&
+                    parent->valueType()->container && parent->valueType()->container->stdStringLike)
+                    return true;
+            }
+            return tok->valueType()->reference == Reference::None && tok->valueType()->pointer == 0;
         }
         const Token* ftok = nullptr;
         if (Token::simpleMatch(tok->previous(), ">") && tok->previous()->link())
@@ -2947,7 +2955,7 @@ static const Token* findExpressionChangedImpl(const Token* expr,
             global = true;
         }
 
-        if (tok->exprId() > 0) {
+        if (tok->exprId() > 0 || global) {
             const Token* modifedTok = find(start, end, [&](const Token* tok2) {
                 int indirect = 0;
                 if (const ValueType* vt = tok->valueType()) {
@@ -3019,8 +3027,10 @@ const Token* findExpressionChangedSkipDeadCode(const Token* expr,
 const Token* getArgumentStart(const Token* ftok)
 {
     const Token* tok = ftok;
-    if (Token::Match(tok, "%name% (|{"))
+    if (Token::Match(tok, "%name% (|{|)"))
         tok = ftok->next();
+    while (Token::simpleMatch(tok, ")"))
+        tok = tok->next();
     if (!Token::Match(tok, "(|{|["))
         return nullptr;
     const Token* startTok = tok->astOperand2();
@@ -3245,7 +3255,7 @@ bool isConstVarExpression(const Token *tok, std::function<bool(const Token*)> sk
     if (Token::Match(tok, "%cop%|[|.")) {
         if (tok->astOperand1() && !isConstVarExpression(tok->astOperand1(), skipPredicate))
             return false;
-        if (tok->astOperand2() && !isConstVarExpression(tok->astOperand2(), skipPredicate))
+        if (tok->astOperand2() && !isConstVarExpression(tok->astOperand2(), std::move(skipPredicate)))
             return false;
         return true;
     }

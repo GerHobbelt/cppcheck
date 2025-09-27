@@ -2624,7 +2624,7 @@ namespace {
 
         if (tok && tok->str() == "{") {
             *scopeInfo = (*scopeInfo)->addChild(record ? ScopeInfo3::Record : ScopeInfo3::Namespace, classname, tok, tok->link());
-            (*scopeInfo)->baseTypes = baseTypes;
+            (*scopeInfo)->baseTypes = std::move(baseTypes);
         }
     }
 
@@ -3234,7 +3234,7 @@ bool Tokenizer::simplifyUsing()
                     }
                 } else {
                     // add some qualification back if needed
-                    std::string removed1 = removed;
+                    std::string removed1 = std::move(removed);
                     std::string::size_type idx = removed1.rfind(" ::");
                     if (idx != std::string::npos)
                         removed1.resize(idx);
@@ -3990,7 +3990,7 @@ void Tokenizer::calculateScopes()
 
     std::string nextScopeNameAddition;
     std::shared_ptr<ScopeInfo2> primaryScope = std::make_shared<ScopeInfo2>("", nullptr);
-    list.front()->scopeInfo(primaryScope);
+    list.front()->scopeInfo(std::move(primaryScope));
 
     for (Token* tok = list.front(); tok; tok = tok->next()) {
         if (tok == list.front() || !tok->scopeInfo()) {
@@ -4068,7 +4068,7 @@ void Tokenizer::calculateScopes()
 
                 if (tok->link())
                     tok->link()->scopeInfo(tok->scopeInfo());
-                tok->scopeInfo(newScopeInfo);
+                tok->scopeInfo(std::move(newScopeInfo));
             }
         }
     }
@@ -7389,11 +7389,11 @@ void Tokenizer::simplifyStaticConst()
             // Move the qualifier to the left-most position in the declaration
             tok->deleteNext();
             if (!leftTok) {
-                list.front()->insertToken(qualifiers[i], emptyString, false);
+                list.front()->insertToken(qualifiers[i]);
                 list.front()->swapWithNext();
                 tok = list.front();
             } else if (leftTok->next()) {
-                leftTok->next()->insertToken(qualifiers[i], emptyString, true);
+                leftTok->next()->insertTokenBefore(qualifiers[i]);
                 tok = leftTok->next();
             } else {
                 leftTok->insertToken(qualifiers[i]);
@@ -10312,7 +10312,7 @@ void Tokenizer::prepareTernaryOpForAST()
             }
             if (parenthesesNeeded && tok2 && tok2->str() == ":") {
                 tok->insertToken("(");
-                tok2->insertToken(")", emptyString, true);
+                tok2->insertTokenBefore(")");
                 Token::createMutualLinks(tok->next(), tok2->previous());
             }
         }

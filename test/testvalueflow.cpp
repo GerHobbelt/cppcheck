@@ -42,7 +42,7 @@ public:
     TestValueFlow() : TestFixture("TestValueFlow") {}
 
 private:
-    Settings settings = settingsBuilder().library("std.cfg").build();
+    /*const*/ Settings settings = settingsBuilder().library("std.cfg").exhaustive().build();
 
     void run() override {
         // strcpy, abort cfg
@@ -485,7 +485,7 @@ private:
 
 #define bailout(...) bailout_(__FILE__, __LINE__, __VA_ARGS__)
     void bailout_(const char* file, int line, const char code[]) {
-        const Settings s = settingsBuilder().debugwarnings().build();
+        const Settings s = settingsBuilder().debugwarnings().exhaustive().build();
         errout.str("");
 
         std::vector<std::string> files(1, "test.cpp");
@@ -632,8 +632,6 @@ private:
     void valueFlowLifetime() {
         const char *code;
         std::vector<std::string> lifetimes;
-
-        LOAD_LIB_2(settings.library, "std.cfg");
 
         code  = "void f() {\n"
                 "    int a = 1;\n"
@@ -1012,7 +1010,6 @@ private:
 
         // ~
         code  = "x = ~0U;";
-        PLATFORM(settings.platform, Platform::Type::Native); // ensure platform is native
         values = tokenValues(code,"~");
         ASSERT_EQUALS(1U, values.size());
         ASSERT_EQUALS(~0U, values.back().intvalue);
@@ -1394,6 +1391,73 @@ private:
         values = tokenValues(code, "=");
         ASSERT_EQUALS(1U, values.size());
         ASSERT_EQUALS(sizeof(std::int32_t) * 10 * 20, values.back().intvalue);
+
+        code = "struct X { float a; float b; };\n"
+               "void f() {\n"
+               "    x = sizeof(X);\n"
+               "}";
+        values = tokenValues(code, "( X )");
+        ASSERT_EQUALS(1U, values.size());
+        ASSERT_EQUALS(8, values.back().intvalue);
+
+        code = "struct X { char a; char b; };\n"
+               "void f() {\n"
+               "    x = sizeof(X);\n"
+               "}";
+        values = tokenValues(code, "( X )");
+        ASSERT_EQUALS(1U, values.size());
+        ASSERT_EQUALS(2, values.back().intvalue);
+
+        code = "struct X { char a; float b; };\n"
+               "void f() {\n"
+               "    x = sizeof(X);\n"
+               "}";
+        values = tokenValues(code, "( X )");
+        ASSERT_EQUALS(1U, values.size());
+        ASSERT_EQUALS(8, values.back().intvalue);
+
+        code = "struct X { char a; char b; float c; };\n"
+               "void f() {\n"
+               "    x = sizeof(X);\n"
+               "}";
+        values = tokenValues(code, "( X )");
+        ASSERT_EQUALS(1U, values.size());
+        ASSERT_EQUALS(8, values.back().intvalue);
+
+        code = "struct X { float a; char b; };\n"
+               "void f() {\n"
+               "    x = sizeof(X);\n"
+               "}";
+        values = tokenValues(code, "( X )");
+        ASSERT_EQUALS(1U, values.size());
+        ASSERT_EQUALS(8, values.back().intvalue);
+
+        code = "struct X { float a; char b; char c; };\n"
+               "void f() {\n"
+               "    x = sizeof(X);\n"
+               "}";
+        values = tokenValues(code, "( X )");
+        ASSERT_EQUALS(1U, values.size());
+        ASSERT_EQUALS(8, values.back().intvalue);
+
+        code = "struct A { float a; char b; };\n"
+               "struct X { A a; char b; };\n"
+               "void f() {\n"
+               "    x = sizeof(X);\n"
+               "}";
+        values = tokenValues(code, "( X )");
+        ASSERT_EQUALS(1U, values.size());
+        ASSERT_EQUALS(12, values.back().intvalue);
+
+        code = "struct T;\n"
+               "struct S { T& r; };\n"
+               "struct T { S s{ *this }; };\n"
+               "void f() {\n"
+               "    sizeof(T) == sizeof(void*);\n"
+               "}\n";
+        values = tokenValues(code, "==");
+        ASSERT_EQUALS(1U, values.size());
+        ASSERT_EQUALS(1LL, values.back().intvalue);
     }
 
     void valueFlowComma()
@@ -3889,7 +3953,7 @@ private:
     void valueFlowRightShift() {
         const char *code;
         /* Set some temporary fixed values to simplify testing */
-        Settings s = settings;
+        /*const*/ Settings s = settings;
         s.platform.int_bit = 32;
         s.platform.long_bit = 64;
         s.platform.long_long_bit = MathLib::bigint_bits * 2;
@@ -6013,8 +6077,6 @@ private:
     void valueFlowContainerSize() {
         const char *code;
 
-        LOAD_LIB_2(settings.library, "std.cfg");
-
         // condition
         code = "void f(const std::list<int> &ints) {\n"
                "  if (!static_cast<bool>(ints.empty()))\n"
@@ -6799,8 +6861,6 @@ private:
     {
         const char* code;
 
-        LOAD_LIB_2(settings.library, "std.cfg");
-
         code = "int f() {\n"
                "    std::vector<int> v = {1, 2, 3, 4};\n"
                "    int x = v[1];\n"
@@ -6826,9 +6886,8 @@ private:
     void valueFlowDynamicBufferSize() {
         const char *code;
 
-        LOAD_LIB_2(settings.library, "std.cfg");
-        LOAD_LIB_2(settings.library, "posix.cfg");
-        LOAD_LIB_2(settings.library, "bsd.cfg");
+        const Settings settingsOld = settings;
+        settings = settingsBuilder(settings).library("posix.cfg").library("bsd.cfg").build();
 
         code = "void* f() {\n"
                "  void* x = malloc(10);\n"
@@ -6862,12 +6921,14 @@ private:
                "  return x;\n"
                "}";
         ASSERT_EQUALS(true, testValueOfX(code, 4U, 100,  ValueFlow::Value::ValueType::BUFFER_SIZE));
+
+        settings = settingsOld;
     }
 
     void valueFlowSafeFunctionParameterValues() {
         const char *code;
         std::list<ValueFlow::Value> values;
-        Settings s = settingsBuilder().library("std.cfg").build();
+        /*const*/ Settings s = settingsBuilder().exhaustive().library("std.cfg").build();
         s.safeChecks.classes = s.safeChecks.externalFunctions = s.safeChecks.internalFunctions = true;
 
         code = "short f(short x) {\n"
@@ -6918,7 +6979,7 @@ private:
     void valueFlowUnknownFunctionReturn() {
         const char *code;
         std::list<ValueFlow::Value> values;
-        Settings s = settingsBuilder().library("std.cfg").build();
+        /*const*/ Settings s = settingsBuilder().exhaustive().library("std.cfg").build();
         s.checkUnknownFunctionReturn.insert("rand");
 
         code = "x = rand();";
@@ -8376,7 +8437,7 @@ private:
     }
 
     void performanceIfCount() {
-        Settings s(settings);
+        /*const*/ Settings s(settings);
         s.performanceValueFlowMaxIfCount = 1;
 
         const char *code;

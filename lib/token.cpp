@@ -57,10 +57,21 @@ namespace {
 
 const std::list<ValueFlow::Value> TokenImpl::mEmptyValueList;
 
+Token::Token()
+    : Token(static_cast<TokensFrontBack*>(nullptr))
+{}
+
 Token::Token(TokensFrontBack *tokensFrontBack) :
     mTokensFrontBack(tokensFrontBack)
 {
     mImpl = new TokenImpl();
+}
+
+Token::Token(const Token* tok)
+    : Token(const_cast<Token*>(tok)->mTokensFrontBack)
+{
+    fileIndex(tok->fileIndex());
+    linenr(tok->linenr());
 }
 
 Token::~Token()
@@ -139,7 +150,7 @@ void Token::update_property_info()
         else if (std::isalpha((unsigned char)mStr[0]) || mStr[0] == '_' || mStr[0] == '$') { // Name
             if (mImpl->mVarId)
                 tokType(eVariable);
-            else if (mTokensFrontBack && mTokensFrontBack->list && mTokensFrontBack->list->isKeyword(mStr))
+            else if (mTokensFrontBack && mTokensFrontBack->list.isKeyword(mStr))
                 tokType(eKeyword);
             else if (baseKeywords.count(mStr) > 0)
                 tokType(eKeyword);
@@ -1129,7 +1140,7 @@ void Token::function(const Function *f)
         tokType(eName);
 }
 
-Token* Token::insertToken(const std::string& tokenStr, const std::string& originalNameStr, bool prepend)
+Token* Token::insertToken(const std::string& tokenStr, const std::string& originalNameStr, const std::string& macroNameStr, bool prepend)
 {
     Token *newToken;
     if (mStr.empty())
@@ -1137,8 +1148,8 @@ Token* Token::insertToken(const std::string& tokenStr, const std::string& origin
     else
         newToken = new Token(mTokensFrontBack);
     newToken->str(tokenStr);
-    if (!originalNameStr.empty())
-        newToken->originalName(originalNameStr);
+    newToken->originalName(originalNameStr);
+    newToken->setMacroName(macroNameStr);
 
     if (newToken != this) {
         newToken->mImpl->mLineNumber = mImpl->mLineNumber;
@@ -1223,7 +1234,7 @@ Token* Token::insertToken(const std::string& tokenStr, const std::string& origin
                 newScopeInfo->name.append(nextScopeNameAddition);
                 nextScopeNameAddition = "";
 
-                newToken->scopeInfo(newScopeInfo);
+                newToken->scopeInfo(std::move(newScopeInfo));
             } else if (newToken->str() == "}") {
                 Token* matchingTok = newToken->previous();
                 int depth = 0;
@@ -1809,7 +1820,7 @@ void Token::printValueFlow(bool xml, std::ostream &out) const
         else {
             if (fileIndex != tok->fileIndex()) {
                 outs += "File ";
-                outs += tok->mTokensFrontBack->list->getFiles()[tok->fileIndex()];
+                outs += tok->mTokensFrontBack->list.getFiles()[tok->fileIndex()];
                 outs += '\n';
                 line = 0;
             }
@@ -2136,7 +2147,7 @@ static ValueIterator removeAdjacentValues(std::list<ValueFlow::Value>& values, V
     if (it == last)
         it--;
     (*it)->bound = x->bound;
-    std::for_each(start, it, [&](ValueIterator y) {
+    std::for_each(std::move(start), std::move(it), [&](ValueIterator y) {
         values.erase(y);
     });
     return values.erase(x);
@@ -2738,8 +2749,8 @@ const Token* findLambdaEndScope(const Token* tok) {
 
 bool Token::isCpp() const
 {
-    if (mTokensFrontBack && mTokensFrontBack->list) {
-        return mTokensFrontBack->list->isCPP();
+    if (mTokensFrontBack) {
+        return mTokensFrontBack->list.isCPP();
     }
     return true; // assume C++ by default
 }

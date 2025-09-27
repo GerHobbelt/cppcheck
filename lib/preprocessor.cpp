@@ -552,7 +552,7 @@ static void getConfigs(const simplecpp::TokenList &tokens, std::set<std::string>
             }
 
             configs_if.push_back((cmdtok->str() == "ifndef") ? std::string() : config);
-            configs_ifndef.push_back((cmdtok->str() == "ifndef") ? config : std::string());
+            configs_ifndef.push_back((cmdtok->str() == "ifndef") ? std::move(config) : std::string());
             ret.insert(cfg(configs_if,userDefines));
         } else if (cmdtok->str() == "elif" || cmdtok->str() == "else") {
             if (getConfigsElseIsFalse(configs_if,userDefines)) {
@@ -752,6 +752,7 @@ bool Preprocessor::hasErrors(const simplecpp::Output &output)
     case simplecpp::Output::SYNTAX_ERROR:
     case simplecpp::Output::UNHANDLED_CHAR_ERROR:
     case simplecpp::Output::EXPLICIT_INCLUDE_NOT_FOUND:
+    case simplecpp::Output::FILE_NOT_FOUND:
         return true;
     case simplecpp::Output::WARNING:
     case simplecpp::Output::MISSING_HEADER:
@@ -830,8 +831,8 @@ simplecpp::TokenList Preprocessor::preprocess(const simplecpp::TokenList &tokens
     std::list<simplecpp::IfCond> ifCond;
     simplecpp::TokenList tokens2(files);
     simplecpp::preprocess(tokens2, tokens1, files, mTokenLists, dui, &outputList, &macroUsage, &ifCond);
-    mMacroUsage = macroUsage;
-    mIfCond = ifCond;
+    mMacroUsage = std::move(macroUsage);
+    mIfCond = std::move(ifCond);
 
     handleErrors(outputList, throwError);
 
@@ -891,6 +892,7 @@ void Preprocessor::reportOutput(const simplecpp::OutputList &outputList, bool sh
             error(out.location.file(), out.location.line, out.msg);
             break;
         case simplecpp::Output::EXPLICIT_INCLUDE_NOT_FOUND:
+        case simplecpp::Output::FILE_NOT_FOUND:
             error(emptyString, 0, out.msg);
             break;
         }
@@ -908,7 +910,7 @@ void Preprocessor::error(const std::string &filename, unsigned int linenr, const
         ErrorMessage::FileLocation loc(file, linenr, 0);
         locationList.push_back(std::move(loc));
     }
-    mErrorLogger->reportErr(ErrorMessage(locationList,
+    mErrorLogger->reportErr(ErrorMessage(std::move(locationList),
                                          mFile0,
                                          Severity::error,
                                          msg,

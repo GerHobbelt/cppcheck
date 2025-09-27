@@ -1516,7 +1516,7 @@ class MisraChecker:
         for token in cfg.tokenlist:
             if not token.isName:
                 continue
-            if token.function and token.scope.isExecutable:
+            if token.function and token != token.function.tokenDef:
                 if (not token.function.isStatic) and (token.str not in names):
                     names.append({'name': token.str, 'file': token.file})
             elif token.variable:
@@ -2291,9 +2291,8 @@ class MisraChecker:
                 rhs_category = get_category(rhs)
                 if lhs_category and rhs_category and lhs_category != rhs_category and rhs_category not in ('signed','unsigned'):
                     self.reportError(tok, 10, 3)
-                if bitsOfEssentialType(lhs) < bitsOfEssentialType(rhs):
+                if bitsOfEssentialType(lhs) < bitsOfEssentialType(rhs) and (lhs != "bool" or tok.astOperand2.str not in ('0','1')):
                     self.reportError(tok, 10, 3)
-
 
     def misra_10_4(self, data):
         op = {'+', '-', '*', '/', '%', '&', '|', '^', '+=', '-=', ':'}
@@ -3335,7 +3334,7 @@ class MisraChecker:
                     continue
                 if not tok.isName:
                     continue
-                if tok.function or tok.variable or tok.varId or tok.valueType:
+                if tok.function or tok.variable or tok.varId or tok.valueType or tok.typeScope:
                     continue
                 if tok.next.str == "(" or tok.str in ["EOF"]:
                     continue

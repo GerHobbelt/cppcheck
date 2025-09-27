@@ -151,6 +151,9 @@ class CPPCHECKLIB Token {
     friend class TestToken;
 
 private:
+    // for usage in TestToken only
+    Token();
+
     TokensFrontBack* mTokensFrontBack{};
 
 public:
@@ -168,7 +171,9 @@ public:
         eNone
     };
 
-    explicit Token(TokensFrontBack *tokensFrontBack = nullptr);
+    explicit Token(TokensFrontBack *tokensFrontBack);
+    // for usage in CheckIO::ArgumentInfo only
+    explicit Token(const Token *tok);
     ~Token();
 
     ConstTokenRange until(const Token * t) const;
@@ -850,11 +855,11 @@ public:
      * @param prepend Insert the new token before this token when it's not
      * the first one on the tokens list.
      */
-    Token* insertToken(const std::string& tokenStr, const std::string& originalNameStr = emptyString, bool prepend = false);
+    Token* insertToken(const std::string& tokenStr, const std::string& originalNameStr = emptyString, const std::string& macroNameStr = emptyString, bool prepend = false);
 
-    Token* insertTokenBefore(const std::string& tokenStr, const std::string& originalNameStr = emptyString)
+    Token* insertTokenBefore(const std::string& tokenStr, const std::string& originalNameStr = emptyString, const std::string& macroNameStr = emptyString)
     {
-        return insertToken(tokenStr, originalNameStr, true);
+        return insertToken(tokenStr, originalNameStr, macroNameStr, true);
     }
 
     Token* previous() {

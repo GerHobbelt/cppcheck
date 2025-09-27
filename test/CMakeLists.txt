@@ -118,6 +118,7 @@ if (BUILD_TESTS)
                         COMMAND $<TARGET_FILE:cppcheck>
                         --library=${LIBRARY}
                         --check-library
+                        --check-level=exhaustive
                         --platform=${PLATFORM}
                         --enable=style,information
                         --inconclusive
@@ -147,6 +148,7 @@ if (BUILD_TESTS)
         add_cfg(libcurl.c)
         add_cfg(libsigc++.cpp)
         add_cfg(lua.c)
+        add_cfg(mfc.cpp)
         add_cfg(opencv2.cpp)
         add_cfg(openmp.c)
         add_cfg(openssl.c)

@@ -2248,7 +2248,7 @@ void CheckOther::checkDuplicateBranch()
             ErrorPath errorPath;
             if (isSameExpression(mTokenizer->isCPP(), false, branchTop1->astOperand1(), branchTop2->astOperand1(), mSettings->library, true, true, &errorPath) &&
                 isSameExpression(mTokenizer->isCPP(), false, branchTop1->astOperand2(), branchTop2->astOperand2(), mSettings->library, true, true, &errorPath))
-                duplicateBranchError(scope.classDef, scope.bodyEnd->next(), errorPath);
+                duplicateBranchError(scope.classDef, scope.bodyEnd->next(), std::move(errorPath));
         }
     }
 }
@@ -2510,7 +2510,7 @@ void CheckOther::checkDuplicateExpression()
                                         continue;
                                     }
                                 }
-                                duplicateExpressionError(tok->astOperand1(), tok->astOperand2(), tok, errorPath);
+                                duplicateExpressionError(tok->astOperand1(), tok->astOperand2(), tok, std::move(errorPath));
                             }
                         }
                     }
@@ -2570,7 +2570,7 @@ void CheckOther::checkDuplicateExpression()
                     isConstStatement(tok->astOperand1(), cpp) && isConstStatement(tok->astOperand2(), cpp))
                     duplicateValueTernaryError(tok);
                 else if (isSameExpression(cpp, true, tok->astOperand1(), tok->astOperand2(), mSettings->library, false, true, &errorPath))
-                    duplicateExpressionTernaryError(tok, errorPath);
+                    duplicateExpressionTernaryError(tok, std::move(errorPath));
             }
         }
     }
@@ -2737,7 +2737,7 @@ void CheckOther::checkSignOfUnsignedVariable()
     }
 }
 
-bool CheckOther::comparisonNonZeroExpressionLessThanZero(const Token *tok, const ValueFlow::Value **zeroValue, const Token **nonZeroExpr)
+bool CheckOther::comparisonNonZeroExpressionLessThanZero(const Token *tok, const ValueFlow::Value **zeroValue, const Token **nonZeroExpr, bool suppress)
 {
     if (!tok->isComparisonOp() || !tok->astOperand1() || !tok->astOperand2())
         return false;
@@ -2754,6 +2754,10 @@ bool CheckOther::comparisonNonZeroExpressionLessThanZero(const Token *tok, const
     } else {
         return false;
     }
+
+    if (const Variable* var = (*nonZeroExpr)->variable())
+        if (var->typeStartToken()->isTemplateArg())
+            return suppress;
 
     const ValueType* vt = (*nonZeroExpr)->valueType();
     return vt && (vt->pointer || vt->sign == ValueType::UNSIGNED);

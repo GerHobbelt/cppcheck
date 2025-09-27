@@ -549,7 +549,7 @@ void SymbolDatabase::createSymbolDatabaseFindAllScopes()
                     // out of line function
                     if (const Token *endTok = Tokenizer::isFunctionHead(end, ";")) {
                         tok = endTok;
-                        scope->addFunction(function);
+                        scope->addFunction(std::move(function));
                     }
 
                     // inline function
@@ -937,6 +937,8 @@ void SymbolDatabase::createSymbolDatabaseNeedInitialization()
                         bool unknown = false;
 
                         for (const Variable& var: scope.varlist) {
+                            if (var.isStatic())
+                                continue;
                             if (var.isClass() && !var.isReference()) {
                                 if (var.type()) {
                                     // does this type need initialization?
@@ -947,7 +949,7 @@ void SymbolDatabase::createSymbolDatabaseNeedInitialization()
                                             unknown = true;
                                     }
                                 }
-                            } else if (!var.hasDefault() && !var.isStatic()) {
+                            } else if (!var.hasDefault()) {
                                 needInitialization = true;
                                 break;
                             }
@@ -1196,7 +1198,7 @@ void SymbolDatabase::fixVarId(VarIdMap & varIds, const Token * vartok, Token * m
     if (varId == varIds.end()) {
         MemberIdMap memberId;
         if (membertok->varId() == 0) {
-            memberId[membervar->nameToken()->varId()] = const_cast<Tokenizer &>(mTokenizer).newVarId();
+            memberId[membervar->nameToken()->varId()] = mTokenizer.newVarId();
             mVariableList.push_back(membervar);
         } else
             mVariableList[membertok->varId()] = membervar;
@@ -1206,7 +1208,7 @@ void SymbolDatabase::fixVarId(VarIdMap & varIds, const Token * vartok, Token * m
     MemberIdMap::iterator memberId = varId->second.find(membervar->nameToken()->varId());
     if (memberId == varId->second.end()) {
         if (membertok->varId() == 0) {
-            varId->second.insert(std::make_pair(membervar->nameToken()->varId(), const_cast<Tokenizer &>(mTokenizer).newVarId()));
+            varId->second.insert(std::make_pair(membervar->nameToken()->varId(), mTokenizer.newVarId()));
             mVariableList.push_back(membervar);
             memberId = varId->second.find(membervar->nameToken()->varId());
         } else
@@ -1766,7 +1768,7 @@ void SymbolDatabase::createSymbolDatabaseExprIds()
 
     // Mark expressions that are unique
     std::vector<std::pair<Token*, int>> uniqueExprId(id);
-    for (Token* tok = const_cast<Token*>(mTokenizer.list.front()); tok; tok = tok->next()) {
+    for (Token* tok = mTokenizer.list.front(); tok; tok = tok->next()) {
         const auto id2 = tok->exprId();
         if (id2 == 0 || id2 <= maximumVarId)
             continue;
@@ -2435,6 +2437,7 @@ void Variable::setValueType(const ValueType &valueType)
     if ((mValueType->pointer > 0) && (!isArray() || Token::Match(mNameToken->previous(), "( * %name% )")))
         setFlag(fIsPointer, true);
     setFlag(fIsConst, mValueType->constness & (1U << mValueType->pointer));
+    setFlag(fIsVolatile, mValueType->volatileness & (1U << mValueType->pointer));
     if (mValueType->smartPointerType)
         setFlag(fIsSmartPointer, true);
 }
@@ -2982,7 +2985,7 @@ bool Function::argsMatch(const Scope *scope, const Token *first, const Token *se
             if (Token::simpleMatch(second->next(), param.c_str(), param.size())) {
                 // check for redundant qualification before skipping it
                 if (!Token::simpleMatch(first->next(), param.c_str(), param.size())) {
-                    second = second->tokAt(int(arg_path_length));
+                    second = second->tokAt(arg_path_length);
                     arg_path_length = 0;
                 }
             }
@@ -3026,7 +3029,7 @@ bool Function::argsMatch(const Scope *scope, const Token *first, const Token *se
                     }
                 }
 
-                param = short_path;
+                param = std::move(short_path);
                 if (Token::simpleMatch(second->next(), param.c_str(), param.size())) {
                     second = second->tokAt(int(short_path_length));
                     arg_path_length = 0;
@@ -4352,6 +4355,10 @@ void SymbolDatabase::printXml(std::ostream &out) const
             outs += " constness=\"";
             outs += std::to_string(var->valueType()->constness);
             outs += '\"';
+
+            outs += " volatileness=\"";
+            outs += std::to_string(var->valueType()->volatileness);
+            outs += '\"';
         }
         outs += " isArray=\"";
         outs += bool_to_string(var->isArray());
@@ -5606,7 +5613,8 @@ static bool hasMatchingConstructor(const Scope* classScope, const ValueType* arg
         vt->type == argType->type &&
         (argType->sign == ValueType::Sign::UNKNOWN_SIGN || vt->sign == argType->sign) &&
         vt->pointer == argType->pointer &&
-        (vt->constness & 1) >= (argType->constness & 1);
+        (vt->constness & 1) >= (argType->constness & 1) &&
+        (vt->volatileness & 1) >= (argType->volatileness & 1);
     });
 }
 
@@ -5715,6 +5723,8 @@ const Function* Scope::findFunction(const Token *tok, bool requireConst) const
                         {
                             if (typeToken->str() == "const")
                                 ret.constness |= (1 << ret.pointer);
+                            else if (typeToken->str() == "volatile")
+                                ret.volatileness |= (1 << ret.pointer);
                             else if (typeToken->str() == "*")
                                 ret.pointer++;
                             else if (typeToken->str() == "<") {
@@ -6452,6 +6462,8 @@ void SymbolDatabase::setValueType(Token* tok, const Variable& var, SourceLocatio
             const ValueType * const vt = tok->astOperand1()->valueType();
             if (vt && (vt->constness & 1) != 0)
                 valuetype.constness |= 1;
+            if (vt && (vt->volatileness & 1) != 0)
+                valuetype.volatileness |= 1;
         }
         setValueType(tok, valuetype);
     }
@@ -6547,6 +6559,8 @@ void SymbolDatabase::setValueType(Token* tok, const ValueType& valuetype, Source
         if (parsedecl(vt1->containerTypeToken, &item, mDefaultSignedness, mSettings, mIsCpp)) {
             if (item.constness == 0)
                 item.constness = vt1->constness;
+            if (item.volatileness == 0)
+                item.volatileness = vt1->volatileness;
             if (isContainerYieldPointer(vt1->container->getYield(parent->next()->str())))
                 item.pointer += 1;
             else
@@ -6581,10 +6595,14 @@ void SymbolDatabase::setValueType(Token* tok, const ValueType& valuetype, Source
                 ValueType vt(*vt2);
                 if (vt.constness & (1 << vt.pointer))
                     vt.constness &= ~(1 << vt.pointer);
+                if (vt.volatileness & (1 << vt.pointer))
+                    vt.volatileness &= ~(1 << vt.pointer);
                 if (autoTok->strAt(1) == "*" && vt.pointer)
                     vt.pointer--;
                 if (Token::Match(autoTok->tokAt(-1), "const|constexpr"))
                     vt.constness |= (1 << vt.pointer);
+                if (Token::simpleMatch(autoTok->tokAt(-1), "volatile"))
+                    vt.volatileness |= (1 << vt.pointer);
                 setValueType(autoTok, vt);
                 setAutoTokenProperties(autoTok);
                 if (vt2->pointer > vt.pointer)
@@ -6599,10 +6617,16 @@ void SymbolDatabase::setValueType(Token* tok, const ValueType& valuetype, Source
                         vt2_.pointer = 1;
                     if ((vt.constness & (1 << vt2->pointer)) != 0)
                         vt2_.constness |= (1 << vt2->pointer);
-                    if (!Token::Match(autoTok->tokAt(1), "*|&"))
+                    if ((vt.volatileness & (1 << vt2->pointer)) != 0)
+                        vt2_.volatileness |= (1 << vt2->pointer);
+                    if (!Token::Match(autoTok->tokAt(1), "*|&")) {
                         vt2_.constness = vt.constness;
+                        vt2_.volatileness = vt.volatileness;
+                    }
                     if (Token::simpleMatch(autoTok->tokAt(1), "* const"))
                         vt2_.constness |= (1 << vt2->pointer);
+                    if (Token::simpleMatch(autoTok->tokAt(1), "* volatile"))
+                        vt2_.volatileness |= (1 << vt2->pointer);
                     var->setValueType(vt2_);
                     if (vt2->typeScope && vt2->typeScope->definedType) {
                         var->type(vt2->typeScope->definedType);
@@ -6653,6 +6677,8 @@ void SymbolDatabase::setValueType(Token* tok, const ValueType& valuetype, Source
         if (parsedecl(valuetype.containerTypeToken, &vt, mDefaultSignedness, mSettings, mIsCpp)) {
             if (vt.constness == 0)
                 vt.constness = valuetype.constness;
+            if (vt.volatileness == 0)
+                vt.volatileness = valuetype.volatileness;
             vt.reference = Reference::LValue;
             setValueType(parent, vt);
             return;
@@ -6665,6 +6691,8 @@ void SymbolDatabase::setValueType(Token* tok, const ValueType& valuetype, Source
         if (parsedecl(valuetype.smartPointerTypeToken, &vt, mDefaultSignedness, mSettings, mIsCpp)) {
             if (vt.constness == 0)
                 vt.constness = valuetype.constness;
+            if (vt.volatileness == 0)
+                vt.volatileness = valuetype.volatileness;
             setValueType(parent, vt);
             return;
         }
@@ -6727,11 +6755,13 @@ void SymbolDatabase::setValueType(Token* tok, const ValueType& valuetype, Source
         !parent->previous()->valueType() &&
         Token::simpleMatch(parent->astParent()->astOperand1(), "for")) {
         const bool isconst = Token::simpleMatch(parent->astParent()->next(), "const");
+        const bool isvolatile = Token::simpleMatch(parent->astParent()->next(), "volatile");
         Token * const autoToken = parent->astParent()->tokAt(isconst ? 2 : 1);
         if (vt2->pointer) {
             ValueType autovt(*vt2);
             autovt.pointer--;
             autovt.constness = 0;
+            autovt.volatileness = 0;
             setValueType(autoToken, autovt);
             setAutoTokenProperties(autoToken);
             ValueType varvt(*vt2);
@@ -6743,6 +6773,12 @@ void SymbolDatabase::setValueType(Token* tok, const ValueType& valuetype, Source
                     varvt.constness |= (1 << varvt.pointer);
                 else
                     varvt.constness |= 1;
+            }
+            if (isvolatile) {
+                if (varvt.pointer && varvt.reference != Reference::None)
+                    varvt.volatileness |= (1 << varvt.pointer);
+                else
+                    varvt.volatileness |= 1;
             }
             setValueType(parent->previous(), varvt);
             auto *var = const_cast<Variable *>(parent->previous()->variable());
@@ -6798,6 +6834,12 @@ void SymbolDatabase::setValueType(Token* tok, const ValueType& valuetype, Source
                         else
                             autovt.constness |= 1;
                     }
+                    if (autoToken->previous()->str() == "volatile") {
+                        if (autovt.pointer && autovt.reference != Reference::None)
+                            autovt.volatileness |= 2;
+                        else
+                            autovt.volatileness |= 1;
+                    }
                 }
             }
 
@@ -6810,6 +6852,8 @@ void SymbolDatabase::setValueType(Token* tok, const ValueType& valuetype, Source
                     autovt.pointer--;
                 if (isconst)
                     varvt.constness |= (1 << autovt.pointer);
+                if (isvolatile)
+                    varvt.volatileness |= (1 << autovt.pointer);
                 setValueType(parent->previous(), varvt);
                 auto * var = const_cast<Variable *>(parent->previous()->variable());
                 if (var) {
@@ -7069,6 +7113,8 @@ static const Token* parsedecl(const Token* type,
             parsedecl(type->type()->typeStart, valuetype, defaultSignedness, settings, isCpp);
         else if (Token::Match(type, "const|constexpr"))
             valuetype->constness |= (1 << (valuetype->pointer - pointer0));
+        else if (Token::simpleMatch(type, "volatile"))
+            valuetype->volatileness |= (1 << (valuetype->pointer - pointer0));
         else if (settings.clang && type->str().size() > 2 && type->str().find("::") < type->str().find('<')) {
             TokenList typeTokens(&settings);
             std::string::size_type pos1 = 0;
@@ -7159,13 +7205,17 @@ static const Token* parsedecl(const Token* type,
             if (vt->sign != ValueType::Sign::UNKNOWN_SIGN)
                 valuetype->sign = vt->sign;
             valuetype->constness = vt->constness;
+            valuetype->volatileness = vt->volatileness;
             valuetype->originalTypeName = vt->originalTypeName;
             const bool hasConst = Token::simpleMatch(type->previous(), "const");
+            const bool hasVolatile = Token::simpleMatch(type->previous(), "volatile");
             while (Token::Match(type, "%name%|*|&|&&|::") && !type->variable()) {
                 if (type->str() == "*") {
                     valuetype->pointer = 1;
                     if (hasConst)
                         valuetype->constness = 1;
+                    if (hasVolatile)
+                        valuetype->volatileness = 1;
                 } else if (type->str() == "&") {
                     valuetype->reference = Reference::LValue;
                 } else if (type->str() == "&&") {
@@ -7173,6 +7223,8 @@ static const Token* parsedecl(const Token* type,
                 }
                 if (type->str() == "const")
                     valuetype->constness |= (1 << valuetype->pointer);
+                if (type->str() == "volatile")
+                    valuetype->volatileness |= (1 << valuetype->pointer);
                 type = type->next();
             }
             break;
@@ -7201,6 +7253,8 @@ static const Token* parsedecl(const Token* type,
         if (!type->originalName().empty())
             valuetype->originalTypeName = type->originalName();
         type = type->next();
+        if (type && type->link() && type->str() == "<")
+            type = type->link()->next();
     }
 
     // Set signedness for integral types..
@@ -7263,7 +7317,7 @@ static const Function* getFunction(const Token* tok) {
 void SymbolDatabase::setValueTypeInTokenList(bool reportDebugWarnings, Token *tokens)
 {
     if (!tokens)
-        tokens = const_cast<Tokenizer &>(mTokenizer).list.front();
+        tokens = mTokenizer.list.front();
 
     for (Token *tok = tokens; tok; tok = tok->next())
         tok->setValueType(nullptr);
@@ -7332,7 +7386,8 @@ void SymbolDatabase::setValueTypeInTokenList(bool reportDebugWarnings, Token *to
         } else if (tok->tokType() == Token::eChar || tok->tokType() == Token::eString) {
             nonneg int const pointer = tok->tokType() == Token::eChar ? 0U : 1U;
             nonneg int const constness = tok->tokType() == Token::eChar ? 0U : 1U;
-            ValueType valuetype(ValueType::Sign::UNKNOWN_SIGN, ValueType::Type::CHAR, pointer, constness);
+            nonneg int const volatileness = 0U;
+            ValueType valuetype(ValueType::Sign::UNKNOWN_SIGN, ValueType::Type::CHAR, pointer, constness, volatileness);
 
             if (mIsCpp && mSettings.standards.cpp >= Standards::CPP20 && tok->isUtf8()) {
                 valuetype.originalTypeName = "char8_t";
@@ -7667,6 +7722,8 @@ void SymbolDatabase::setValueTypeInTokenList(bool reportDebugWarnings, Token *to
                 vt.typeScope = defScope;
                 if (fscope->function->isConst())
                     vt.constness = 1;
+                if (fscope->function->isVolatile())
+                    vt.volatileness = 1;
                 setValueType(tok, vt);
             }
         }
@@ -7894,6 +7951,12 @@ std::string ValueType::dump() const
         ret += '\"';
     }
 
+    if (volatileness > 0) {
+        ret += " valueType-volatileness=\"";
+        ret += std::to_string(volatileness);
+        ret += '\"';
+    }
+
     if (reference == Reference::None)
         ret += " valueType-reference=\"None\"";
     else if (reference == Reference::LValue)
@@ -7923,6 +7986,12 @@ bool ValueType::isConst(nonneg int indirect) const
     return constness & (1 << (pointer - indirect));
 }
 
+bool ValueType::isVolatile(nonneg int indirect) const
+{
+    if (indirect > pointer)
+        return false;
+    return volatileness & (1 << (pointer - indirect));
+}
 MathLib::bigint ValueType::typeSize(const Platform &platform, bool p) const
 {
     if (p && pointer)
@@ -7975,6 +8044,8 @@ std::string ValueType::str() const
     std::string ret;
     if (constness & 1)
         ret = " const";
+    if (volatileness & 1)
+        ret = " volatile";
     if (type == VOID)
         ret += " void";
     else if (isIntegral()) {
@@ -8024,12 +8095,16 @@ std::string ValueType::str() const
         ret += " *";
         if (constness & (2 << p))
             ret += " const";
+        if (volatileness & (2 << p))
+            ret += " volatile";
     }
     if (reference == Reference::LValue)
         ret += " &";
     else if (reference == Reference::RValue)
         ret += " &&";
-    return ret.empty() ? ret : ret.substr(1);
+    if (ret.empty())
+        return ret;
+    return ret.substr(1);
 }
 
 void ValueType::setDebugPath(const Token* tok, SourceLocation ctx, SourceLocation local)
@@ -8058,7 +8133,11 @@ ValueType::MatchResult ValueType::matchParameter(const ValueType *call, const Va
     if (call->pointer > 0) {
         if ((call->constness | func->constness) != func->constness)
             return ValueType::MatchResult::NOMATCH;
+        if ((call->volatileness | func->volatileness) != func->volatileness)
+            return ValueType::MatchResult::NOMATCH;
         if (call->constness == 0 && func->constness != 0 && func->reference != Reference::None)
+            return ValueType::MatchResult::NOMATCH;
+        if (call->volatileness == 0 && func->volatileness != 0 && func->reference != Reference::None)
             return ValueType::MatchResult::NOMATCH;
     }
     if (call->type != func->type || (call->isEnum() && !func->isEnum())) {
@@ -8098,7 +8177,7 @@ ValueType::MatchResult ValueType::matchParameter(const ValueType *call, const Va
     if (call->isIntegral() && func->isIntegral() && call->sign != ValueType::Sign::UNKNOWN_SIGN && func->sign != ValueType::Sign::UNKNOWN_SIGN && call->sign != func->sign)
         return ValueType::MatchResult::FALLBACK1;
 
-    if (func->reference != Reference::None && func->constness > call->constness)
+    if (func->reference != Reference::None && (func->constness > call->constness || func->volatileness > call->volatileness))
         return ValueType::MatchResult::FALLBACK1;
 
     return ValueType::MatchResult::SAME;

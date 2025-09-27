@@ -101,6 +101,8 @@ public:
 
     std::string loadCppcheckCfg();
 
+    static std::pair<std::string, std::string> getNameAndVersion(const std::string& productName);
+
     /** @brief addons, either filename of python/json file or json data */
     std::unordered_set<std::string> addons;
 
@@ -443,6 +445,12 @@ public:
 
     void setCheckLevelExhaustive();
     void setCheckLevelNormal();
+
+    enum class CheckLevel {
+        exhaustive,
+        normal
+    };
+    CheckLevel checkLevel = CheckLevel::normal;
 
 private:
     static std::string parseEnabled(const std::string &str, std::tuple<SimpleEnableGroup<Severity>, SimpleEnableGroup<Checks>> &groups);

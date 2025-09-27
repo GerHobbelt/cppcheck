@@ -1429,8 +1429,12 @@ void CheckClass::checkMemset()
                     const std::set<const Scope *> parsedTypes;
                     checkMemsetType(scope, tok, type, false, parsedTypes);
                 }
-            } else if (tok->variable() && tok->variable()->typeScope() && Token::Match(tok, "%var% = %name% (") &&
-                       (mSettings->library.getAllocFuncInfo(tok->tokAt(2)) || mSettings->library.getReallocFuncInfo(tok->tokAt(2)))) {
+            } else if (tok->variable() && tok->variable()->typeScope() && Token::Match(tok, "%var% = %name% (")) {
+                const Library::AllocFunc* alloc = mSettings->library.getAllocFuncInfo(tok->tokAt(2));
+                if (!alloc)
+                    alloc = mSettings->library.getReallocFuncInfo(tok->tokAt(2));
+                if (!alloc || alloc->bufferSize == Library::AllocFunc::BufferSize::none)
+                    continue;
                 const std::set<const Scope *> parsedTypes;
                 checkMemsetType(scope, tok->tokAt(2), tok->variable()->typeScope(), true, parsedTypes);
 
@@ -3339,7 +3343,7 @@ void CheckClass::checkThisUseAfterFree()
 
                 const Token * freeToken = nullptr;
                 std::set<const Function *> callstack;
-                checkThisUseAfterFreeRecursive(classScope, &func, &var, callstack, &freeToken);
+                checkThisUseAfterFreeRecursive(classScope, &func, &var, std::move(callstack), &freeToken);
             }
         }
     }
@@ -3513,7 +3517,7 @@ Check::FileInfo *CheckClass::getFileInfo(const Tokenizer *tokenizer, const Setti
             continue;
 
         MyFileInfo::NameLoc nameLoc;
-        nameLoc.className = name;
+        nameLoc.className = std::move(name);
         nameLoc.fileName = tokenizer->list.file(classScope->classDef);
         nameLoc.lineNumber = classScope->classDef->linenr();
         nameLoc.column = classScope->classDef->column();
@@ -3601,7 +3605,7 @@ bool CheckClass::analyseWholeProgram(const CTU::FileInfo *ctu, const std::list<C
             locationList.emplace_back(nameLoc.fileName, nameLoc.lineNumber, nameLoc.column);
             locationList.emplace_back(it->second.fileName, it->second.lineNumber, it->second.column);
 
-            const ErrorMessage errmsg(locationList,
+            const ErrorMessage errmsg(std::move(locationList),
                                       emptyString,
                                       Severity::error,
                                       "$symbol:" + nameLoc.className +

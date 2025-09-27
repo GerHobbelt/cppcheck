@@ -27,7 +27,7 @@ CFG="$DIR"../../cfg/
 # TODO: remove missingInclude disabling when it no longer is implied by --enable=information
 # Cppcheck options
 # need to suppress unmatchedSuppression in case valueFlowBailout is not reported
-CPPCHECK_OPT='--check-library --platform=unix64 --enable=style,information --inconclusive --force --error-exitcode=-1 --disable=missingInclude --inline-suppr --template="{file}:{line}:{severity}:{id}:{message}" --debug-warnings --suppress=valueFlowBailout --suppress=purgedConfiguration --suppress=unmatchedSuppression'
+CPPCHECK_OPT='--check-library --platform=unix64 --enable=style,information --inconclusive --force --check-level=exhaustive --error-exitcode=-1 --disable=missingInclude --inline-suppr --template="{file}:{line}:{severity}:{id}:{message}" --debug-warnings --suppress=valueFlowBailout --suppress=purgedConfiguration --suppress=unmatchedSuppression'
 
 # Compiler settings
 CXX=g++
@@ -107,6 +107,12 @@ function std_cpp_fn {
 function windows_fn {
     # TODO: Syntax check via g++ does not work because it can not find a valid windows.h
     #${CXX} ${CXX_OPT} ${DIR}windows.cpp
+    true
+}
+
+# mfc.cpp
+function mfc_fn {
+    # TODO: Add syntax check
     true
 }
 
@@ -479,6 +485,10 @@ function check_file {
         lua.c)
             lua_fn
             ${CPPCHECK} ${CPPCHECK_OPT} --library=$lib ${DIR}$f
+            ;;
+        mfc.cpp)
+            mfc_fn
+            ${CPPCHECK} ${CPPCHECK_OPT} --platform=win64  --library=$lib ${DIR}$f
             ;;
         opencv2.cpp)
             # TODO: "opencv.pc" is not commonly available in distros

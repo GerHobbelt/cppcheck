@@ -36,7 +36,7 @@ public:
 
 private:
     const Settings settings0 = settingsBuilder().library("qt.cfg").library("std.cfg").severity(Severity::style).severity(Severity::warning).build();
-    Settings settings1 = settingsBuilder().severity(Severity::style).severity(Severity::warning).build();
+    /*const*/ Settings settings1 = settingsBuilder().severity(Severity::style).severity(Severity::warning).build();
 
     void run() override {
         const char cfg[] = "<?xml version=\"1.0\"?>\n"
@@ -142,7 +142,7 @@ private:
     }
 
     void check_(const char* file, int line, const char code[], const char* filename = "test.cpp", bool inconclusive = false) {
-        const Settings settings = settingsBuilder(settings0).certainty(Certainty::inconclusive, inconclusive).build();
+        const Settings settings = settingsBuilder(settings0).certainty(Certainty::inconclusive, inconclusive).exhaustive().build();
         check_(file, line, code, settings, filename);
     }
 

@@ -298,9 +298,9 @@ Library::Error Library::load(const tinyxml2::XMLDocument &doc)
             const char *value = node->Attribute("value");
             if (value == nullptr)
                 return Error(ErrorCode::MISSING_ATTRIBUTE, "value");
-            defines.push_back(std::string(name) +
-                              " " +
-                              value);
+            auto result = defines.insert(std::string(name) + " " + value);
+            if (!result.second)
+                return Error(ErrorCode::DUPLICATE_DEFINE, name);
         }
 
         else if (nodename == "function") {
@@ -637,7 +637,7 @@ Library::Error Library::load(const tinyxml2::XMLDocument &doc)
                         return Error(ErrorCode::DUPLICATE_PLATFORM_TYPE, type_name);
                     return Error(ErrorCode::PLATFORM_TYPE_REDEFINED, type_name);
                 }
-                mPlatformTypes[type_name] = type;
+                mPlatformTypes[type_name] = std::move(type);
             } else {
                 for (const std::string &p : platform) {
                     const PlatformType * const type_ptr = platform_type(type_name, p);
@@ -721,7 +721,7 @@ Library::Error Library::loadFunction(const tinyxml2::XMLElement * const node, co
             if (const char *unknownReturnValues = functionnode->Attribute("unknownValues")) {
                 if (std::strcmp(unknownReturnValues, "all") == 0) {
                     std::vector<MathLib::bigint> values{LLONG_MIN, LLONG_MAX};
-                    mUnknownReturnValues[name] = values;
+                    mUnknownReturnValues[name] = std::move(values);
                 }
             }
         } else if (functionnodename == "arg") {
@@ -890,7 +890,7 @@ Library::Error Library::loadFunction(const tinyxml2::XMLElement * const node, co
                 wi.message = message;
             }
 
-            functionwarn[name] = wi;
+            functionwarn[name] = std::move(wi);
         } else if (functionnodename == "container") {
             const char* const action_ptr = functionnode->Attribute("action");
             Container::Action action = Container::Action::NO_ACTION;

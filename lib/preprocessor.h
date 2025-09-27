@@ -35,7 +35,7 @@
 
 class ErrorLogger;
 class Settings;
-class Suppressions;
+class SuppressionList;
 
 /**
  * @brief A preprocessor directive
@@ -73,6 +73,7 @@ class CPPCHECKLIB Preprocessor {
     // TODO: get rid of this
     friend class PreprocessorHelper;
     friend class TestPreprocessor;
+    friend class TestUnusedVar;
 
 public:
 
@@ -90,12 +91,9 @@ public:
     explicit Preprocessor(const Settings& settings, ErrorLogger *errorLogger = nullptr);
     virtual ~Preprocessor();
 
-    void inlineSuppressions(const simplecpp::TokenList &tokens, Suppressions &suppressions);
+    void inlineSuppressions(const simplecpp::TokenList &tokens, SuppressionList &suppressions);
 
     void setDirectives(const simplecpp::TokenList &tokens);
-    void setDirectives(const std::list<Directive> &directives) {
-        mDirectives = directives;
-    }
 
     /** list of all directives met while preprocessing file */
     const std::list<Directive> &getDirectives() const {
@@ -182,6 +180,10 @@ private:
     void error(const std::string &filename, unsigned int linenr, const std::string &msg);
 
     static bool hasErrors(const simplecpp::OutputList &outputList);
+
+    void setDirectives(const std::list<Directive> &directives) {
+        mDirectives = directives;
+    }
 
     const Settings& mSettings;
     ErrorLogger *mErrorLogger;

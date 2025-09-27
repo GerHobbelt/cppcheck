@@ -16,33 +16,20 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef SINGLEEXECUTOR_H
-#define SINGLEEXECUTOR_H
+#ifndef SIGNALHANDLER_H
+#define SIGNALHANDLER_H
 
-#include "executor.h"
+#include "config.h"
 
-#include <cstddef>
-#include <list>
-#include <string>
-#include <utility>
+#if defined(USE_UNIX_SIGNAL_HANDLING)
 
-class ErrorLogger;
-class Settings;
-class CppCheck;
-class SuppressionList;
-struct FileSettings;
+/**
+ * @param f Output file
+ */
+void set_signal_handler_output(FILE* f);
 
-class SingleExecutor : public Executor
-{
-public:
-    SingleExecutor(CppCheck &cppcheck, const std::list<std::pair<std::string, std::size_t>> &files, const std::list<FileSettings>& fileSettings, const Settings &settings, SuppressionList &suppressions, ErrorLogger &errorLogger);
-    SingleExecutor(const SingleExecutor &) = delete;
-    SingleExecutor& operator=(const SingleExecutor &) = delete;
+void register_signal_handler();
 
-    unsigned int check() override;
+#endif // USE_UNIX_SIGNAL_HANDLING
 
-private:
-    CppCheck &mCppcheck;
-};
-
-#endif // SINGLEEXECUTOR_H
+#endif // SIGNALHANDLER_H

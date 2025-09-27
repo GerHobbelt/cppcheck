@@ -4977,6 +4977,15 @@ private:
                           "}", true, Platform::Type::Native, "test.c"));
         // #10013
         ASSERT_EQUALS("void f ( ) { x = ! 123 ; }", tokenizeAndStringify("void f() { x = not 123; }", true, Platform::Type::Native, "test.cpp"));
+
+        { // #12476
+            const char code[] = "struct S { int a, b; };"
+                                "void f(struct S* compl) {"
+                                "    compl->a = compl->b;"
+                                "}";
+            const char exp[] = "struct S { int a ; int b ; } ; void f ( struct S * compl ) { compl . a = compl . b ; }";
+            ASSERT_EQUALS(exp, tokenizeAndStringify(code, true, Platform::Type::Native, "test.c"));
+        }
     }
 
     void simplifyRoundCurlyParentheses() {
@@ -5101,7 +5110,7 @@ private:
                             "    operator A& () { return x_; }\n"
                             "    A x_;\n"
                             "};";
-        ASSERT_EQUALS("template < typename T >\nstruct B {\n\noperatorT ( & ( ) ) [ 3 ] { return x_ ; }\nT x_ [ 3 ] ;\n} ;", tokenizeAndStringify(code));
+        ASSERT_EQUALS("template < typename T >\nstruct B {\n\nT ( & operatorT ( ) ) [ 3 ] { return x_ ; }\nT x_ [ 3 ] ;\n} ;", tokenizeAndStringify(code));
         ASSERT_EQUALS("", errout.str());
     }
 
@@ -6586,6 +6595,7 @@ private:
         ASSERT_EQUALS("abc;(", testAst("a(b;c)"));
         ASSERT_EQUALS("x{( forbc;;(", testAst("x({ for(a;b;c){} });"));
         ASSERT_EQUALS("PT.(", testAst("P->~T();"));  // <- The "T" token::function() will be a destructor
+        ASSERT_EQUALS("double&(4[", testAst("void f(double(&)[4]) {}"));
     }
 
     void asttemplate() { // uninstantiated templates will have <,>,etc..

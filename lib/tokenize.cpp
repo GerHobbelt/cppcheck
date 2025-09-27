@@ -7518,7 +7518,7 @@ bool Tokenizer::simplifyCAlternativeTokens()
         } else if (Token::Match(tok, "not|compl")) {
             alt.push_back(tok);
 
-            if (Token::Match(tok->previous(), "%assign%") || Token::Match(tok->next(), "%num%")) {
+            if ((Token::Match(tok->previous(), "%assign%") || Token::Match(tok->next(), "%num%")) && !Token::Match(tok->next(), ".|->")) {
                 replaceAll = true;
                 continue;
             }
@@ -10025,12 +10025,19 @@ void Tokenizer::simplifyOperatorName()
             }
         }
 
+        const bool returnsRef = Token::simpleMatch(par, "( & (") && tok->next()->isName();
         if (par && !op.empty()) {
-            tok->str("operator" + op);
-            Token::eraseTokens(tok, par);
+            if (returnsRef) {
+                par->next()->insertToken("operator" + op)->isOperatorKeyword(true);
+                tok->deleteThis();
+            }
+            else {
+                tok->str("operator" + op);
+                Token::eraseTokens(tok, par);
+            }
         }
 
-        if (!op.empty())
+        if (!op.empty() && !returnsRef)
             tok->isOperatorKeyword(true);
     }
 
@@ -10580,5 +10587,16 @@ bool Tokenizer::hasIfdef(const Token *start, const Token *end) const
         d.linenr <= end->linenr() &&
         start->fileIndex() < list.getFiles().size() &&
         d.file == list.getFiles()[start->fileIndex()];
+    });
+}
+
+bool Tokenizer::isPacked(const Token * bodyStart) const
+{
+    assert(mPreprocessor);
+
+    const auto& directives = mPreprocessor->getDirectives();
+    // TODO: should this return true if the #pragma exists in any line before the start token?
+    return std::any_of(directives.cbegin(), directives.cend(), [&](const Directive& d) {
+        return d.linenr < bodyStart->linenr() && d.str == "#pragma pack(1)" && d.file == list.getFiles().front();
     });
 }

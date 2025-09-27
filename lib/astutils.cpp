@@ -1520,7 +1520,7 @@ bool compareTokenFlags(const Token* tok1, const Token* tok2, bool macro) {
     if (tok1->isSigned() != tok2->isSigned())
         return false;
     return true;
-};
+}
 
 static bool astIsBoolLike(const Token* tok)
 {
@@ -2669,6 +2669,8 @@ bool isVariableChanged(const Token *tok, int indirect, const Settings *settings,
         ftok = ftok->astParent();
 
     if (ftok && Token::Match(ftok->link(), ")|} !!{")) {
+        if (ftok->str() == "(" && Token::simpleMatch(ftok->astOperand1(), "[")) // operator() on array element, bail out
+            return true;
         const Token * ptok = tok2;
         while (Token::Match(ptok->astParent(), ".|::|["))
             ptok = ptok->astParent();
@@ -2942,8 +2944,9 @@ static const Token* findExpressionChangedImpl(const Token* expr,
     const Token* result = nullptr;
     findAstNode(expr, [&](const Token* tok) {
         if (exprDependsOnThis(tok)) {
-            result = findThisChanged(start, end, false, settings, cpp);
-            return true;
+            result = findThisChanged(start, end, /*indirect*/ 0, settings, cpp);
+            if (result)
+                return true;
         }
         bool global = false;
         if (tok->variable()) {
@@ -3293,7 +3296,7 @@ static ExprUsage getFunctionUsage(const Token* tok, int indirect, const Settings
     } else if (ftok->str() == "{") {
         return indirect == 0 ? ExprUsage::Used : ExprUsage::Inconclusive;
     } else if (ftok->variable() && ftok == ftok->variable()->nameToken()) { // variable init/constructor call
-        if (ftok->variable()->type() && ftok->variable()->type()->needInitialization == Type::NeedInitialization::True)
+        if (ftok->variable()->type() && ftok->variable()->type()->classScope && ftok->variable()->type()->classScope->numConstructors == 0)
             return ExprUsage::Used;
         if (ftok->variable()->isStlType() || (ftok->variable()->valueType() && ftok->variable()->valueType()->container)) // STL types or containers don't initialize external variables
             return ExprUsage::Used;

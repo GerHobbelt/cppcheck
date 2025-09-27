@@ -69,8 +69,6 @@ private:
     void check(unsigned int jobs, int files, int result, const std::string &data, const CheckOptions& opt = make_default_obj{}) {
         errout.str("");
 
-        CheckUnusedFunctions::clear();
-
         std::list<FileSettings> fileSettings;
 
         std::list<std::pair<std::string, std::size_t>> filelist;
@@ -125,7 +123,7 @@ private:
         if (useFS)
             filelist.clear();
 
-        ThreadExecutor executor(filelist, fileSettings, s, s.nomsg, *this, executeFn);
+        ThreadExecutor executor(filelist, fileSettings, s, s.supprs.nomsg, *this, executeFn);
         ASSERT_EQUALS(result, executor.check());
         ASSERT_EQUALS(opt.executeCommandCalled, executeCommandCalled);
         ASSERT_EQUALS(opt.exe, exe);
@@ -281,7 +279,7 @@ private:
         // for each file: top5 results + overall + empty line
         const std::string output_s = GET_REDIRECT_OUTPUT;
         // for each file: top5 results + overall + empty line
-        ASSERT_EQUALS((5 + 1 + 1) * 2, cppcheck::count_all_of(output_s, '\n'));
+        ASSERT_EQUALS((5 + 1 + 1) * 2LL, cppcheck::count_all_of(output_s, '\n'));
     }
 
     void showtime_top5_summary() {

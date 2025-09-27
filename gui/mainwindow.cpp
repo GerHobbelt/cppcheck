@@ -122,7 +122,7 @@ MainWindow::MainWindow(TranslationHandler* th, QSettings* settings) :
     {
         Settings tempSettings;
         tempSettings.exename = QCoreApplication::applicationFilePath().toStdString();
-        tempSettings.loadCppcheckCfg(); // TODO: how to handle error?
+        Settings::loadCppcheckCfg(tempSettings, tempSettings.supprs); // TODO: how to handle error?
         mCppcheckCfgProductName = QString::fromStdString(tempSettings.cppcheckCfgProductName);
         mCppcheckCfgAbout = QString::fromStdString(tempSettings.cppcheckCfgAbout);
     }
@@ -593,7 +593,7 @@ void MainWindow::doAnalyzeFiles(const QStringList &files, const bool checkLibrar
     mThread->setFiles(fileNames);
     if (mProjectFile && !checkConfiguration)
         mThread->setAddonsAndTools(mProjectFile->getAddonsAndTools());
-    mThread->setSuppressions(mProjectFile ? mProjectFile->getSuppressions() : QList<Suppressions::Suppression>());
+    mThread->setSuppressions(mProjectFile ? mProjectFile->getSuppressions() : QList<SuppressionList::Suppression>());
     QDir inf(mCurrentDirectory);
     const QString checkPath = inf.canonicalPath();
     setPath(SETTINGS_LAST_CHECK_PATH, checkPath);
@@ -978,7 +978,7 @@ QPair<bool,Settings> MainWindow::getCppcheckSettings()
     const QString pythonCmd = fromNativePath(mSettings->value(SETTINGS_PYTHON_PATH).toString());
 
     {
-        const QString cfgErr = QString::fromStdString(result.loadCppcheckCfg());
+        const QString cfgErr = QString::fromStdString(Settings::loadCppcheckCfg(result, result.supprs));
         if (!cfgErr.isEmpty()) {
             QMessageBox::critical(this, tr("Error"), tr("Failed to load %1 - %2\n\nAnalysis is aborted.").arg("cppcheck.cfg").arg(cfgErr));
             return {false, {}};
@@ -1021,8 +1021,8 @@ QPair<bool,Settings> MainWindow::getCppcheckSettings()
             tryLoadLibrary(&result.library, filename);
         }
 
-        for (const Suppressions::Suppression &suppression : mProjectFile->getSuppressions()) {
-            result.nomsg.addSuppression(suppression);
+        for (const SuppressionList::Suppression &suppression : mProjectFile->getSuppressions()) {
+            result.supprs.nomsg.addSuppression(suppression);
         }
 
         // Only check the given -D configuration
@@ -2066,7 +2066,7 @@ void MainWindow::suppressIds(QStringList ids)
         return;
     ids.removeDuplicates();
 
-    QList<Suppressions::Suppression> suppressions = mProjectFile->getSuppressions();
+    QList<SuppressionList::Suppression> suppressions = mProjectFile->getSuppressions();
     for (const QString& id : ids) {
         // Remove all matching suppressions
         std::string id2 = id.toStdString();
@@ -2077,7 +2077,7 @@ void MainWindow::suppressIds(QStringList ids)
                 ++i;
         }
 
-        Suppressions::Suppression newSuppression;
+        SuppressionList::Suppression newSuppression;
         newSuppression.errorId = id2;
         suppressions << newSuppression;
     }

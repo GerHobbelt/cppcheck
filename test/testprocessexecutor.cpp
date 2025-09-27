@@ -69,8 +69,6 @@ private:
     void check(unsigned int jobs, int files, int result, const std::string &data, const CheckOptions& opt = make_default_obj{}) {
         errout.str("");
 
-        CheckUnusedFunctions::clear();
-
         std::list<FileSettings> fileSettings;
 
         std::list<std::pair<std::string, std::size_t>> filelist;
@@ -124,7 +122,7 @@ private:
         if (useFS)
             filelist.clear();
 
-        ProcessExecutor executor(filelist, fileSettings, s, s.nomsg, *this, executeFn);
+        ProcessExecutor executor(filelist, fileSettings, s, s.supprs.nomsg, *this, executeFn);
         ASSERT_EQUALS(result, executor.check());
         ASSERT_EQUALS(opt.executeCommandCalled, executeCommandCalled);
         ASSERT_EQUALS(opt.exe, exe);

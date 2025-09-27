@@ -429,6 +429,9 @@ static bool reportClangErrors(std::istream &is, const std::function<void(const E
 
 unsigned int CppCheck::checkClang(const std::string &path)
 {
+    if (mSettings.checks.isEnabled(Checks::unusedFunction) && !mUnusedFunctionsCheck)
+        mUnusedFunctionsCheck.reset(new CheckUnusedFunctions());
+
     if (!mSettings.quiet)
         mErrorLogger.reportOut(std::string("Checking ") + path + " ...", Color::FgGreen);
 
@@ -496,9 +499,10 @@ unsigned int CppCheck::checkClang(const std::string &path)
     }
 
     try {
-        std::istringstream ast(output2);
-        Tokenizer tokenizer(mSettings, this);
+        Preprocessor preprocessor(mSettings, this);
+        Tokenizer tokenizer(mSettings, this, &preprocessor);
         tokenizer.list.appendFileIfNew(path);
+        std::istringstream ast(output2);
         clangimport::parseClangAstDump(tokenizer, ast);
         ValueFlow::setValues(tokenizer.list,
                              const_cast<SymbolDatabase&>(*tokenizer.getSymbolDatabase()),
@@ -560,6 +564,10 @@ unsigned int CppCheck::check(const std::string &path, const std::string &content
 
 unsigned int CppCheck::check(const FileSettings &fs)
 {
+    // TODO: move to constructor when CppCheck no longer owns the settings
+    if (mSettings.checks.isEnabled(Checks::unusedFunction) && !mUnusedFunctionsCheck)
+        mUnusedFunctionsCheck.reset(new CheckUnusedFunctions());
+
     CppCheck temp(mErrorLogger, mUseGlobalSuppressions, mExecuteCommand);
     temp.mSettings = mSettings;
     if (!temp.mSettings.userDefines.empty())
@@ -578,10 +586,16 @@ unsigned int CppCheck::check(const FileSettings &fs)
         temp.mSettings.platform.set(fs.platformType);
     if (mSettings.clang) {
         temp.mSettings.includePaths.insert(temp.mSettings.includePaths.end(), fs.systemIncludePaths.cbegin(), fs.systemIncludePaths.cend());
-        return temp.check(Path::simplifyPath(fs.filename));
+        // TODO: propagate back suppressions
+        const unsigned int returnValue = temp.check(Path::simplifyPath(fs.filename));
+        if (mUnusedFunctionsCheck)
+            mUnusedFunctionsCheck->updateFunctionData(*temp.mUnusedFunctionsCheck);
+        return returnValue;
     }
     const unsigned int returnValue = temp.checkFile(Path::simplifyPath(fs.filename), fs.cfg);
-    mSettings.nomsg.addSuppressions(temp.mSettings.nomsg.getSuppressions());
+    mSettings.supprs.nomsg.addSuppressions(temp.mSettings.supprs.nomsg.getSuppressions());
+    if (mUnusedFunctionsCheck)
+        mUnusedFunctionsCheck->updateFunctionData(*temp.mUnusedFunctionsCheck);
     return returnValue;
 }
 
@@ -595,6 +609,10 @@ static simplecpp::TokenList createTokenList(const std::string& filename, std::ve
 
 unsigned int CppCheck::checkFile(const std::string& filename, const std::string &cfgname, std::istream* fileStream)
 {
+    // TODO: move to constructor when CppCheck no longer owns the settings
+    if (mSettings.checks.isEnabled(Checks::unusedFunction) && !mUnusedFunctionsCheck)
+        mUnusedFunctionsCheck.reset(new CheckUnusedFunctions());
+
     mExitCode = 0;
 
     FilesDeleter filesDeleter;
@@ -633,15 +651,18 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
 
     try {
         if (mSettings.library.markupFile(filename)) {
-            if (mSettings.isUnusedFunctionCheckEnabled() && mSettings.buildDir.empty()) {
+            if (mUnusedFunctionsCheck && mSettings.isUnusedFunctionCheckEnabled() && mSettings.buildDir.empty()) {
+                // this is not a real source file - we just want to tokenize it. treat it as C anyways as the language needs to be determined.
                 Tokenizer tokenizer(mSettings, this);
-                if (fileStream)
+                tokenizer.list.setLang(Standards::Language::C);
+                if (fileStream) {
                     tokenizer.list.createTokens(*fileStream, filename);
+                }
                 else {
                     std::ifstream in(filename);
                     tokenizer.list.createTokens(in, filename);
                 }
-                CheckUnusedFunctions::parseTokens(tokenizer, mSettings);
+                mUnusedFunctionsCheck->parseTokens(tokenizer, mSettings);
             }
             return EXIT_SUCCESS;
         }
@@ -726,10 +747,10 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
         }
 
         // Parse comments and then remove them
-        preprocessor.inlineSuppressions(tokens1, mSettings.nomsg);
+        preprocessor.inlineSuppressions(tokens1, mSettings.supprs.nomsg);
         if (mSettings.dump || !mSettings.addons.empty()) {
             std::ostringstream oss;
-            mSettings.nomsg.dump(oss);
+            mSettings.supprs.nomsg.dump(oss);
             dumpProlog += oss.str();
         }
         tokens1.removeComments();
@@ -745,7 +766,7 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
             toolinfo << (mSettings.severity.isEnabled(Severity::portability) ? 'p' : ' ');
             toolinfo << (mSettings.severity.isEnabled(Severity::information) ? 'i' : ' ');
             toolinfo << mSettings.userDefines;
-            mSettings.nomsg.dump(toolinfo);
+            mSettings.supprs.nomsg.dump(toolinfo);
 
             // Calculate hash so it can be compared with old hash / future hashes
             const std::size_t hash = preprocessor.calculateHash(tokens1, toolinfo.str());
@@ -804,7 +825,7 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
             }
             Tokenizer tokenizer2(mSettings, this);
             std::istringstream istr2(code);
-            tokenizer2.list.createTokens(istr2);
+            tokenizer2.list.createTokens(istr2, Path::identify(*files.begin()));
             executeRules("define", tokenizer2);
         }
 #endif
@@ -917,7 +938,7 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
                 }
 
                 // Need to call this even if the hash will skip this configuration
-                mSettings.nomsg.markUnmatchedInlineSuppressionsAsChecked(tokenizer);
+                mSettings.supprs.nomsg.markUnmatchedInlineSuppressionsAsChecked(tokenizer);
 
                 // Skip if we already met the same simplified token list
                 if (mSettings.force || mSettings.maxConfigs > 1) {
@@ -1019,7 +1040,7 @@ unsigned int CppCheck::checkFile(const std::string& filename, const std::string 
     // In jointSuppressionReport mode, unmatched suppressions are
     // collected after all files are processed
     if (!mSettings.useSingleJob() && (mSettings.severity.isEnabled(Severity::information) || mSettings.checkConfiguration)) {
-        Suppressions::reportUnmatchedSuppressions(mSettings.nomsg.getUnmatchedLocalSuppressions(filename, mSettings.isUnusedFunctionCheckEnabled()), *this);
+        SuppressionList::reportUnmatchedSuppressions(mSettings.supprs.nomsg.getUnmatchedLocalSuppressions(filename, mSettings.isUnusedFunctionCheckEnabled()), *this);
     }
 
     mErrorList.clear();
@@ -1103,10 +1124,10 @@ void CppCheck::checkNormalTokens(const Tokenizer &tokenizer)
     }
 
     if (mSettings.checks.isEnabled(Checks::unusedFunction) && !mSettings.buildDir.empty()) {
-        unusedFunctionsChecker.parseTokens(tokenizer, tokenizer.list.getFiles().front().c_str(), mSettings);
+        unusedFunctionsChecker.parseTokens(tokenizer, mSettings);
     }
-    if (mSettings.isUnusedFunctionCheckEnabled() && mSettings.buildDir.empty()) {
-        CheckUnusedFunctions::parseTokens(tokenizer, mSettings);
+    if (mUnusedFunctionsCheck && mSettings.isUnusedFunctionCheckEnabled() && mSettings.buildDir.empty()) {
+        mUnusedFunctionsCheck->parseTokens(tokenizer, mSettings);
     }
 
     if (mSettings.clang) {
@@ -1613,14 +1634,14 @@ void CppCheck::reportErr(const ErrorMessage &msg)
     }
 
     // TODO: only convert if necessary
-    const auto errorMessage = Suppressions::ErrorMessage::fromErrorMessage(msg, macroNames);
+    const auto errorMessage = SuppressionList::ErrorMessage::fromErrorMessage(msg, macroNames);
 
-    if (mSettings.nomsg.isSuppressed(errorMessage, mUseGlobalSuppressions)) {
+    if (mSettings.supprs.nomsg.isSuppressed(errorMessage, mUseGlobalSuppressions)) {
         // Safety: Report critical errors to ErrorLogger
         if (mSettings.safety && ErrorLogger::isCriticalErrorId(msg.id)) {
             mExitCode = 1;
 
-            if (mSettings.nomsg.isSuppressedExplicitly(errorMessage, mUseGlobalSuppressions)) {
+            if (mSettings.supprs.nomsg.isSuppressedExplicitly(errorMessage, mUseGlobalSuppressions)) {
                 // Report with internal severity to signal that there is this critical error but
                 // it is suppressed
                 ErrorMessage temp(msg);
@@ -1648,13 +1669,13 @@ void CppCheck::reportErr(const ErrorMessage &msg)
     if (!mSettings.buildDir.empty())
         mAnalyzerInformation.reportErr(msg);
 
-    if (!mSettings.nofail.isSuppressed(errorMessage) && !mSettings.nomsg.isSuppressed(errorMessage)) {
+    if (!mSettings.supprs.nofail.isSuppressed(errorMessage) && !mSettings.supprs.nomsg.isSuppressed(errorMessage)) {
         mExitCode = 1;
     }
 
     mErrorLogger.reportErr(msg);
     // check if plistOutput should be populated and the current output file is open and the error is not suppressed
-    if (!mSettings.plistOutput.empty() && mPlistFile.is_open() && !mSettings.nomsg.isSuppressed(errorMessage)) {
+    if (!mSettings.plistOutput.empty() && mPlistFile.is_open() && !mSettings.supprs.nomsg.isSuppressed(errorMessage)) {
         // add error to plist output file
         mPlistFile << ErrorLogger::plistData(msg);
     }
@@ -1789,8 +1810,8 @@ bool CppCheck::analyseWholeProgram()
     for (Check *check : Check::instances())
         errors |= check->analyseWholeProgram(&ctu, mFileInfo, mSettings, *this);  // TODO: ctu
 
-    if (mSettings.checks.isEnabled(Checks::unusedFunction))
-        errors |= CheckUnusedFunctions::check(mSettings, *this);
+    if (mUnusedFunctionsCheck)
+        errors |= mUnusedFunctionsCheck->check(mSettings, *this);
 
     return errors && (mExitCode > 0);
 }
@@ -1856,8 +1877,8 @@ void CppCheck::analyseWholeProgram(const std::string &buildDir, const std::list<
     for (Check *check : Check::instances())
         check->analyseWholeProgram(&ctuFileInfo, fileInfoList, mSettings, *this);
 
-    if (mSettings.checks.isEnabled(Checks::unusedFunction))
-        CheckUnusedFunctions::check(mSettings, *this);
+    if (mUnusedFunctionsCheck)
+        mUnusedFunctionsCheck->check(mSettings, *this);
 
     for (Check::FileInfo *fi : fileInfoList)
         delete fi;

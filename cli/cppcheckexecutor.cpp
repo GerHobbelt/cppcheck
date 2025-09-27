@@ -53,7 +53,7 @@
 #include <vector>
 
 #ifdef USE_UNIX_SIGNAL_HANDLING
-#include "cppcheckexecutorsig.h"
+#include "signalhandler.h"
 #endif
 
 #ifdef USE_WINDOWS_SEH
@@ -62,6 +62,10 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#endif
+
+#if !defined(WIN32) && !defined(__MINGW32__)
+#include <sys/wait.h> // WIFEXITED and friends
 #endif
 
 namespace {
@@ -180,7 +184,7 @@ int CppCheckExecutor::check(int argc, const char* const argv[])
 {
     Settings settings;
     CmdLineLoggerStd logger;
-    CmdLineParser parser(logger, settings, settings.nomsg, settings.nofail);
+    CmdLineParser parser(logger, settings, settings.supprs);
     if (!parser.fillSettingsFromArgs(argc, argv)) {
         return EXIT_FAILURE;
     }
@@ -207,15 +211,15 @@ int CppCheckExecutor::check_wrapper(const Settings& settings)
         return check_wrapper_seh(*this, &CppCheckExecutor::check_internal, settings);
 #elif defined(USE_UNIX_SIGNAL_HANDLING)
     if (settings.exceptionHandling)
-        return check_wrapper_sig(*this, &CppCheckExecutor::check_internal, settings);
+        register_signal_handler();
 #endif
     return check_internal(settings);
 }
 
-bool CppCheckExecutor::reportSuppressions(const Settings &settings, const Suppressions& suppressions, bool unusedFunctionCheckEnabled, const std::list<std::pair<std::string, std::size_t>> &files, const std::list<FileSettings>& fileSettings, ErrorLogger& errorLogger) {
+bool CppCheckExecutor::reportSuppressions(const Settings &settings, const SuppressionList& suppressions, bool unusedFunctionCheckEnabled, const std::list<std::pair<std::string, std::size_t>> &files, const std::list<FileSettings>& fileSettings, ErrorLogger& errorLogger) {
     const auto& suppr = suppressions.getSuppressions();
-    if (std::any_of(suppr.begin(), suppr.end(), [](const Suppressions::Suppression& s) {
-        return s.errorId == "unmatchedSuppression" && s.fileName.empty() && s.lineNumber == Suppressions::Suppression::NO_LINE;
+    if (std::any_of(suppr.begin(), suppr.end(), [](const SuppressionList::Suppression& s) {
+        return s.errorId == "unmatchedSuppression" && s.fileName.empty() && s.lineNumber == SuppressionList::Suppression::NO_LINE;
     }))
         return false;
 
@@ -225,16 +229,16 @@ bool CppCheckExecutor::reportSuppressions(const Settings &settings, const Suppre
         assert(!(!files.empty() && !fileSettings.empty()));
 
         for (std::list<std::pair<std::string, std::size_t>>::const_iterator i = files.cbegin(); i != files.cend(); ++i) {
-            err |= Suppressions::reportUnmatchedSuppressions(
+            err |= SuppressionList::reportUnmatchedSuppressions(
                 suppressions.getUnmatchedLocalSuppressions(i->first, unusedFunctionCheckEnabled), errorLogger);
         }
 
         for (std::list<FileSettings>::const_iterator i = fileSettings.cbegin(); i != fileSettings.cend(); ++i) {
-            err |= Suppressions::reportUnmatchedSuppressions(
+            err |= SuppressionList::reportUnmatchedSuppressions(
                 suppressions.getUnmatchedLocalSuppressions(i->filename, unusedFunctionCheckEnabled), errorLogger);
         }
     }
-    err |= Suppressions::reportUnmatchedSuppressions(suppressions.getUnmatchedGlobalSuppressions(unusedFunctionCheckEnabled), errorLogger);
+    err |= SuppressionList::reportUnmatchedSuppressions(suppressions.getUnmatchedGlobalSuppressions(unusedFunctionCheckEnabled), errorLogger);
     return err;
 }
 
@@ -264,7 +268,7 @@ int CppCheckExecutor::check_internal(const Settings& settings) const
 
     CppCheck cppcheck(stdLogger, true, executeCommand);
     cppcheck.settings() = settings; // this is a copy
-    auto& suppressions = cppcheck.settings().nomsg;
+    auto& suppressions = cppcheck.settings().supprs.nomsg;
 
     unsigned int returnValue;
     if (settings.useSingleJob()) {
@@ -312,7 +316,7 @@ void StdLogger::writeCheckersReport()
     CheckersReport checkersReport(mSettings, mActiveCheckers);
 
     bool suppressed = false;
-    for (const Suppressions::Suppression& s : mSettings.nomsg.getSuppressions()) {
+    for (const SuppressionList::Suppression& s : mSettings.supprs.nomsg.getSuppressions()) {
         if (s.errorId == "checkersReport")
             suppressed = true;
     }
@@ -443,8 +447,12 @@ void StdLogger::reportErr(const ErrorMessage &msg)
 void CppCheckExecutor::setExceptionOutput(FILE* exceptionOutput)
 {
     mExceptionOutput = exceptionOutput;
+#if defined(USE_UNIX_SIGNAL_HANDLING)
+    set_signal_handler_output(mExceptionOutput);
+#endif
 }
 
+// cppcheck-suppress unusedFunction - only used by USE_WINDOWS_SEH code
 FILE* CppCheckExecutor::getExceptionOutput()
 {
     return mExceptionOutput;

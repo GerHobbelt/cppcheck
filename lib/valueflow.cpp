@@ -119,6 +119,7 @@
 #include <limits>
 #include <map>
 #include <memory>
+#include <numeric>
 #include <set>
 #include <sstream> // IWYU pragma: keep
 #include <string>
@@ -1116,6 +1117,10 @@ static size_t accumulateStructMembers(const Scope* scope, F f)
             if (vt->type == ValueType::Type::RECORD && vt->typeScope == scope)
                 return 0;
             total = f(total, *vt);
+            const MathLib::bigint dim = std::accumulate(var.dimensions().cbegin(), var.dimensions().cend(), 1LL, [](MathLib::bigint i1, const Dimension& dim) {
+                return i1 * dim.num;
+            });
+            total *= dim;
         }
         if (total == 0)
             return 0;
@@ -3810,20 +3815,20 @@ static bool isNotEqual(std::pair<const Token*, const Token*> x, std::pair<const 
     start2 = skipCVRefs(start2, y.second);
     return !(start1 == x.second && start2 == y.second);
 }
-static bool isNotEqual(std::pair<const Token*, const Token*> x, const std::string& y)
+static bool isNotEqual(std::pair<const Token*, const Token*> x, const std::string& y, bool cpp)
 {
     TokenList tokenList(nullptr);
     std::istringstream istr(y);
-    tokenList.createTokens(istr);
+    tokenList.createTokens(istr, cpp ? Standards::Language::CPP : Standards::Language::C);
     return isNotEqual(x, std::make_pair(tokenList.front(), tokenList.back()));
 }
-static bool isNotEqual(std::pair<const Token*, const Token*> x, const ValueType* y)
+static bool isNotEqual(std::pair<const Token*, const Token*> x, const ValueType* y, bool cpp)
 {
     if (y == nullptr)
         return false;
     if (y->originalTypeName.empty())
         return false;
-    return isNotEqual(x, y->originalTypeName);
+    return isNotEqual(x, y->originalTypeName, cpp);
 }
 
 static bool isDifferentType(const Token* src, const Token* dst)
@@ -3838,9 +3843,9 @@ static bool isDifferentType(const Token* src, const Token* dst)
         std::pair<const Token*, const Token*> parentdecl = Token::typeDecl(dst);
         if (isNotEqual(decl, parentdecl))
             return true;
-        if (isNotEqual(decl, dst->valueType()))
+        if (isNotEqual(decl, dst->valueType(), dst->isCpp()))
             return true;
-        if (isNotEqual(parentdecl, src->valueType()))
+        if (isNotEqual(parentdecl, src->valueType(), src->isCpp()))
             return true;
     }
     return false;
@@ -7680,7 +7685,7 @@ static void valueFlowLibraryFunction(Token *tok, const std::string &returnValue,
     if (returnValue.find("arg") != std::string::npos && argValues.empty())
         return;
     productParams(settings, argValues, [&](const std::unordered_map<nonneg int, ValueFlow::Value>& arg) {
-        ValueFlow::Value value = evaluateLibraryFunction(arg, returnValue, &settings);
+        ValueFlow::Value value = evaluateLibraryFunction(arg, returnValue, &settings, tok->isCpp());
         if (value.isUninitValue())
             return;
         ValueFlow::Value::ValueKind kind = ValueFlow::Value::ValueKind::Known;
@@ -9174,11 +9179,11 @@ static bool getMinMaxValues(const ValueType *vt, const Platform &platform, MathL
     return true;
 }
 
-static bool getMinMaxValues(const std::string &typestr, const Settings &settings, MathLib::bigint &minvalue, MathLib::bigint &maxvalue)
+static bool getMinMaxValues(const std::string &typestr, const Settings &settings, bool cpp, MathLib::bigint &minvalue, MathLib::bigint &maxvalue)
 {
     TokenList typeTokens(&settings);
     std::istringstream istr(typestr+";");
-    if (!typeTokens.createTokens(istr))
+    if (!typeTokens.createTokens(istr, cpp ? Standards::Language::CPP : Standards::Language::C))
         return false;
     typeTokens.simplifyPlatformTypes();
     typeTokens.simplifyStdType();
@@ -9300,7 +9305,7 @@ static void valueFlowUnknownFunctionReturn(TokenList &tokenlist, const Settings 
         // Get min/max values for return type
         const std::string &typestr = settings.library.returnValueType(tok->previous());
         MathLib::bigint minvalue, maxvalue;
-        if (!getMinMaxValues(typestr, settings, minvalue, maxvalue))
+        if (!getMinMaxValues(typestr, settings, tok->isCpp(), minvalue, maxvalue))
             continue;
 
         for (MathLib::bigint value : unknownValues) {

@@ -96,7 +96,7 @@ void CheckIO::coutCerrMisusageError(const Token* tok, const std::string& streamN
 // fopen("","r"); fwrite(); <- write to read-only file (or vice versa)
 // fclose(); fread(); <- Use closed file
 //---------------------------------------------------------------------------
-enum class OpenMode { CLOSED, READ_MODE, WRITE_MODE, RW_MODE, UNKNOWN_OM };
+enum class OpenMode : std::uint8_t { CLOSED, READ_MODE, WRITE_MODE, RW_MODE, UNKNOWN_OM };
 static OpenMode getMode(const std::string& str)
 {
     if (str.find('+', 1) != std::string::npos)
@@ -112,9 +112,9 @@ namespace {
     struct Filepointer {
         OpenMode mode;
         nonneg int mode_indent{};
-        enum class Operation {NONE, UNIMPORTANT, READ, WRITE, POSITIONING, OPEN, CLOSE, UNKNOWN_OP} lastOperation = Operation::NONE;
+        enum class Operation : std::uint8_t {NONE, UNIMPORTANT, READ, WRITE, POSITIONING, OPEN, CLOSE, UNKNOWN_OP} lastOperation = Operation::NONE;
         nonneg int op_indent{};
-        enum class AppendMode { UNKNOWN_AM, APPEND, APPEND_EX };
+        enum class AppendMode : std::uint8_t { UNKNOWN_AM, APPEND, APPEND_EX };
         AppendMode append_mode = AppendMode::UNKNOWN_AM;
         std::string filename;
         explicit Filepointer(OpenMode mode_ = OpenMode::UNKNOWN_OM)
@@ -1434,7 +1434,7 @@ CheckIO::ArgumentInfo::ArgumentInfo(const Token * arg, const Settings &settings,
         const Token *tok1 = arg->next();
         for (; tok1; tok1 = tok1->next()) {
             if (tok1->str() == "," || tok1->str() == ")") {
-                if (tok1->previous()->str() == "]") {
+                if (tok1->strAt(-1) == "]") {
                     varTok = tok1->linkAt(-1)->previous();
                     if (varTok->str() == ")" && varTok->link()->previous()->tokType() == Token::eFunction) {
                         const Function * function = varTok->link()->previous()->function();
@@ -1455,7 +1455,7 @@ CheckIO::ArgumentInfo::ArgumentInfo(const Token * arg, const Settings &settings,
                         }
                         return;
                     }
-                } else if (tok1->previous()->str() == ")" && tok1->linkAt(-1)->previous()->tokType() == Token::eFunction) {
+                } else if (tok1->strAt(-1) == ")" && tok1->linkAt(-1)->previous()->tokType() == Token::eFunction) {
                     const Function * function = tok1->linkAt(-1)->previous()->function();
                     if (function && function->retType && function->retType->isEnumType()) {
                         if (function->retType->classScope->enumType)
@@ -1484,9 +1484,9 @@ CheckIO::ArgumentInfo::ArgumentInfo(const Token * arg, const Settings &settings,
 
             // check for some common well known functions
             else if (isCPP && ((Token::Match(tok1->previous(), "%var% . size|empty|c_str ( ) [,)]") && isStdContainer(tok1->previous())) ||
-                               (Token::Match(tok1->previous(), "] . size|empty|c_str ( ) [,)]") && isStdContainer(tok1->previous()->link()->previous())))) {
+                               (Token::Match(tok1->previous(), "] . size|empty|c_str ( ) [,)]") && isStdContainer(tok1->linkAt(-1)->previous())))) {
                 tempToken = new Token(tok1);
-                if (tok1->next()->str() == "size") {
+                if (tok1->strAt(1) == "size") {
                     // size_t is platform dependent
                     if (settings.platform.sizeof_size_t == 8) {
                         tempToken->str("long");
@@ -1502,9 +1502,9 @@ CheckIO::ArgumentInfo::ArgumentInfo(const Token * arg, const Settings &settings,
 
                     tempToken->originalName("size_t");
                     tempToken->isUnsigned(true);
-                } else if (tok1->next()->str() == "empty") {
+                } else if (tok1->strAt(1) == "empty") {
                     tempToken->str("bool");
-                } else if (tok1->next()->str() == "c_str") {
+                } else if (tok1->strAt(1) == "c_str") {
                     tempToken->str("const");
                     tempToken->insertToken("*");
                     if (typeToken->strAt(2) == "string")
@@ -1534,7 +1534,7 @@ CheckIO::ArgumentInfo::ArgumentInfo(const Token * arg, const Settings &settings,
 
         if (varTok) {
             variableInfo = varTok->variable();
-            element = tok1->previous()->str() == "]";
+            element = tok1->strAt(-1) == "]";
 
             // look for std::vector operator [] and use template type as return type
             if (variableInfo) {

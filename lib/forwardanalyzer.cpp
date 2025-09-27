@@ -45,8 +45,8 @@
 
 namespace {
     struct ForwardTraversal {
-        enum class Progress { Continue, Break, Skip };
-        enum class Terminate { None, Bail, Inconclusive };
+        enum class Progress : std::uint8_t { Continue, Break, Skip };
+        enum class Terminate : std::uint8_t { None, Bail, Inconclusive };
         ForwardTraversal(const ValuePtr<Analyzer>& analyzer, const TokenList& tokenList, ErrorLogger& errorLogger, const Settings& settings)
             : analyzer(analyzer), tokenList(tokenList), errorLogger(errorLogger), settings(settings)
         {}
@@ -336,7 +336,7 @@ namespace {
             return r;
         }
 
-        enum class Status {
+        enum class Status : std::uint8_t {
             None,
             Inconclusive,
         };
@@ -614,7 +614,7 @@ namespace {
                     const Scope* scope = tok->scope();
                     if (!scope)
                         return Break();
-                    if (contains({Scope::eDo, Scope::eFor, Scope::eWhile, Scope::eIf, Scope::eElse}, scope->type)) {
+                    if (contains({Scope::eDo, Scope::eFor, Scope::eWhile, Scope::eIf, Scope::eElse, Scope::eSwitch}, scope->type)) {
                         const bool inElse = scope->type == Scope::eElse;
                         const bool inDoWhile = scope->type == Scope::eDo;
                         const bool inLoop = contains({Scope::eDo, Scope::eFor, Scope::eWhile}, scope->type);
@@ -656,14 +656,14 @@ namespace {
                         return Break();
                     }
                 } else if (tok->isControlFlowKeyword() && Token::Match(tok, "if|while|for (") &&
-                           Token::simpleMatch(tok->next()->link(), ") {")) {
+                           Token::simpleMatch(tok->linkAt(1), ") {")) {
                     if ((settings.vfOptions.maxForwardBranches > 0) && (++branchCount > settings.vfOptions.maxForwardBranches)) {
                         // TODO: should be logged on function-level instead of file-level
                         reportError(Severity::information, "normalCheckLevelMaxBranches", "Limiting analysis of branches. Use --check-level=exhaustive to analyze all branches.");
                         return Break(Analyzer::Terminate::Bail);
                     }
-                    Token* endCond = tok->next()->link();
-                    Token* endBlock = endCond->next()->link();
+                    Token* endCond = tok->linkAt(1);
+                    Token* endBlock = endCond->linkAt(1);
                     Token* condTok = getCondTok(tok);
                     Token* initTok = getInitTok(tok);
                     if (initTok && updateRecursive(initTok) == Progress::Break)
@@ -769,7 +769,7 @@ namespace {
                         }
                     }
                 } else if (Token::simpleMatch(tok, "try {")) {
-                    Token* endBlock = tok->next()->link();
+                    Token* endBlock = tok->linkAt(1);
                     ForwardTraversal tryTraversal = fork();
                     tryTraversal.updateScope(endBlock, depth - 1);
                     bool bail = tryTraversal.actions.isModified();
@@ -792,7 +792,7 @@ namespace {
                         return Break();
                     tok = endBlock;
                 } else if (Token::simpleMatch(tok, "do {")) {
-                    Token* endBlock = tok->next()->link();
+                    Token* endBlock = tok->linkAt(1);
                     Token* condTok = Token::simpleMatch(endBlock, "} while (") ? endBlock->tokAt(2)->astOperand2() : nullptr;
                     if (updateLoop(end, endBlock, condTok) == Progress::Break)
                         return Break();

@@ -701,7 +701,7 @@ bool CheckLeakAutoVar::checkScope(const Token * const startToken,
                 continue;
             functionCall(ftok, openingPar, varInfo, allocation, af);
 
-            tok = ftok->next()->link();
+            tok = ftok->linkAt(1);
 
             // Handle scopes that might be noreturn
             if (allocation.status == VarInfo::NOALLOC && Token::simpleMatch(tok, ") ; }")) {
@@ -923,7 +923,7 @@ void CheckLeakAutoVar::changeAllocStatus(VarInfo &varInfo, const VarInfo::AllocI
         if (allocation.status == VarInfo::NOALLOC) {
             // possible usage
             varInfo.possibleUsage[arg->varId()] = { tok, VarInfo::USED };
-            if (var->second.status == VarInfo::DEALLOC && arg->previous()->str() == "&")
+            if (var->second.status == VarInfo::DEALLOC && arg->strAt(-1) == "&")
                 varInfo.erase(arg->varId());
         } else if (var->second.managed()) {
             doubleFreeError(tok, var->second.allocTok, arg->str(), allocation.type);
@@ -1134,7 +1134,7 @@ void CheckLeakAutoVar::ret(const Token *tok, VarInfo &varInfo, const bool isEndO
             // don't warn if we leave an inner scope
             if (isEndOfScope && var->scope() && tok != var->scope()->bodyEnd)
                 continue;
-            enum class PtrUsage { NONE, DEREF, PTR } used = PtrUsage::NONE;
+            enum class PtrUsage : std::uint8_t { NONE, DEREF, PTR } used = PtrUsage::NONE;
             for (const Token *tok2 = tok; tok2; tok2 = tok2->next()) {
                 if (tok2->str() == ";")
                     break;

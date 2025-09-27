@@ -59,6 +59,11 @@ static std::string stripTemplateParameters(const std::string& funcName) {
 // FUNCTION USAGE - Check for unused functions etc
 //---------------------------------------------------------------------------
 
+static bool isRecursiveCall(const Token* ftok)
+{
+    return ftok->function() && ftok->function() == Scope::nestedInFunction(ftok->scope());
+}
+
 void CheckUnusedFunctions::parseTokens(const Tokenizer &tokenizer, const Settings &settings)
 {
     const char * const FileName = tokenizer.list.getFiles().front().c_str();
@@ -131,7 +136,7 @@ void CheckUnusedFunctions::parseTokens(const Tokenizer &tokenizer, const Setting
                     mFunctionCalls.insert(markupVarToken->str());
                     if (mFunctions.find(markupVarToken->str()) != mFunctions.end())
                         mFunctions[markupVarToken->str()].usedOtherFile = true;
-                    else if (markupVarToken->next()->str() == "(") {
+                    else if (markupVarToken->strAt(1) == "(") {
                         FunctionUsage &func = mFunctions[markupVarToken->str()];
                         func.filename = tokenizer.list.getFiles()[markupVarToken->fileIndex()];
                         if (func.filename.empty() || func.filename == "+")
@@ -245,6 +250,8 @@ void CheckUnusedFunctions::parseTokens(const Tokenizer &tokenizer, const Setting
         }
 
         if (funcname) {
+            if (isRecursiveCall(funcname))
+                continue;
             const auto baseName = stripTemplateParameters(funcname->str());
             FunctionUsage &func = mFunctions[baseName];
             const std::string& called_from_file = tokenizer.list.getFiles()[funcname->fileIndex()];

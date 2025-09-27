@@ -22,6 +22,7 @@
 //---------------------------------------------------------------------------
 
 #include "config.h"
+#include "errortypes.h"
 #include "mathlib.h"
 #include "templatesimplifier.h"
 #include "utils.h"
@@ -57,7 +58,7 @@ struct ScopeInfo2 {
     std::set<std::string> usingNamespaces;
 };
 
-enum class TokenDebug { None, ValueFlow, ValueType };
+enum class TokenDebug : std::uint8_t { None, ValueFlow, ValueType };
 
 struct TokenImpl {
     nonneg int mVarId{};
@@ -115,14 +116,23 @@ struct TokenImpl {
 
     // __cppcheck_in_range__
     struct CppcheckAttributes {
-        enum Type { LOW, HIGH } type = LOW;
+        enum Type : std::uint8_t { LOW, HIGH } type = LOW;
         MathLib::bigint value{};
         CppcheckAttributes* next{};
     };
     CppcheckAttributes* mCppcheckAttributes{};
 
+    // alignas expressions
+    std::unique_ptr<std::vector<std::string>> mAttributeAlignas;
+    void addAttributeAlignas(const std::string& a) {
+        if (!mAttributeAlignas)
+            mAttributeAlignas = std::unique_ptr<std::vector<std::string>>(new std::vector<std::string>());
+        if (std::find(mAttributeAlignas->cbegin(), mAttributeAlignas->cend(), a) == mAttributeAlignas->cend())
+            mAttributeAlignas->push_back(a);
+    }
+
     // For memoization, to speed up parsing of huge arrays #8897
-    enum class Cpp11init { UNKNOWN, CPP11INIT, NOINIT } mCpp11init = Cpp11init::UNKNOWN;
+    enum class Cpp11init : std::uint8_t { UNKNOWN, CPP11INIT, NOINIT } mCpp11init = Cpp11init::UNKNOWN;
 
     TokenDebug mDebug{};
 
@@ -157,7 +167,7 @@ public:
     Token(const Token &) = delete;
     Token& operator=(const Token &) = delete;
 
-    enum Type {
+    enum Type : std::uint8_t {
         eVariable, eType, eFunction, eKeyword, eName, // Names: Variable (varId), Type (typeId, later), Function (FuncId, later), Language keyword, Name (unknown identifier)
         eNumber, eString, eChar, eBoolean, eLiteral, eEnumerator, // Literals: Number, String, Character, Boolean, User defined literal (C++11), Enumerator
         eArithmeticalOp, eComparisonOp, eAssignmentOp, eLogicalOp, eBitOp, eIncDecOp, eExtendedOp, // Operators: Arithmetical, Comparison, Assignment, Logical, Bitwise, ++/--, Extended
@@ -213,21 +223,37 @@ public:
      * For example index 1 would return next token, and 2
      * would return next from that one.
      */
-    const Token *tokAt(int index) const;
-    Token *tokAt(int index);
+    const Token *tokAt(int index) const
+    {
+        return tokAtImpl(this, index);
+    }
+    Token *tokAt(int index)
+    {
+        return tokAtImpl(this, index);
+    }
 
     /**
      * @return the link to the token in given index, related to this token.
      * For example index 1 would return the link to next token.
      */
-    const Token *linkAt(int index) const;
-    Token *linkAt(int index);
+    const Token *linkAt(int index) const
+    {
+        return linkAtImpl(this, index);
+    }
+    Token *linkAt(int index)
+    {
+        return linkAtImpl(this, index);
+    }
 
     /**
      * @return String of the token in given index, related to this token.
      * If that token does not exist, an empty string is being returned.
      */
-    const std::string &strAt(int index) const;
+    const std::string &strAt(int index) const
+    {
+        const Token *tok = this->tokAt(index);
+        return tok ? tok->mStr : emptyString;
+    }
 
     /**
      * Match given token (or list of tokens) to a pattern list.
@@ -333,12 +359,7 @@ public:
     }
     void setValueType(ValueType *vt);
 
-    const ValueType *argumentType() const {
-        const Token *top = this;
-        while (top && !Token::Match(top->astParent(), ",|("))
-            top = top->astParent();
-        return top ? top->mImpl->mValueType : nullptr;
-    }
+    const ValueType *argumentType() const;
 
     Token::Type tokType() const {
         return mTokType;
@@ -532,6 +553,15 @@ public:
     }
     void isAttributeMaybeUnused(const bool value) {
         setFlag(fIsAttributeMaybeUnused, value);
+    }
+    std::vector<std::string> getAttributeAlignas() const {
+        return mImpl->mAttributeAlignas ? *mImpl->mAttributeAlignas : std::vector<std::string>();
+    }
+    bool hasAttributeAlignas() const {
+        return !!mImpl->mAttributeAlignas;
+    }
+    void addAttributeAlignas(const std::string& a) {
+        mImpl->addAttributeAlignas(a);
     }
     void setCppcheckAttribute(TokenImpl::CppcheckAttributes::Type type, MathLib::bigint value) {
         mImpl->setCppcheckAttribute(type, value);
@@ -789,6 +819,30 @@ public:
     static Token *findmatch(Token * const startTok, const char pattern[], const Token * const end, const nonneg int varId = 0);
 
 private:
+    template<class T, REQUIRES("T must be a Token class", std::is_convertible<T*, const Token*> )>
+    static T *tokAtImpl(T *tok, int index)
+    {
+        while (index > 0 && tok) {
+            tok = tok->next();
+            --index;
+        }
+        while (index < 0 && tok) {
+            tok = tok->previous();
+            ++index;
+        }
+        return tok;
+    }
+
+    template<class T, REQUIRES("T must be a Token class", std::is_convertible<T*, const Token*> )>
+    static T *linkAtImpl(T *thisTok, int index)
+    {
+        T *tok = thisTok->tokAt(index);
+        if (!tok) {
+            throw InternalError(thisTok, "Internal error. Token::linkAt called with index outside the tokens range.");
+        }
+        return tok->link();
+    }
+
     /**
      * Needle is build from multiple alternatives. If one of
      * them is equal to haystack, return value is 1. If there
@@ -1328,7 +1382,7 @@ private:
         fIsInitComma            = (1ULL << 42), // Is this comma located inside some {..}. i.e: {1,2,3,4}
     };
 
-    enum : uint64_t {
+    enum : std::uint8_t  {
         efMaxSize = sizeof(nonneg int) * 8,
         efIsUnique = efMaxSize - 2,
     };

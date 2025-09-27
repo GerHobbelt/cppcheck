@@ -4600,6 +4600,37 @@ private:
               "    if ((i = g(), 1) != 0) {}\n"
               "}\n");
         ASSERT_EQUALS("[test.cpp:3]: (style) Condition '(i=g(),1)!=0' is always true\n", errout_str());
+
+        check("void f(unsigned i) {\n"
+              "    const int a[2] = {};\n"
+              "    const int* q = a + i;\n"
+              "    if (q) {}\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:4]: (style) Condition 'q' is always true\n", errout_str());
+
+        check("void f(int i) {\n"
+              "    int j = 0;\n"
+              "    switch (i) {\n"
+              "    case 1:\n"
+              "        j = 0;\n"
+              "        break;\n"
+              "    default:\n"
+              "        j = 1;\n"
+              "    }\n"
+              "    if (j != 0) {}\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        check("void f() {\n"
+              "    const char *s1 = foo();\n"
+              "    const char *s2 = bar();\n"
+              "    if (s2 == NULL)\n"
+              "        return;\n"
+              "    size_t len = s2 - s1;\n"
+              "    if (len == 0)\n"
+              "        return;\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
     }
 
     void alwaysTrueSymbolic()

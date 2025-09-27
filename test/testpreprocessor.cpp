@@ -199,6 +199,11 @@ private:
         // inline suppression, missingInclude/missingIncludeSystem
         TEST_CASE(inline_suppressions);
 
+        // remark comment
+        TEST_CASE(remarkComment1);
+        TEST_CASE(remarkComment2);
+        TEST_CASE(remarkComment3);
+
         // Using -D to predefine symbols
         TEST_CASE(predefine1);
         TEST_CASE(predefine2);
@@ -259,6 +264,8 @@ private:
         TEST_CASE(testMissingIncludeCheckConfig);
 
         TEST_CASE(limitsDefines);
+
+        TEST_CASE(hashCalculation);
     }
 
     std::string getConfigsStr(const char filedata[], const char *arg = nullptr) {
@@ -277,6 +284,16 @@ private:
         for (const std::string & config : configs)
             ret += config + '\n';
         return ret;
+    }
+
+    std::size_t getHash(const char filedata[]) {
+        Settings settings;
+        Preprocessor preprocessor(settings, *this);
+        std::vector<std::string> files;
+        std::istringstream istr(filedata);
+        simplecpp::TokenList tokens(istr,files);
+        tokens.removeComments();
+        return preprocessor.calculateHash(tokens, "");
     }
 
     void Bug2190219() {
@@ -1903,6 +1920,32 @@ private:
         ignore_errout(); // we are not interested in the output
     }
 
+    void remarkComment1() {
+        const char code[] = "// REMARK: assignment with 1\n"
+                            "x=1;\n";
+        const auto remarkComments = PreprocessorHelper::getRemarkComments(code, *this);
+        ASSERT_EQUALS(1, remarkComments.size());
+        ASSERT_EQUALS(2, remarkComments[0].lineNumber);
+        ASSERT_EQUALS("assignment with 1", remarkComments[0].str);
+    }
+
+    void remarkComment2() {
+        const char code[] = "x=1; ///REMARK assignment with 1\n";
+        const auto remarkComments = PreprocessorHelper::getRemarkComments(code, *this);
+        ASSERT_EQUALS(1, remarkComments.size());
+        ASSERT_EQUALS(1, remarkComments[0].lineNumber);
+        ASSERT_EQUALS("assignment with 1", remarkComments[0].str);
+    }
+
+    void remarkComment3() {
+        const char code[] = "/**   REMARK: assignment with 1 */\n"
+                            "x=1;\n";
+        const auto remarkComments = PreprocessorHelper::getRemarkComments(code, *this);
+        ASSERT_EQUALS(1, remarkComments.size());
+        ASSERT_EQUALS(2, remarkComments[0].lineNumber);
+        ASSERT_EQUALS("assignment with 1 ", remarkComments[0].str);
+    }
+
     void predefine1() {
         const std::string src("#if defined X || Y\n"
                               "Fred & Wilma\n"
@@ -2478,6 +2521,20 @@ private:
         ASSERT_EQUALS("void f ( long l ) {\n"
                       "if ( l > $2147483647 ) { }\n"
                       "}", actual);
+    }
+
+    void hashCalculation() {
+        // #12383
+        const char code[] = "int a;";
+        const char code2[] = "int  a;"; // extra space
+        const char code3[] = "\n\nint a;"; // extra new line
+
+        ASSERT_EQUALS(getHash(code), getHash(code));
+        ASSERT_EQUALS(getHash(code2), getHash(code2));
+        ASSERT_EQUALS(getHash(code3), getHash(code3));
+        ASSERT(getHash(code) != getHash(code2));
+        ASSERT(getHash(code) != getHash(code3));
+        ASSERT(getHash(code2) != getHash(code3));
     }
 };
 

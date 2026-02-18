@@ -172,6 +172,7 @@ private:
 
         mNewTemplate = false;
         TEST_CASE(valueFlowBailoutIncompleteVar);
+        TEST_CASE(valueFlowBailoutNoreturn);
         mNewTemplate = true;
 
         TEST_CASE(performanceIfCount);
@@ -5640,7 +5641,7 @@ private:
 
         // #13959
         const Settings settingsOld = settings;
-        settings = settingsBuilder(settingsOld).c(Standards::C23).build();
+        settings.standards.c = Standards::C23;
         code = "void f(int* p) {\n"
                "    if (p == nullptr)\n"
                "        return;\n"
@@ -5650,7 +5651,7 @@ private:
         ASSERT_EQUALS(1, value.intvalue);
         ASSERT_EQUALS(true, value.isKnown());
 
-        settings = settingsBuilder(settingsOld).c(Standards::C17).build();
+        settings.standards.c = Standards::C17;
         value = valueOfTok(code, "p ) { }", &settings, /*cpp*/ false);
         ASSERT(value == ValueFlow::Value());
         settings = settingsOld;
@@ -9075,6 +9076,16 @@ private:
             "[test.cpp:2]: (debug) valueFlowConditionExpressions bailout: Skipping function due to incomplete variable VALUE_1\n"
             "[test.cpp:6]: (debug) valueFlowConditionExpressions bailout: Skipping function due to incomplete variable VALUE_2\n",
             errout_str());
+    }
+
+    void valueFlowBailoutNoreturn() { // #13718
+        bailout(
+            "void f(const int* p) {\n"
+            "    if (p)\n"
+            "        (void)*p;\n"
+            "}\n"
+            );
+        ASSERT_EQUALS_WITHOUT_LINENUMBERS("", errout_str());
     }
 
     void performanceIfCount() {

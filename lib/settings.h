@@ -51,7 +51,7 @@ class Regex;
 #endif
 
 struct Suppressions;
-enum class SHOWTIME_MODES : std::uint8_t;
+enum class ShowTime : std::uint8_t;
 namespace ValueFlow {
     class Value;
 }
@@ -318,6 +318,9 @@ public:
     /** @brief plist output (--plist-output=&lt;dir&gt;) */
     std::string plistOutput;
 
+    /** @brief Are we Cppcheck Premium */
+    bool premium{};
+
     /** @brief Extra arguments for Cppcheck Premium addon */
     std::string premiumArgs;
 
@@ -405,12 +408,15 @@ public:
 
     SafeChecks safeChecks;
 
+    /** @brief the files we successfully loaded settings from */
+    std::vector<std::string> settingsFiles;
+
     SimpleEnableGroup<Severity> severity;
     SimpleEnableGroup<Certainty> certainty;
     SimpleEnableGroup<Checks> checks;
 
     /** @brief show timing information (--showtime=file|summary|top5) */
-    SHOWTIME_MODES showtime{};
+    ShowTime showtime{};
 
     /** Struct contains standards settings */
     Standards standards;
@@ -428,6 +434,9 @@ public:
 
     /** @brief The maximum time in seconds for the typedef simplification */
     std::size_t typedefMaxTime{};
+
+    /** @brief Error IDs which should not be reported as unmatchedSuppression */
+    std::vector<std::string> unmatchedSuppressionFilters;
 
     /** @brief defines given by the user */
     std::string userDefines;

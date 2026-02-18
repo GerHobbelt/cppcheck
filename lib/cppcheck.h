@@ -33,7 +33,7 @@
 #include <vector>
 
 class TokenList;
-enum class SHOWTIME_MODES : std::uint8_t;
+enum class ShowTime : std::uint8_t;
 struct FileSettings;
 class CheckUnusedFunctions;
 class Tokenizer;
@@ -143,7 +143,7 @@ public:
     unsigned int analyseWholeProgram(const std::string &buildDir, const std::list<FileWithDetails> &files, const std::list<FileSettings>& fileSettings, const std::string& ctuInfo);
 
     static void resetTimerResults();
-    static void printTimerResults(SHOWTIME_MODES mode);
+    static void printTimerResults(ShowTime mode);
 
 private:
     void purgedConfigurationMessage(const std::string &file, const std::string& configuration);
@@ -172,10 +172,9 @@ private:
      * @brief Calculate hash used to detect when a file needs to be reanalyzed.
      *
      * @param preprocessor  Preprocessor used to calculate the hash.
-     * @param tokens        Token list from preprocessed file.
      * @return hash
      */
-    std::size_t calculateHash(const Preprocessor &preprocessor, const simplecpp::TokenList &tokens, const std::string& filePath = {}) const;
+    std::size_t calculateHash(const Preprocessor &preprocessor, const std::string& filePath = {}) const;
 
     /**
      * @brief Check a file
@@ -184,6 +183,8 @@ private:
      * @return number of errors found
      */
     unsigned int checkFile(const FileWithDetails& file, const std::string &cfgname, int fileIndex);
+
+    void checkPlistOutput(const FileWithDetails& file, const std::vector<std::string>& files);
 
     /**
      * @brief Check a file using buffer

@@ -295,6 +295,7 @@ private:
         TEST_CASE(simplifyInitVar2);
         TEST_CASE(simplifyInitVar3);
         TEST_CASE(simplifyInitVar4);
+        TEST_CASE(simplifyInitVar5);
 
         TEST_CASE(bitfields1);
         TEST_CASE(bitfields2);
@@ -579,9 +580,9 @@ private:
     void directiveDump(const char (&code)[size], const char filename[], const Settings& settings, std::ostream& ostr) {
         simplecpp::OutputList outputList;
         std::vector<std::string> files;
-        const simplecpp::TokenList tokens1(code, files, filename, &outputList);
-        Preprocessor preprocessor(settings, *this, Path::identify(tokens1.getFiles()[0], false));
-        std::list<Directive> directives = preprocessor.createDirectives(tokens1);
+        simplecpp::TokenList tokens1(code, files, filename, &outputList);
+        Preprocessor preprocessor(tokens1, settings, *this, Path::identify(tokens1.getFiles()[0], false));
+        std::list<Directive> directives = preprocessor.createDirectives();
 
         TokenList tokenlist{settings, Path::identify(filename, false)};
         Tokenizer tokenizer(std::move(tokenlist), *this);
@@ -1115,6 +1116,15 @@ private:
         ASSERT_EQUALS(";\n\nasm ( \"\"mov ax,bx\"\" ) ;", tokenizeAndStringify(";\n\n__asm__ volatile ( \"mov ax,bx\" );"));
 
         ASSERT_EQUALS("void func1 ( ) ;", tokenizeAndStringify("void func1() __asm__(\"...\") __attribute__();"));
+
+        // #14250 - assembler function
+        const char code[] = "__asm void dostuff(uint32_t x) { "
+                            "%reg x "
+                            "  e_lis r7, (lf)@h "
+                            "%error "
+                            "}";
+        ASSERT_EQUALS("void dostuff ( uint32_t x ) { asm ( \"% reg x e_lis r7 , ( lf ) @ h % error\" ) ; }",
+                      tokenizeAndStringify(code));
     }
 
     // #4725 - ^{}
@@ -4676,6 +4686,11 @@ private:
         ASSERT_EQUALS("void f ( ) {\n"
                       "uint32_t x { 0 } ;\n"
                       "}", tokenizeAndStringify(code));
+    }
+
+    void simplifyInitVar5() { // #14218
+        const char code[] = "int c[1]{}, b;";
+        ASSERT_EQUALS("int c [ 1 ] { } ; int b ;", tokenizeAndStringify(code));
     }
 
     void bitfields1() {

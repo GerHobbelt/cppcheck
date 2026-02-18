@@ -1089,6 +1089,17 @@ void Tokenizer::simplifyTypedef()
                 typedefInfo.column = typedefToken->column();
                 typedefInfo.used = t.second.isUsed();
                 typedefInfo.isFunctionPointer = Token::Match(t.second.nameToken(), "%name% ) (");
+                if (typedefInfo.isFunctionPointer) {
+                    const Token* tok = typedefToken;
+                    while (tok != t.second.endToken()) {
+                        TypedefToken ttok;
+                        ttok.name = tok->str();
+                        ttok.lineNumber = tok->linenr();
+                        ttok.column = tok->column();
+                        typedefInfo.typedefInfoTokens.emplace_back(ttok);
+                        tok = tok->next();
+                    }
+                }
                 mTypedefInfo.push_back(std::move(typedefInfo));
 
                 t.second.removeDeclaration();
@@ -1612,6 +1623,17 @@ void Tokenizer::simplifyTypedefCpp()
         typedefInfo.column = typeName->column();
         typedefInfo.used = false;
         typedefInfo.isFunctionPointer = Token::Match(typeName, "%name% ) (");
+        if (typedefInfo.isFunctionPointer) {
+            const Token* t = typeDef;
+            while (t != tok) {
+                TypedefToken ttok;
+                ttok.name = t->str();
+                ttok.lineNumber = t->linenr();
+                ttok.column = t->column();
+                typedefInfo.typedefInfoTokens.emplace_back(ttok);
+                t = t->next();
+            }
+        }
         mTypedefInfo.push_back(std::move(typedefInfo));
 
         while (!done) {
@@ -3405,7 +3427,7 @@ bool Tokenizer::simplifyTokens1(const std::string &configuration, int fileIndex)
             return false;
     }
 
-    const SHOWTIME_MODES showTime = mTimerResults ? mSettings.showtime : SHOWTIME_MODES::SHOWTIME_NONE;
+    const ShowTime showTime = mTimerResults ? mSettings.showtime : ShowTime::NONE;
 
     Timer::run("Tokenizer::simplifyTokens1::createAst", showTime, mTimerResults, [&]() {
         list.createAst();
@@ -3612,7 +3634,6 @@ void Tokenizer::concatenateNegativeNumberAndAnyPositive()
             tok->deleteNext();
 
         if (Token::Match(tok->next(), "+|- %num%")) {
-            // cppcheck-suppress redundantCopyLocalConst - cannot make it a reference because it is deleted afterwards
             std::string prefix = tok->strAt(1);
             tok->deleteNext();
             tok->next()->str(prefix + tok->strAt(1));
@@ -5624,7 +5645,7 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
 
     validate();
 
-    const SHOWTIME_MODES showTime = mTimerResults ? mSettings.showtime : SHOWTIME_MODES::SHOWTIME_NONE;
+    const ShowTime showTime = mTimerResults ? mSettings.showtime : ShowTime::NONE;
 
     // Bail out if code is garbage
     Timer::run("Tokenizer::simplifyTokens1::simplifyTokenList1::findGarbageCode", showTime, mTimerResults, [&]() {
@@ -6263,6 +6284,7 @@ std::string Tokenizer::dumpTypedefInfo() const
     std::string outs = "  <typedef-info>";
     outs += '\n';
     for (const TypedefInfo &typedefInfo: mTypedefInfo) {
+        const bool toks = !typedefInfo.typedefInfoTokens.empty();
         outs += "    <info";
 
         outs += " name=\"";
@@ -6288,9 +6310,26 @@ std::string Tokenizer::dumpTypedefInfo() const
         outs += " isFunctionPointer=\"";
         outs += std::to_string(typedefInfo.isFunctionPointer);
         outs += "\"";
-
-        outs += "/>";
+        if (toks)
+            outs += ">";
+        else
+            outs += "/>";
         outs += '\n';
+        for (const auto& t : typedefInfo.typedefInfoTokens) {
+            outs += "      <token ";
+            outs += "line=\"";
+            outs += std::to_string(t.lineNumber);
+            outs += "\" ";
+            outs += "column=\"";
+            outs += std::to_string(t.column);
+            outs += "\" ";
+            outs += "str=\"";
+            outs += ErrorLogger::toxml(t.name);
+            outs += "\"/>";
+            outs += '\n';
+        }
+        if (toks)
+            outs += "    </info>\n";
     }
     outs += "  </typedef-info>";
     outs += '\n';
@@ -7450,9 +7489,9 @@ void Tokenizer::simplifyVarDecl(Token * tokBegin, const Token * const tokEnd, co
             else if (Token::Match(varName, "%name% [")) {
                 tok2 = varName->next();
 
-                while (Token::Match(tok2->link(), "] ,|=|["))
+                while (Token::Match(tok2->link(), "] [,=[{]"))
                     tok2 = tok2->link()->next();
-                if (!Token::Match(tok2, "=|,"))
+                if (!Token::Match(tok2, "[=,{]"))
                     tok2 = nullptr;
                 if (tok2 && tok2->str() == "=") {
                     while (tok2 && tok2->str() != "," && tok2->str() != ";") {
@@ -7522,9 +7561,11 @@ void Tokenizer::simplifyVarDecl(Token * tokBegin, const Token * const tokEnd, co
                         varTok = varTok->next();
                     if (!varTok)
                         syntaxError(tok2); // invalid code
-                    TokenList::insertTokens(eq, varTok, 2);
-                    eq->str(";");
-                    eq->isSplittedVarDeclEq(true);
+                    if (eq->str() == "=") {
+                        TokenList::insertTokens(eq, varTok, 2);
+                        eq->str(";");
+                        eq->isSplittedVarDeclEq(true);
+                    }
 
                     // "= x, "   =>   "= x; type "
                     if (tok2->str() == ",") {
@@ -9861,13 +9902,18 @@ void Tokenizer::simplifyAsm()
             Token *endasm = tok->next();
             const Token *firstSemiColon = nullptr;
             int comment = 0;
-            while (Token::Match(endasm, "%num%|%name%|,|:|;") || (endasm && (endasm->isLiteral() || endasm->linenr() == comment))) {
+            while (Token::Match(endasm, "%num%|%name%|,|:|;|*|(") || (endasm && (endasm->isLiteral() || endasm->linenr() == comment))) {
                 if (Token::Match(endasm, "_asm|__asm|__endasm"))
                     break;
                 if (endasm->str() == ";") {
                     comment = endasm->linenr();
                     if (!firstSemiColon)
                         firstSemiColon = endasm;
+                }
+                if (endasm->str() == "(") {
+                    if (!firstSemiColon)
+                        endasm = endasm->link();
+                    break;
                 }
                 endasm = endasm->next();
             }
@@ -9879,6 +9925,12 @@ void Tokenizer::simplifyAsm()
             } else if (firstSemiColon) {
                 instruction = tok->next()->stringifyList(firstSemiColon);
                 Token::eraseTokens(tok, firstSemiColon);
+            } else if (Token::Match(endasm, ") { !!}")) {
+                tok->deleteThis();
+                tok = endasm->tokAt(2);
+                endasm = endasm->linkAt(1);
+                instruction = tok->stringifyList(endasm);
+                Token::eraseTokens(tok, endasm);
             } else if (!endasm) {
                 instruction = tok->next()->stringifyList(endasm);
                 Token::eraseTokens(tok, endasm);

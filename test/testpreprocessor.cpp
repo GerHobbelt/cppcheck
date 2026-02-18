@@ -49,13 +49,22 @@ public:
     TestPreprocessor() : TestFixture("TestPreprocessor") {}
 
 private:
+    class PreprocessorTest : public Preprocessor
+    {
+        friend class TestPreprocessor;
+    public:
+        PreprocessorTest(simplecpp::TokenList& tokens, const Settings& settings, ErrorLogger &errorLogger, Standards::Language lang)
+            : Preprocessor(tokens, settings, errorLogger, lang)
+        {}
+    };
+
     template<size_t size>
     std::string expandMacros(const char (&code)[size], ErrorLogger &errorLogger) const {
         simplecpp::OutputList outputList;
         std::vector<std::string> files;
-        const simplecpp::TokenList tokens1 = simplecpp::TokenList(code, files, "file.cpp", &outputList);
-        Preprocessor p(settingsDefault, errorLogger, Path::identify(tokens1.getFiles()[0], false));
-        simplecpp::TokenList tokens2 = p.preprocess(tokens1, "", files, true);
+        simplecpp::TokenList tokens1 = simplecpp::TokenList(code, files, "file.cpp", &outputList);
+        PreprocessorTest p(tokens1, settingsDefault, errorLogger, Path::identify(tokens1.getFiles()[0], false));
+        simplecpp::TokenList tokens2 = p.preprocess("", files, true);
         p.reportOutput(outputList, true);
         return tokens2.stringify();
     }
@@ -85,10 +94,10 @@ private:
     std::vector<RemarkComment> getRemarkComments(const char (&code)[size], ErrorLogger& errorLogger) const
     {
         std::vector<std::string> files;
-        const simplecpp::TokenList tokens1(code, files, "test.cpp");
+        simplecpp::TokenList tokens1(code, files, "test.cpp");
 
-        const Preprocessor preprocessor(settingsDefault, errorLogger, Path::identify(tokens1.getFiles()[0], false));
-        return preprocessor.getRemarkComments(tokens1);
+        const Preprocessor preprocessor(tokens1, settingsDefault, errorLogger, Path::identify(tokens1.getFiles()[0], false));
+        return preprocessor.getRemarkComments();
     }
 
     static std::string getcodeforcfg(const Settings& settings, ErrorLogger& errorlogger, const char* code, std::size_t size, const std::string &cfg, const std::string &filename, SuppressionList *inlineSuppression = nullptr)
@@ -119,24 +128,24 @@ private:
 
         simplecpp::TokenList tokens(code, size, files, Path::simplifyPath(filename), &outputList);
         // TODO: we should be using the actual Preprocessor implementation
-        Preprocessor preprocessor(settings, errorlogger, Path::identify(tokens.getFiles()[0], false));
+        PreprocessorTest preprocessor(tokens, settings, errorlogger, Path::identify(tokens.getFiles()[0], false));
         if (inlineSuppression)
-            preprocessor.inlineSuppressions(tokens, *inlineSuppression);
-        preprocessor.removeComments(tokens);
-        preprocessor.simplifyPragmaAsm(tokens);
+            preprocessor.inlineSuppressions(*inlineSuppression);
+        preprocessor.removeComments();
+        preprocessor.simplifyPragmaAsm();
 
         preprocessor.reportOutput(outputList, true);
 
-        if (Preprocessor::hasErrors(outputList))
+        if (PreprocessorTest::hasErrors(outputList))
             return {};
 
         std::map<std::string, std::string> cfgcode;
         if (cfgs.empty())
-            cfgs = preprocessor.getConfigs(tokens);
+            cfgs = preprocessor.getConfigs();
         for (const std::string & config : cfgs) {
             try {
                 const bool writeLocations = (strstr(code, "#file") != nullptr) || (strstr(code, "#include") != nullptr);
-                cfgcode[config] = preprocessor.getcode(tokens, config, files, writeLocations);
+                cfgcode[config] = preprocessor.getcode(config, files, writeLocations);
             } catch (const simplecpp::Output &) {
                 cfgcode[config] = "";
             }
@@ -366,9 +375,9 @@ private:
         std::vector<std::string> files;
         // TODO: this adds an empty filename
         simplecpp::TokenList tokens(code,files);
-        tokens.removeComments();
-        Preprocessor preprocessor(settings, *this, Standards::Language::C); // TODO: do we need to consider #file?
-        const std::set<std::string> configs = preprocessor.getConfigs(tokens);
+        Preprocessor preprocessor(tokens, settings, *this, Standards::Language::C); // TODO: do we need to consider #file?
+        preprocessor.removeComments();
+        const std::set<std::string> configs = preprocessor.getConfigs();
         std::string ret;
         for (const std::string & config : configs)
             ret += config + '\n';
@@ -380,9 +389,9 @@ private:
         std::vector<std::string> files;
         // TODO: this adds an empty filename
         simplecpp::TokenList tokens(code,files);
-        tokens.removeComments();
-        Preprocessor preprocessor(settingsDefault, *this, Standards::Language::C); // TODO: do we need to consider #file?
-        return preprocessor.calculateHash(tokens, "");
+        Preprocessor preprocessor(tokens, settingsDefault, *this, Standards::Language::C); // TODO: do we need to consider #file?
+        preprocessor.removeComments();
+        return preprocessor.calculateHash("");
     }
 
     void Bug2190219() {
@@ -533,23 +542,25 @@ private:
                                 "#else\n"
                                 "2\n"
                                 "#endif\n";
-        std::vector<std::string> files;
-        simplecpp::TokenList tokens(filedata, files, "test.c");
 
         // preprocess code with unix32 platform..
         {
+            std::vector<std::string> files;
+            simplecpp::TokenList tokens(filedata, files, "test.c");
             const Settings settings = settingsBuilder().platform(Platform::Type::Unix32).build();
-            Preprocessor::setPlatformInfo(tokens, settings);
-            Preprocessor preprocessor(settings, *this, Path::identify(tokens.getFiles()[0], false));
-            ASSERT_EQUALS("\n1", preprocessor.getcode(tokens, "", files, false));
+            Preprocessor preprocessor(tokens, settings, *this, Path::identify(tokens.getFiles()[0], false));
+            preprocessor.setPlatformInfo();
+            ASSERT_EQUALS("\n1", preprocessor.getcode("", files, false));
         }
 
         // preprocess code with unix64 platform..
         {
+            std::vector<std::string> files;
+            simplecpp::TokenList tokens(filedata, files, "test.c");
             const Settings settings = settingsBuilder().platform(Platform::Type::Unix64).build();
-            Preprocessor::setPlatformInfo(tokens, settings);
-            Preprocessor preprocessor(settings, *this, Path::identify(tokens.getFiles()[0], false));
-            ASSERT_EQUALS("\n\n\n2", preprocessor.getcode(tokens, "", files, false));
+            Preprocessor preprocessor(tokens, settings, *this, Path::identify(tokens.getFiles()[0], false));
+            preprocessor.setPlatformInfo();
+            ASSERT_EQUALS("\n\n\n2", preprocessor.getcode("", files, false));
         }
     }
 

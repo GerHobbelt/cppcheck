@@ -847,7 +847,7 @@ unsigned int CppCheck::check(const FileSettings &fs)
     return returnValue;
 }
 
-std::size_t CppCheck::calculateHash(const Preprocessor& preprocessor, const simplecpp::TokenList& tokens, const std::string& filePath) const
+std::size_t CppCheck::calculateHash(const Preprocessor& preprocessor, const std::string& filePath) const
 {
     std::ostringstream toolinfo;
     toolinfo << (mSettings.cppcheckCfgProductName.empty() ? CPPCHECK_VERSION_STRING : mSettings.cppcheckCfgProductName);
@@ -865,7 +865,7 @@ std::size_t CppCheck::calculateHash(const Preprocessor& preprocessor, const simp
     toolinfo << mSettings.premiumArgs;
     // TODO: do we need to add more options?
     mSuppressions.nomsg.dump(toolinfo, filePath);
-    return preprocessor.calculateHash(tokens, toolinfo.str());
+    return preprocessor.calculateHash(toolinfo.str());
 }
 
 unsigned int CppCheck::checkBuffer(const FileWithDetails &file, const std::string &cfgname, int fileIndex, const uint8_t* data, std::size_t size)
@@ -884,6 +884,21 @@ unsigned int CppCheck::checkFile(const FileWithDetails& file, const std::string 
     return checkInternal(file, cfgname, fileIndex, f);
 }
 
+void CppCheck::checkPlistOutput(const FileWithDetails& file, const std::vector<std::string>& files)
+{
+    if (!mSettings.plistOutput.empty()) {
+        const bool slashFound = file.spath().find('/') != std::string::npos;
+        std::string filename = slashFound ? file.spath().substr(file.spath().rfind('/') + 1) : file.spath();
+        // removes suffix from filename when it exists
+        const std::string noSuffixFilename = filename.substr(0, filename.find('.'));
+
+        // the hash is added to handle when files in different folders have the same name
+        const std::size_t fileNameHash = std::hash<std::string> {}(file.spath());
+        filename = mSettings.plistOutput + noSuffixFilename + "_" + std::to_string(fileNameHash) + ".plist";
+        mLogger->openPlist(filename, files);
+    }
+}
+
 unsigned int CppCheck::checkInternal(const FileWithDetails& file, const std::string &cfgname, int fileIndex, const CreateTokenListFn& createTokenList)
 {
     // TODO: move to constructor when CppCheck no longer owns the settings
@@ -895,7 +910,7 @@ unsigned int CppCheck::checkInternal(const FileWithDetails& file, const std::str
     if (Settings::terminated())
         return mLogger->exitcode();
 
-    const Timer fileTotalTimer(mSettings.showtime == SHOWTIME_MODES::SHOWTIME_FILE_TOTAL, file.spath());
+    const Timer fileTotalTimer{file.spath(), mSettings.showtime, nullptr, Timer::Type::FILE};
 
     if (!mSettings.quiet) {
         std::string fixedpath = Path::toNativeSeparators(file.spath());
@@ -938,8 +953,8 @@ unsigned int CppCheck::checkInternal(const FileWithDetails& file, const std::str
                 std::vector<std::string> files;
                 simplecpp::TokenList tokens = createTokenList(files, nullptr);
                 if (analyzerInformation) {
-                    const Preprocessor preprocessor(mSettings, mErrorLogger, file.lang());
-                    hash = calculateHash(preprocessor, tokens);
+                    const Preprocessor preprocessor(tokens, mSettings, mErrorLogger, file.lang());
+                    hash = calculateHash(preprocessor);
                 }
                 tokenlist.createTokens(std::move(tokens));
                 // this is not a real source file - we just want to tokenize it. treat it as C anyways as the language needs to be determined.
@@ -984,21 +999,12 @@ unsigned int CppCheck::checkInternal(const FileWithDetails& file, const std::str
             return mLogger->exitcode();
         }
 
-        Preprocessor preprocessor(mSettings, mErrorLogger, file.lang());
+        Preprocessor preprocessor(tokens1, mSettings, mErrorLogger, file.lang());
 
-        if (!preprocessor.loadFiles(tokens1, files))
+        if (!preprocessor.loadFiles(files))
             return mLogger->exitcode();
 
-        if (!mSettings.plistOutput.empty()) {
-            std::string filename2;
-            if (file.spath().find('/') != std::string::npos)
-                filename2 = file.spath().substr(file.spath().rfind('/') + 1);
-            else
-                filename2 = file.spath();
-            const std::size_t fileNameHash = std::hash<std::string> {}(file.spath());
-            filename2 = mSettings.plistOutput + filename2.substr(0, filename2.find('.')) + "_" + std::to_string(fileNameHash) + ".plist";
-            mLogger->openPlist(filename2, files);
-        }
+        checkPlistOutput(file, files);
 
         std::string dumpProlog;
         if (mSettings.dump || !mSettings.addons.empty()) {
@@ -1006,14 +1012,14 @@ unsigned int CppCheck::checkInternal(const FileWithDetails& file, const std::str
         }
 
         // Parse comments and then remove them
-        mLogger->setRemarkComments(preprocessor.getRemarkComments(tokens1));
-        preprocessor.inlineSuppressions(tokens1, mSuppressions.nomsg);
+        mLogger->setRemarkComments(preprocessor.getRemarkComments());
+        preprocessor.inlineSuppressions(mSuppressions.nomsg);
         if (mSettings.dump || !mSettings.addons.empty()) {
             std::ostringstream oss;
             mSuppressions.nomsg.dump(oss);
             dumpProlog += oss.str();
         }
-        preprocessor.removeComments(tokens1);
+        preprocessor.removeComments();
 
         if (!mSettings.buildDir.empty()) {
             analyzerInformation.reset(new AnalyzerInformation);
@@ -1022,7 +1028,7 @@ unsigned int CppCheck::checkInternal(const FileWithDetails& file, const std::str
 
         if (analyzerInformation) {
             // Calculate hash so it can be compared with old hash / future hashes
-            const std::size_t hash = calculateHash(preprocessor, tokens1, file.spath());
+            const std::size_t hash = calculateHash(preprocessor, file.spath());
             std::list<ErrorMessage> errors;
             if (!analyzerInformation->analyzeFile(mSettings.buildDir, file.spath(), cfgname, fileIndex, hash, errors)) {
                 while (!errors.empty()) {
@@ -1035,16 +1041,16 @@ unsigned int CppCheck::checkInternal(const FileWithDetails& file, const std::str
         }
 
         // Get directives
-        std::list<Directive> directives = preprocessor.createDirectives(tokens1);
-        preprocessor.simplifyPragmaAsm(tokens1);
+        std::list<Directive> directives = preprocessor.createDirectives();
+        preprocessor.simplifyPragmaAsm();
 
-        Preprocessor::setPlatformInfo(tokens1, mSettings);
+        preprocessor.setPlatformInfo();
 
         // Get configurations..
         std::set<std::string> configurations;
         if ((mSettings.checkAllConfigurations && mSettings.userDefines.empty()) || mSettings.force) {
             Timer::run("Preprocessor::getConfigs", mSettings.showtime, &s_timerResults, [&]() {
-                configurations = preprocessor.getConfigs(tokens1);
+                configurations = preprocessor.getConfigs();
             });
         } else {
             configurations.insert(mSettings.userDefines);
@@ -1052,7 +1058,7 @@ unsigned int CppCheck::checkInternal(const FileWithDetails& file, const std::str
 
         if (mSettings.checkConfiguration) {
             for (const std::string &config : configurations)
-                (void)preprocessor.getcode(tokens1, config, files, false);
+                (void)preprocessor.getcode(config, files, false);
 
             if (analyzerInformation)
                 mLogger->setAnalyzerInfo(nullptr);
@@ -1125,7 +1131,7 @@ unsigned int CppCheck::checkInternal(const FileWithDetails& file, const std::str
             if (mSettings.preprocessOnly) {
                 std::string codeWithoutCfg;
                 Timer::run("Preprocessor::getcode", mSettings.showtime, &s_timerResults, [&]() {
-                    codeWithoutCfg = preprocessor.getcode(tokens1, currentConfig, files, true);
+                    codeWithoutCfg = preprocessor.getcode(currentConfig, files, true);
                 });
 
                 if (startsWith(codeWithoutCfg,"#file"))
@@ -1148,14 +1154,14 @@ unsigned int CppCheck::checkInternal(const FileWithDetails& file, const std::str
 
                 // Create tokens, skip rest of iteration if failed
                 Timer::run("Tokenizer::createTokens", mSettings.showtime, &s_timerResults, [&]() {
-                    simplecpp::TokenList tokensP = preprocessor.preprocess(tokens1, currentConfig, files, true);
+                    simplecpp::TokenList tokensP = preprocessor.preprocess(currentConfig, files, true);
                     tokenlist.createTokens(std::move(tokensP));
                 });
                 hasValidConfig = true;
 
                 Tokenizer tokenizer(std::move(tokenlist), mErrorLogger);
                 try {
-                    if (mSettings.showtime != SHOWTIME_MODES::SHOWTIME_NONE)
+                    if (mSettings.showtime != ShowTime::NONE)
                         tokenizer.setTimerResults(&s_timerResults);
                     tokenizer.setDirectives(directives); // TODO: how to avoid repeated copies?
 
@@ -1293,16 +1299,6 @@ unsigned int CppCheck::checkInternal(const FileWithDetails& file, const std::str
         mErrorLogger.reportErr(errmsg);
     }
 
-    // TODO: this is done too early causing the whole program analysis suppressions to be reported as unmatched
-    if (mSettings.severity.isEnabled(Severity::information) || mSettings.checkConfiguration) {
-        // In jointSuppressionReport mode, unmatched suppressions are
-        // collected after all files are processed
-        if (!mSettings.useSingleJob()) {
-            // TODO: check result?
-            SuppressionList::reportUnmatchedSuppressions(mSuppressions.nomsg.getUnmatchedLocalSuppressions(file, static_cast<bool>(mUnusedFunctionsCheck)), mErrorLogger);
-        }
-    }
-
     if (analyzerInformation) {
         mLogger->setAnalyzerInfo(nullptr);
         analyzerInformation.reset();
@@ -1311,7 +1307,7 @@ unsigned int CppCheck::checkInternal(const FileWithDetails& file, const std::str
     // TODO: clear earlier?
     mLogger->clear();
 
-    if (mSettings.showtime == SHOWTIME_MODES::SHOWTIME_FILE || mSettings.showtime == SHOWTIME_MODES::SHOWTIME_TOP5_FILE)
+    if (mSettings.showtime == ShowTime::FILE || mSettings.showtime == ShowTime::TOP5_FILE)
         printTimerResults(mSettings.showtime);
 
     return mLogger->exitcode();
@@ -1489,7 +1485,7 @@ void CppCheck::executeRules(const std::string &tokenlist, const TokenList &list)
         const std::string err = rule.regex->match(str, f);
         if (!err.empty()) {
             const ErrorMessage errmsg(std::list<ErrorMessage::FileLocation>(),
-                                      emptyString,
+                                      "",
                                       Severity::error,
                                       err,
                                       "pcre_exec",
@@ -1505,7 +1501,9 @@ void CppCheck::executeAddons(const std::string& dumpFile, const FileWithDetails&
 {
     if (!dumpFile.empty()) {
         std::vector<std::string> f{dumpFile};
-        executeAddons(f, file.spath());
+        Timer::run("CppCheck::executeAddons", mSettings.showtime, &s_timerResults, [&]() {
+            executeAddons(f, file.spath());
+        });
     }
 }
 
@@ -1617,6 +1615,9 @@ void CppCheck::executeAddons(const std::vector<std::string>& files, const std::s
                     continue;
             }
             errmsg.file0 = file0;
+
+            if (obj.count("hash")>0)
+                errmsg.hash = obj["hash"].get<std::int64_t>();
 
             mErrorLogger.reportErr(errmsg);
         }
@@ -1934,7 +1935,7 @@ void CppCheck::resetTimerResults()
     s_timerResults.reset();
 }
 
-void CppCheck::printTimerResults(SHOWTIME_MODES mode)
+void CppCheck::printTimerResults(ShowTime mode)
 {
     s_timerResults.showResults(mode);
 }

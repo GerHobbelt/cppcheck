@@ -79,8 +79,10 @@ private:
         TEST_CASE(isPremiumCodingStandardId);
         TEST_CASE(getDumpFileContentsRawTokens);
         TEST_CASE(getDumpFileContentsLibrary);
+        TEST_CASE(checkPlistOutput);
         TEST_CASE(premiumResultsCache);
         TEST_CASE(toomanyconfigs);
+        TEST_CASE(purgedConfiguration);
     }
 
     void getErrorMessages() const {
@@ -521,6 +523,43 @@ private:
         }
     }
 
+    void checkPlistOutput() const {
+        Suppressions supprs;
+        ErrorLogger2 errorLogger;
+        std::vector<std::string> files = {"textfile.txt"};
+
+        {
+            const auto s = dinit(Settings, $.templateFormat = templateFormat, $.plistOutput = "output");
+            const ScopedFile file("file", "");
+            CppCheck cppcheck(s, supprs, errorLogger, false, {});
+            const FileWithDetails fileWithDetails {file.path(), Path::identify(file.path(), false), 0};
+
+            cppcheck.checkPlistOutput(fileWithDetails, files);
+            const std::string outputFile {"outputfile_" + std::to_string(std::hash<std::string> {}(fileWithDetails.spath())) + ".plist"};
+            ASSERT(Path::exists(outputFile));
+            std::remove(outputFile.c_str());
+        }
+
+        {
+            const auto s = dinit(Settings, $.plistOutput = "output");
+            const ScopedFile file("file.c", "");
+            CppCheck cppcheck(s, supprs, errorLogger, false, {});
+            const FileWithDetails fileWithDetails {file.path(), Path::identify(file.path(), false), 0};
+
+            cppcheck.checkPlistOutput(fileWithDetails, files);
+            const std::string outputFile {"outputfile_" + std::to_string(std::hash<std::string> {}(fileWithDetails.spath())) + ".plist"};
+            ASSERT(Path::exists(outputFile));
+            std::remove(outputFile.c_str());
+        }
+
+        {
+            Settings s;
+            const ScopedFile file("file.c", "");
+            CppCheck cppcheck(s, supprs, errorLogger, false, {});
+            cppcheck.checkPlistOutput(FileWithDetails(file.path(), Path::identify(file.path(), false), 0), files);
+        }
+    }
+
     void premiumResultsCache() const {
         // Trac #13889 - cached misra results are shown after removing --premium=misra-c-2012 option
 
@@ -531,10 +570,10 @@ private:
         std::vector<std::string> files;
 
         const char code[] = "void f();\nint x;\n";
-        const simplecpp::TokenList tokens(code, files, "m1.c");
+        simplecpp::TokenList tokens(code, files, "m1.c");
 
-        Preprocessor preprocessor(settings, errorLogger, Standards::Language::C);
-        ASSERT(preprocessor.loadFiles(tokens, files));
+        Preprocessor preprocessor(tokens, settings, errorLogger, Standards::Language::C);
+        ASSERT(preprocessor.loadFiles(files));
 
         AddonInfo premiumaddon;
         premiumaddon.name = "premiumaddon.json";
@@ -546,10 +585,10 @@ private:
 
         settings.premiumArgs = "misra-c-2012";
         CppCheck check(settings, supprs, errorLogger, false, {});
-        const size_t hash1 = check.calculateHash(preprocessor, tokens);
+        const size_t hash1 = check.calculateHash(preprocessor);
 
         settings.premiumArgs = "";
-        const size_t hash2 = check.calculateHash(preprocessor, tokens);
+        const size_t hash2 = check.calculateHash(preprocessor);
 
         // cppcheck-suppress knownConditionTrueFalse
         ASSERT(hash1 != hash2);
@@ -582,6 +621,33 @@ private:
         ASSERT_EQUALS(1, errorLogger.errmsgs.size());
         const auto it = errorLogger.errmsgs.cbegin();
         ASSERT_EQUALS("a.c:0:0: information: Too many #ifdef configurations - cppcheck only checks 2 of 4 configurations. Use --force to check all configurations. [toomanyconfigs]", it->toString(false, templateFormat, ""));
+    }
+
+    void purgedConfiguration() const
+    {
+        ScopedFile test_file("test.cpp",
+                             "#ifdef X\n"
+                             "#endif\n"
+                             "int main() {}\n");
+
+        // this is the "simple" format
+        const auto s = dinit(Settings,
+                             $.templateFormat = templateFormat, // TODO: remove when we only longer rely on toString() in unique message handling
+                                 $.severity.enable (Severity::information);
+                             $.debugwarnings = true);
+        Suppressions supprs;
+        ErrorLogger2 errorLogger;
+        CppCheck cppcheck(s, supprs, errorLogger, false, {});
+        ASSERT_EQUALS(1, cppcheck.check(FileWithDetails(test_file.path(), Path::identify(test_file.path(), false), 0)));
+        // TODO: how to properly disable these warnings?
+        errorLogger.errmsgs.erase(std::remove_if(errorLogger.errmsgs.begin(), errorLogger.errmsgs.end(), [](const ErrorMessage& msg) {
+            return msg.id == "logChecker";
+        }), errorLogger.errmsgs.end());
+        // the internal errorlist is cleared after each check() call
+        ASSERT_EQUALS(1, errorLogger.errmsgs.size());
+        auto it = errorLogger.errmsgs.cbegin();
+        ASSERT_EQUALS("test.cpp:0:0: information: The configuration 'X' was not checked because its code equals another one. [purgedConfiguration]",
+                      it->toString(false, templateFormat, ""));
     }
 
     // TODO: test suppressions

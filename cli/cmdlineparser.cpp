@@ -191,7 +191,7 @@ bool CmdLineParser::fillSettingsFromArgs(int argc, const char* const argv[])
     }
 
     // Output a warning for the user if he tries to exclude headers
-    const std::vector<std::string>& ignored = getIgnoredPaths();
+    const std::vector<std::string>& ignored = mIgnoredPaths;
     const bool warn = std::any_of(ignored.cbegin(), ignored.cend(), [](const std::string& i) {
         return Path::isHeader(i);
     });
@@ -200,8 +200,8 @@ bool CmdLineParser::fillSettingsFromArgs(int argc, const char* const argv[])
         mLogger.printMessage("Please use --suppress for ignoring results from the header files.");
     }
 
-    const std::vector<std::string>& pathnamesRef = getPathNames();
-    const std::list<FileSettings>& fileSettingsRef = getFileSettings();
+    const std::vector<std::string>& pathnamesRef = mPathNames;
+    const std::list<FileSettings>& fileSettingsRef = mFileSettings;
 
     // the inputs can only be used exclusively - CmdLineParser should already handle this
     assert(!(!pathnamesRef.empty() && !fileSettingsRef.empty()));
@@ -324,8 +324,37 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
     // default to --check-level=normal from CLI for now
     mSettings.setCheckLevel(Settings::CheckLevel::normal);
 
+    // read --debug-lookup early so the option is available for the cppcheck.cfg loading
+    for (int i = 1; i < argc; i++) {
+        // Show debug warnings for lookup for configuration files
+        if (std::strcmp(argv[i], "--debug-lookup") == 0)
+            mSettings.debuglookup = true;
+
+        else if (std::strncmp(argv[i], "--debug-lookup=", 15) == 0) {
+            const std::string lookup = argv[i] + 15;
+            if (lookup == "all")
+                mSettings.debuglookup = true;
+            else if (lookup == "addon")
+                mSettings.debuglookupAddon = true;
+            else if (lookup == "config")
+                mSettings.debuglookupConfig = true;
+            else if (lookup == "library")
+                mSettings.debuglookupLibrary = true;
+            else if (lookup == "platform")
+                mSettings.debuglookupPlatform = true;
+            else
+            {
+                mLogger.printError("unknown lookup '" + lookup + "'");
+                return Result::Fail;
+            }
+        }
+    }
+
+    if (!loadCppcheckCfg())
+        return Result::Fail;
+
     if (argc <= 1) {
-        printHelp();
+        printHelp(mSettings.premium);
         return Result::Exit;
     }
 
@@ -349,8 +378,6 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
 
         // print all possible error messages..
         if (std::strcmp(argv[i], "--errorlist") == 0) {
-            if (!loadCppcheckCfg())
-                return Result::Fail;
             {
                 XMLErrorMessagesLogger xmlLogger;
                 std::cout << ErrorMessage::getXMLHeader(mSettings.cppcheckCfgProductName, 2);
@@ -362,7 +389,7 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
 
         // Print help
         if (std::strcmp(argv[i], "-h") == 0 || std::strcmp(argv[i], "--help") == 0) {
-            printHelp();
+            printHelp(mSettings.premium);
             return Result::Exit;
         }
 
@@ -374,8 +401,6 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
         }
 
         if (std::strcmp(argv[i], "--version") == 0) {
-            if (!loadCppcheckCfg())
-                return Result::Fail;
             const std::string version = getVersion();
             mLogger.printRaw(version); // TODO: should not include newline
             return Result::Exit;
@@ -394,7 +419,10 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
     std::string platform;
     char defaultSign = '\0';
 
-    std::vector<std::string> lookupPaths{argv[0]};
+    std::vector<std::string> lookupPaths{
+        Path::getCurrentPath(), // TODO: do we want to look in CWD?
+        Path::getPathFromFilename(argv[0])
+    };
 
     bool executorAuto = true;
 
@@ -614,28 +642,11 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
                  std::strcmp(argv[i], "--debug-normal") == 0)
             debug = true;
 
-        // Show debug warnings for lookup for configuration files
         else if (std::strcmp(argv[i], "--debug-lookup") == 0)
-            mSettings.debuglookup = true;
+            continue; // already handled above
 
-        else if (std::strncmp(argv[i], "--debug-lookup=", 15) == 0) {
-            const std::string lookup = argv[i] + 15;
-            if (lookup == "all")
-                mSettings.debuglookup = true;
-            else if (lookup == "addon")
-                mSettings.debuglookupAddon = true;
-            else if (lookup == "config")
-                mSettings.debuglookupConfig = true;
-            else if (lookup == "library")
-                mSettings.debuglookupLibrary = true;
-            else if (lookup == "platform")
-                mSettings.debuglookupPlatform = true;
-            else
-            {
-                mLogger.printError("unknown lookup '" + lookup + "'");
-                return Result::Fail;
-            }
-        }
+        else if (std::strncmp(argv[i], "--debug-lookup=", 15) == 0)
+            continue; // already handled above
 
         // Flag used for various purposes during debugging
         else if (std::strcmp(argv[i], "--debug-simplified") == 0)
@@ -1005,6 +1016,9 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
             mSettings.cppHeaderProbe = false;
         }
 
+        else if (std::strcmp(argv[i], "--no-safety") == 0)
+            mSettings.safety = false;
+
         // Write results in file
         else if (std::strncmp(argv[i], "--output-file=", 14) == 0)
             mSettings.outputFile = Path::simplifyPath(argv[i] + 14);
@@ -1087,7 +1101,7 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
         }
 
         // Special Cppcheck Premium options
-        else if ((std::strncmp(argv[i], "--premium=", 10) == 0 || std::strncmp(argv[i], "--premium-", 10) == 0) && isCppcheckPremium()) {
+        else if ((std::strncmp(argv[i], "--premium=", 10) == 0 || std::strncmp(argv[i], "--premium-", 10) == 0) && mSettings.premium) {
             // valid options --premium=..
             const std::set<std::string> valid{
                 "autosar",
@@ -1105,7 +1119,7 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
                 "misra-c++-2023",
                 "misra-cpp-2023",
                 "bughunting",
-                "safety",
+                "safety",  // TODO: deprecate in favor of the regular --saftey/--no-safety
                 "debug-progress"};
             // valid options --premium-..=
             const std::set<std::string> valid2{
@@ -1148,7 +1162,7 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
 
             mSettings.checkAllConfigurations = false;     // Can be overridden with --max-configs or --force
             std::string projectFile = argv[i]+10;
-            projectType = project.import(projectFile, &mSettings, &mSuppressions, isCppcheckPremium());
+            projectType = project.import(projectFile, &mSettings, &mSuppressions);
             if (projectType == ImportProject::Type::CPPCHECK_GUI) {
                 for (const std::string &lib : project.guiProject.libraries)
                     mSettings.libraries.emplace_back(lib);
@@ -1160,7 +1174,7 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
                     platform = project.guiProject.platform;
 
                 // look for external files relative to project first
-                lookupPaths.insert(lookupPaths.cbegin(), projectFile);
+                lookupPaths.insert(lookupPaths.cbegin(), Path::getPathFromFilename(projectFile));
 
                 const auto& projectFileGui = project.guiProject.projectFile;
                 if (!projectFileGui.empty()) {
@@ -1176,6 +1190,8 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
             if (projectType == ImportProject::Type::VS_SLN || projectType == ImportProject::Type::VS_VCXPROJ) {
                 mSettings.libraries.emplace_back("windows");
             }
+            for (const auto &error : project.errors)
+                mLogger.printError(error);
             if (projectType == ImportProject::Type::MISSING) {
                 mLogger.printError("failed to open project '" + projectFile + "'. The file does not exist.");
                 return Result::Fail;
@@ -1393,17 +1409,17 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
         else if (std::strncmp(argv[i], "--showtime=", 11) == 0) {
             const std::string showtimeMode = argv[i] + 11;
             if (showtimeMode == "file")
-                mSettings.showtime = SHOWTIME_MODES::SHOWTIME_FILE;
+                mSettings.showtime = ShowTime::FILE;
             else if (showtimeMode == "file-total")
-                mSettings.showtime = SHOWTIME_MODES::SHOWTIME_FILE_TOTAL;
+                mSettings.showtime = ShowTime::FILE_TOTAL;
             else if (showtimeMode == "summary")
-                mSettings.showtime = SHOWTIME_MODES::SHOWTIME_SUMMARY;
+                mSettings.showtime = ShowTime::SUMMARY;
             else if (showtimeMode == "top5_file")
-                mSettings.showtime = SHOWTIME_MODES::SHOWTIME_TOP5_FILE;
+                mSettings.showtime = ShowTime::TOP5_FILE;
             else if (showtimeMode == "top5_summary")
-                mSettings.showtime = SHOWTIME_MODES::SHOWTIME_TOP5_SUMMARY;
+                mSettings.showtime = ShowTime::TOP5_SUMMARY;
             else if (showtimeMode == "none")
-                mSettings.showtime = SHOWTIME_MODES::SHOWTIME_NONE;
+                mSettings.showtime = ShowTime::NONE;
             else if (showtimeMode.empty()) {
                 mLogger.printError("no mode provided for --showtime");
                 return Result::Fail;
@@ -1561,9 +1577,6 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
         }
     }
 
-    if (!loadCppcheckCfg())
-        return Result::Fail;
-
     // TODO: bail out?
     if (!executorAuto && mSettings.useSingleJob())
         mLogger.printMessage("'--executor' has no effect as only a single job will be used.");
@@ -1598,10 +1611,21 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
     if (mSettings.jobs > 1 && mSettings.buildDir.empty()) {
         // TODO: bail out instead?
         if (mSettings.checks.isEnabled(Checks::unusedFunction))
+        {
             mLogger.printMessage("unusedFunction check requires --cppcheck-build-dir to be active with -j.");
+            mSettings.checks.disable(Checks::unusedFunction);
+            // TODO: is there some later logic to remove?
+        }
         // TODO: enable
         //mLogger.printMessage("whole program analysis requires --cppcheck-build-dir to be active with -j.");
     }
+
+    if (!mSettings.checks.isEnabled(Checks::unusedFunction))
+        mSettings.unmatchedSuppressionFilters.emplace_back("unusedFunction");
+    if (!mSettings.addons.count("misra"))
+        mSettings.unmatchedSuppressionFilters.emplace_back("misra-*");
+    if (!mSettings.premium)
+        mSettings.unmatchedSuppressionFilters.emplace_back("premium-*");
 
     if (inputAsFilter) {
         mSettings.fileFilters.insert(mSettings.fileFilters.end(), mPathNames.cbegin(), mPathNames.cend());
@@ -1687,13 +1711,15 @@ CmdLineParser::Result CmdLineParser::parseFromArgs(int argc, const char* const a
     return Result::Success;
 }
 
-void CmdLineParser::printHelp() const
+void CmdLineParser::printHelp(bool premium) const
 {
-    const std::string manualUrl(isCppcheckPremium() ?
-                                "https://cppcheck.sourceforge.io/manual.pdf" :
-                                "https://files.cppchecksolutions.com/manual.pdf");
+    // TODO: fetch URL from config like product name?
+    const std::string manualUrl(premium ?
+                                "https://files.cppchecksolutions.com/manual.pdf" :
+                                "https://cppcheck.sourceforge.io/manual.pdf");
 
     std::ostringstream oss;
+    // TODO: display product name
     oss << "Cppcheck - A tool for static C/C++ code analysis\n"
         "\n"
         "Syntax:\n"
@@ -1745,9 +1771,9 @@ void CmdLineParser::printHelp() const
         "                         be considered for evaluation.\n"
         "    --config-excludes-file=<file>\n"
         "                         A file that contains a list of config-excludes\n"
-        "    --disable=<id>       Disable individual checks.\n"
-        "                         Please refer to the documentation of --enable=<id>\n"
-        "                         for further details.\n"
+        "    --disable=<severity> Disable checks with the given severity.\n"
+        "                         Please refer to the documentation of --enable for\n"
+        "                         further details.\n"
         "    --dump               Dump xml data for each translation unit. The dump\n"
         "                         files have the extension .dump and contain ast,\n"
         "                         tokenlist, symboldatabase, valueflow.\n"
@@ -1757,31 +1783,24 @@ void CmdLineParser::printHelp() const
         "                         Example: '-DDEBUG=1 -D__cplusplus'.\n"
         "    -E                   Print preprocessor output on stdout and don't do any\n"
         "                         further processing.\n"
-        "    --enable=<id>        Enable additional checks. The available ids are:\n"
-        "                          * all\n"
-        "                                  Enable all checks. It is recommended to only\n"
-        "                                  use --enable=all when the whole program is\n"
-        "                                  scanned, because this enables unusedFunction.\n"
+        "    --enable=<severity>  Enable additional checks grouped by severity. The available\n"
+        "                         severities are:\n"
         "                          * warning\n"
-        "                                  Enable warning messages\n"
-        "                          * style\n"
-        "                                  Enable all coding style checks. All messages\n"
-        "                                  with the severities 'style', 'warning',\n"
-        "                                  'performance' and 'portability' are enabled.\n"
         "                          * performance\n"
-        "                                  Enable performance messages\n"
         "                          * portability\n"
-        "                                  Enable portability messages\n"
         "                          * information\n"
-        "                                  Enable information messages\n"
+        "                          * style\n"
+        "                                  Enable checks with severities 'style', 'warning',\n"
+        "                                  'performance' and 'portability'.\n"
         "                          * unusedFunction\n"
         "                                  Check for unused functions. It is recommended\n"
         "                                  to only enable this when the whole program is\n"
         "                                  scanned.\n"
         "                          * missingInclude\n"
-        "                                  Warn if there are missing includes.\n"
-        "                         Several ids can be given if you separate them with\n"
-        "                         commas. See also --std\n"
+        "                                  Check for missing include files.\n"
+        "                          * all\n"
+        "                                  Enable all checks.\n"
+        "                         Pass multiple severities as a comma-separated list.\n"
         "    --error-exitcode=<n> If errors are found, integer [n] is returned instead of\n"
         "                         the default '0'. '" << EXIT_FAILURE << "' is returned\n"
         "                         if arguments are not valid or if no input files are\n"
@@ -1894,7 +1913,7 @@ void CmdLineParser::printHelp() const
         "    --plist-output=<path>\n"
         "                         Generate Clang-plist output files in folder.\n";
 
-    if (isCppcheckPremium()) {
+    if (premium) {
         oss <<
             "    --premium=<option>\n"
             "                         Coding standards:\n"
@@ -2077,18 +2096,13 @@ void CmdLineParser::printHelp() const
 }
 
 std::string CmdLineParser::getVersion() const {
+    // TODO: this should not contain the version - it should set the extraVersion
     if (!mSettings.cppcheckCfgProductName.empty())
         return mSettings.cppcheckCfgProductName;
     const char * const extraVersion = CppCheck::extraVersion();
     if (*extraVersion != '\0')
         return std::string("Cppcheck ") + CppCheck::version() + " ("+ extraVersion + ')';
     return std::string("Cppcheck ") + CppCheck::version();
-}
-
-bool CmdLineParser::isCppcheckPremium() const {
-    if (mSettings.cppcheckCfgProductName.empty())
-        Settings::loadCppcheckCfg(mSettings, mSuppressions, mSettings.debuglookup || mSettings.debuglookupConfig);
-    return startsWith(mSettings.cppcheckCfgProductName, "Cppcheck Premium");
 }
 
 bool CmdLineParser::tryLoadLibrary(Library& destination, const std::string& basepath, const char* filename, bool debug)
@@ -2183,13 +2197,19 @@ bool CmdLineParser::loadAddons(Settings& settings)
 
 bool CmdLineParser::loadCppcheckCfg()
 {
-    if (!mSettings.cppcheckCfgProductName.empty())
-        return true;
+    if (!mSettings.settingsFiles.empty())
+    {
+        // should never happen - programming error
+        mLogger.printError("cppcheck.cfg has already been loaded from " + mSettings.settingsFiles[0]);
+        return false;
+    }
     const std::string cfgErr = Settings::loadCppcheckCfg(mSettings, mSuppressions, mSettings.debuglookup || mSettings.debuglookupConfig);
     if (!cfgErr.empty()) {
+        // TODO: log full path
         mLogger.printError("could not load cppcheck.cfg - " + cfgErr);
         return false;
     }
+    mSettings.premium = startsWith(mSettings.cppcheckCfgProductName, "Cppcheck Premium");
     return true;
 }
 

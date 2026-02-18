@@ -1091,6 +1091,8 @@ bool MainWindow::getCppcheckSettings(Settings& settings, Suppressions& supprs)
             return false;
         }
 
+        settings.premium = startsWith(settings.cppcheckCfgProductName, "Cppcheck Premium");
+
         const auto cfgAddons = settings.addons;
         settings.addons.clear();
         for (const std::string& addon : cfgAddons) {
@@ -1154,8 +1156,11 @@ bool MainWindow::getCppcheckSettings(Settings& settings, Suppressions& supprs)
 
         const QString platform = mProjectFile->getPlatform();
         if (platform.endsWith(".xml")) {
-            const QString applicationFilePath = QCoreApplication::applicationFilePath();
-            settings.platform.loadFromFile(applicationFilePath.toStdString().c_str(), platform.toStdString());
+            const std::vector<std::string> paths = {
+                Path::getCurrentPath(), // TODO: do we want to look in CWD?
+                QCoreApplication::applicationFilePath().toStdString(),
+            };
+            settings.platform.loadFromFile(paths, platform.toStdString());
         } else {
             for (int i = Platform::Type::Native; i <= Platform::Type::Unix64; i++) {
                 const auto p = static_cast<Platform::Type>(i);
@@ -1754,6 +1759,7 @@ void MainWindow::formatAndSetTitle(const QString &text)
         nameWithVersion += " (" + extraVersion + ")";
     }
 
+    // TODO: should not contain the version
     if (!mCppcheckCfgProductName.isEmpty())
         nameWithVersion = mCppcheckCfgProductName;
 
@@ -1983,6 +1989,12 @@ void MainWindow::analyzeProject(const ProjectFile *projectFile, const QStringLis
                 // can never happen
                 break;
             }
+
+            if (!p.errors.empty())
+                errorMessage += ": \n";
+
+            for (const auto &error : p.errors)
+                errorMessage += "\n - " + QString::fromStdString(error);
 
             if (!errorMessage.isEmpty()) {
                 QMessageBox msg(QMessageBox::Critical,
@@ -2282,7 +2294,9 @@ void MainWindow::replyFinished(QNetworkReply *reply) {
     const QString str = reply->readAll();
     qDebug() << "Response: " << str;
     if (reply->url().fileName() == "version.txt") {
+        // TODO: lacks extra version
         QString nameWithVersion = QString("Cppcheck %1").arg(CppCheck::version());
+        // TODO: this should not contain the version
         if (!mCppcheckCfgProductName.isEmpty())
             nameWithVersion = mCppcheckCfgProductName;
         const int appVersion = getVersion(nameWithVersion);

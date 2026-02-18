@@ -1341,7 +1341,6 @@ void CheckCondition::checkIncorrectLogicOperator()
                 const std::string text = cond1str + " " + tok->str() + " " + cond2str;
                 incorrectLogicOperatorError(tok, text, alwaysTrue, inconclusive, std::move(errorPath));
             } else if (printStyle && (firstTrue || secondTrue)) {
-                // cppcheck-suppress accessMoved - TODO: FP - see #12174
                 const int which = isfloat ? sufficientCondition(std::move(op1), not1, d1, std::move(op2), not2, d2, isAnd) : sufficientCondition(std::move(op1), not1, i1, std::move(op2), not2, i2, isAnd);
                 std::string text;
                 if (which != 0) {
@@ -1986,7 +1985,7 @@ void CheckCondition::checkCompareValueOutOfTypeRange()
                 default:
                     break;
                 }
-                if (bits == 0 || bits >= 64)
+                if (bits == 0 || bits >= 63)
                     continue;
 
                 const auto typeMinValue = (typeTok->valueType()->sign == ValueType::Sign::UNSIGNED) ? 0 : (-(1LL << (bits-1)));

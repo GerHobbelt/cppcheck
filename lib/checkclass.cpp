@@ -1226,6 +1226,10 @@ void CheckClass::initializationListUsage()
                         allowed = false;
                         return ChildrenToVisit::done;
                     }
+                    if (var2->isLocal() && isVariableChanged(var2->nameToken(), previousBeforeAstLeftmostLeaf(tok), var2->declarationId(), /*globalvar*/ false, *mSettings)) {
+                        allowed = false;
+                        return ChildrenToVisit::done;
+                    }
                 } else if (tok2->str() == "this") { // 'this' instance is not completely constructed in initialization list
                     allowed = false;
                     return ChildrenToVisit::done;
@@ -1338,7 +1342,11 @@ void CheckClass::privateFunctions()
 
         while (!privateFuncs.empty()) {
             const auto& pf = privateFuncs.front();
-            if (pf->token->isAttributeMaybeUnused()) {
+            if (pf->token->isAttributeMaybeUnused() || pf->token->isAttributeUnused()) {
+                privateFuncs.pop_front();
+                continue;
+            }
+            if (pf->tokenDef && (pf->tokenDef->isAttributeMaybeUnused() || pf->tokenDef->isAttributeUnused())) {
                 privateFuncs.pop_front();
                 continue;
             }
@@ -2221,7 +2229,7 @@ void CheckClass::checkConst()
                         return false;
                     if (!ovl->functionScope)
                         return true;
-                    return func.argCount() == ovl->argCount() && func.argsMatch(ovl->functionScope, ovl->argDef, func.argDef, emptyString, 0);
+                    return func.argCount() == ovl->argCount() && func.argsMatch(ovl->functionScope, ovl->argDef, func.argDef, "", 0);
                 }))
                     continue;
             }
@@ -3120,7 +3128,7 @@ static std::vector<DuplMemberFuncInfo> getDuplInheritedMemberFunctionsRecursive(
                 if (classFuncIt.name() == parentClassFuncIt.name() &&
                     (parentClassFuncIt.access != AccessControl::Private || !skipPrivate) &&
                     !classFuncIt.isConstructor() && !classFuncIt.isDestructor() &&
-                    classFuncIt.argsMatch(parentClassIt.type->classScope, parentClassFuncIt.argDef, classFuncIt.argDef, emptyString, 0) &&
+                    classFuncIt.argsMatch(parentClassIt.type->classScope, parentClassFuncIt.argDef, classFuncIt.argDef, "", 0) &&
                     (classFuncIt.isConst() == parentClassFuncIt.isConst() || Function::returnsConst(&classFuncIt) == Function::returnsConst(&parentClassFuncIt)) &&
                     !(classFuncIt.isDelete() || parentClassFuncIt.isDelete()))
                     results.emplace_back(&classFuncIt, &parentClassFuncIt, &parentClassIt);
@@ -3185,7 +3193,6 @@ void CheckClass::checkCopyCtorAndEqOperator()
 {
     // This is disabled because of #8388
     // The message must be clarified. How is the behaviour different?
-    // cppcheck-suppress unreachableCode - remove when code is enabled again
     if ((true) || !mSettings->severity.isEnabled(Severity::warning)) // NOLINT(readability-simplify-boolean-expr)
         return;
 

@@ -34,9 +34,11 @@
 #include "filesettings.h"
 #include "json.h"
 #include "path.h"
+#include "sarifreport.h"
 #include "settings.h"
 #include "singleexecutor.h"
 #include "suppressions.h"
+#include "timer.h"
 #include "utils.h"
 
 #if defined(HAS_THREADING_MODEL_THREAD)
@@ -79,156 +81,6 @@
 #endif
 
 namespace {
-    class SarifReport {
-    public:
-        void addFinding(ErrorMessage msg) {
-            mFindings.push_back(std::move(msg));
-        }
-
-        picojson::array serializeRules() const {
-            picojson::array ret;
-            std::set<std::string> ruleIds;
-            for (const auto& finding : mFindings) {
-                // github only supports findings with locations
-                if (finding.callStack.empty())
-                    continue;
-                if (ruleIds.insert(finding.id).second) {
-                    picojson::object rule;
-                    rule["id"] = picojson::value(finding.id);
-                    // rule.shortDescription.text
-                    picojson::object shortDescription;
-                    shortDescription["text"] = picojson::value(finding.shortMessage());
-                    rule["shortDescription"] = picojson::value(shortDescription);
-                    // rule.fullDescription.text
-                    picojson::object fullDescription;
-                    fullDescription["text"] = picojson::value(finding.verboseMessage());
-                    rule["fullDescription"] = picojson::value(fullDescription);
-                    // rule.help.text
-                    picojson::object help;
-                    help["text"] = picojson::value(finding.verboseMessage()); // FIXME provide proper help text
-                    rule["help"] = picojson::value(help);
-                    // rule.properties.precision, rule.properties.problem.severity
-                    picojson::object properties;
-                    properties["precision"] = picojson::value(sarifPrecision(finding));
-                    const char* securitySeverity = nullptr;
-                    if (finding.severity == Severity::error && !ErrorLogger::isCriticalErrorId(finding.id))
-                        securitySeverity = "9.9"; // We see undefined behavior
-                    //else if (finding.severity == Severity::warning)
-                    //    securitySeverity = 5.1; // We see potential undefined behavior
-                    if (securitySeverity) {
-                        properties["security-severity"] = picojson::value(securitySeverity);
-                        const picojson::array tags{picojson::value("security")};
-                        properties["tags"] = picojson::value(tags);
-                    }
-                    rule["properties"] = picojson::value(properties);
-                    // rule.defaultConfiguration.level
-                    picojson::object defaultConfiguration;
-                    defaultConfiguration["level"] = picojson::value(sarifSeverity(finding));
-                    rule["defaultConfiguration"] = picojson::value(defaultConfiguration);
-
-                    ret.emplace_back(rule);
-                }
-            }
-            return ret;
-        }
-
-        static picojson::array serializeLocations(const ErrorMessage& finding) {
-            picojson::array ret;
-            for (const auto& location : finding.callStack) {
-                picojson::object physicalLocation;
-                picojson::object artifactLocation;
-                artifactLocation["uri"] = picojson::value(location.getfile(false));
-                physicalLocation["artifactLocation"] = picojson::value(artifactLocation);
-                picojson::object region;
-                region["startLine"] = picojson::value(static_cast<int64_t>(location.line < 1 ? 1 : location.line));
-                region["startColumn"] = picojson::value(static_cast<int64_t>(location.column < 1 ? 1 : location.column));
-                region["endLine"] = region["startLine"];
-                region["endColumn"] = region["startColumn"];
-                physicalLocation["region"] = picojson::value(region);
-                picojson::object loc;
-                loc["physicalLocation"] = picojson::value(physicalLocation);
-                ret.emplace_back(loc);
-            }
-            return ret;
-        }
-
-        picojson::array serializeResults() const {
-            picojson::array results;
-            for (const auto& finding : mFindings) {
-                // github only supports findings with locations
-                if (finding.callStack.empty())
-                    continue;
-                picojson::object res;
-                res["level"] = picojson::value(sarifSeverity(finding));
-                res["locations"] = picojson::value(serializeLocations(finding));
-                picojson::object message;
-                message["text"] = picojson::value(finding.shortMessage());
-                res["message"] = picojson::value(message);
-                res["ruleId"] = picojson::value(finding.id);
-                results.emplace_back(res);
-            }
-            return results;
-        }
-
-        picojson::value serializeRuns(const std::string& productName, const std::string& version) const {
-            picojson::object driver;
-            driver["name"] = picojson::value(productName);
-            driver["semanticVersion"] = picojson::value(version);
-            driver["informationUri"] = picojson::value("https://cppcheck.sourceforge.io");
-            driver["rules"] = picojson::value(serializeRules());
-            picojson::object tool;
-            tool["driver"] = picojson::value(driver);
-            picojson::object run;
-            run["tool"] = picojson::value(tool);
-            run["results"] = picojson::value(serializeResults());
-            picojson::array runs{picojson::value(run)};
-            return picojson::value(runs);
-        }
-
-        std::string serialize(std::string productName) const {
-            const auto nameAndVersion = Settings::getNameAndVersion(productName);
-            productName = nameAndVersion.first.empty() ? "Cppcheck" : nameAndVersion.first;
-            std::string version = nameAndVersion.first.empty() ? CppCheck::version() : nameAndVersion.second;
-            if (version.find(' ') != std::string::npos)
-                version.erase(version.find(' '), std::string::npos);
-
-            picojson::object doc;
-            doc["version"] = picojson::value("2.1.0");
-            doc["$schema"] = picojson::value("https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json");
-            doc["runs"] = serializeRuns(productName, version);
-
-            return picojson::value(doc).serialize(true);
-        }
-    private:
-
-        static std::string sarifSeverity(const ErrorMessage& errmsg) {
-            if (ErrorLogger::isCriticalErrorId(errmsg.id))
-                return "error";
-            switch (errmsg.severity) {
-            case Severity::error:
-            case Severity::warning:
-            case Severity::style:
-            case Severity::portability:
-            case Severity::performance:
-                return "warning";
-            case Severity::information:
-            case Severity::internal:
-            case Severity::debug:
-            case Severity::none:
-                return "note";
-            }
-            return "note";
-        }
-
-        static std::string sarifPrecision(const ErrorMessage& errmsg) {
-            if (errmsg.certainty == Certainty::inconclusive)
-                return "medium";
-            return "high";
-        }
-
-        std::vector<ErrorMessage> mFindings;
-    };
-
     class CmdLineLoggerStd : public CmdLineLogger
     {
     public:
@@ -419,6 +271,8 @@ int CppCheckExecutor::check(int argc, const char* const argv[])
         return EXIT_SUCCESS;
     }
 
+    Timer realTimeClock("", settings.showtime, nullptr, Timer::Type::OVERALL);
+
     settings.loadSummaries();
 
     mFiles = parser.getFiles();
@@ -442,35 +296,73 @@ int CppCheckExecutor::check_wrapper(const Settings& settings, Suppressions& supp
     return check_internal(settings, supprs);
 }
 
-bool CppCheckExecutor::reportSuppressions(const Settings &settings, const SuppressionList& suppressions, bool unusedFunctionCheckEnabled, const std::list<FileWithDetails> &files, const std::list<FileSettings>& fileSettings, ErrorLogger& errorLogger) {
-    const auto& suppr = suppressions.getSuppressions();
-    if (std::any_of(suppr.begin(), suppr.end(), [](const SuppressionList::Suppression& s) {
-        return s.errorId == "unmatchedSuppression" && s.fileName.empty() && s.lineNumber == SuppressionList::Suppression::NO_LINE;
+/**
+ * Report unmatched suppressions
+ * @param unmatched list of unmatched suppressions (from Settings::Suppressions::getUnmatched(Local|Global)Suppressions)
+ * @return true is returned if errors are reported
+ */
+static bool reportUnmatchedSuppressions(const std::list<SuppressionList::Suppression> &unmatched, ErrorLogger &errorLogger, const std::vector<std::string>& filters)
+{
+    bool err = false;
+    // Report unmatched suppressions
+    for (const SuppressionList::Suppression &s : unmatched) {
+        // check if this unmatched suppression is suppressed
+        bool suppressed = false;
+        for (const SuppressionList::Suppression &s2 : unmatched) {
+            if (s2.errorId == "unmatchedSuppression") {
+                if ((s2.fileName.empty() || s2.fileName == "*" || s2.fileName == s.fileName) &&
+                    (s2.lineNumber == SuppressionList::Suppression::NO_LINE || s2.lineNumber == s.lineNumber)) {
+                    suppressed = true;
+                    break;
+                }
+            }
+        }
+
+        if (suppressed)
+            continue;
+
+        const bool skip = std::any_of(filters.cbegin(), filters.cend(), [&s](const std::string& filter) {
+            return matchglob(filter, s.errorId);
+        });
+        if (skip)
+            continue;
+
+        std::list<::ErrorMessage::FileLocation> callStack;
+        if (!s.fileName.empty()) {
+            callStack.emplace_back(s.fileName, s.lineNumber, 0);
+        }
+        errorLogger.reportErr(::ErrorMessage(std::move(callStack), "", Severity::information, "Unmatched suppression: " + s.errorId, "unmatchedSuppression", Certainty::normal));
+        err = true;
+    }
+    return err;
+}
+
+bool CppCheckExecutor::reportUnmatchedSuppressions(const Settings &settings, const SuppressionList& suppressions, const std::list<FileWithDetails> &files, const std::list<FileSettings>& fileSettings, ErrorLogger& errorLogger) {
+    // the two inputs may only be used exclusively
+    assert(!(!files.empty() && !fileSettings.empty()));
+
+    // bail out if there is a suppression of unmatchedSuppression which matches any file
+    const auto suppr = suppressions.getSuppressions();
+    if (std::any_of(suppr.cbegin(), suppr.cend(), [](const SuppressionList::Suppression& s) {
+        return s.errorId == "unmatchedSuppression" && (s.fileName.empty() || s.fileName == "*") && s.lineNumber == SuppressionList::Suppression::NO_LINE;
     }))
         return false;
 
     bool err = false;
-    if (settings.useSingleJob()) {
-        // the two inputs may only be used exclusively
-        assert(!(!files.empty() && !fileSettings.empty()));
 
-        for (auto i = files.cbegin(); i != files.cend(); ++i) {
-            err |= SuppressionList::reportUnmatchedSuppressions(
-                suppressions.getUnmatchedLocalSuppressions(*i, unusedFunctionCheckEnabled), errorLogger);
-        }
-
-        for (auto i = fileSettings.cbegin(); i != fileSettings.cend(); ++i) {
-            err |= SuppressionList::reportUnmatchedSuppressions(
-                suppressions.getUnmatchedLocalSuppressions(i->file, unusedFunctionCheckEnabled), errorLogger);
-        }
+    for (auto i = files.cbegin(); i != files.cend(); ++i) {
+        err |= ::reportUnmatchedSuppressions(suppressions.getUnmatchedLocalSuppressions(*i), errorLogger, settings.unmatchedSuppressionFilters);
     }
+
+    for (auto i = fileSettings.cbegin(); i != fileSettings.cend(); ++i) {
+        err |= ::reportUnmatchedSuppressions(suppressions.getUnmatchedLocalSuppressions(i->file), errorLogger, settings.unmatchedSuppressionFilters);
+    }
+
     if (settings.inlineSuppressions) {
-        // report unmatched unusedFunction suppressions
-        err |= SuppressionList::reportUnmatchedSuppressions(
-            suppressions.getUnmatchedInlineSuppressions(unusedFunctionCheckEnabled), errorLogger);
+        err |= ::reportUnmatchedSuppressions(suppressions.getUnmatchedInlineSuppressions(), errorLogger, settings.unmatchedSuppressionFilters);
     }
 
-    err |= SuppressionList::reportUnmatchedSuppressions(suppressions.getUnmatchedGlobalSuppressions(unusedFunctionCheckEnabled), errorLogger);
+    err |= ::reportUnmatchedSuppressions(suppressions.getUnmatchedGlobalSuppressions(), errorLogger, settings.unmatchedSuppressionFilters);
     return err;
 }
 
@@ -525,7 +417,7 @@ int CppCheckExecutor::check_internal(const Settings& settings, Suppressions& sup
     returnValue |= cppcheck.analyseWholeProgram(settings.buildDir, mFiles, mFileSettings, stdLogger.getCtuInfo());
 
     if (settings.severity.isEnabled(Severity::information) || settings.checkConfiguration) {
-        const bool err = reportSuppressions(settings, supprs.nomsg, settings.checks.isEnabled(Checks::unusedFunction), mFiles, mFileSettings, stdLogger);
+        const bool err = reportUnmatchedSuppressions(settings, supprs.nomsg, mFiles, mFileSettings, stdLogger);
         if (err && returnValue == 0)
             returnValue = settings.exitCode;
     }
@@ -712,18 +604,20 @@ void StdLogger::reportErr(const ErrorMessage &msg)
     msgCopy.classification = getClassification(msgCopy.guideline, mSettings.reportType);
 
     // TODO: there should be no need for verbose and default messages here
-    const std::string msgStr = msgCopy.toString(mSettings.verbose, mSettings.templateFormat, mSettings.templateLocation);
+    const std::string msgStr =
+        msgCopy.toString(mSettings.verbose, mSettings.templateFormat, mSettings.templateLocation);
 
     // Alert only about unique errors
     if (!mSettings.emitDuplicates && !mShownErrors.insert(msgStr).second)
         return;
 
-    if (mSettings.outputFormat == Settings::OutputFormat::sarif)
+    if (mSettings.outputFormat == Settings::OutputFormat::sarif) {
         mSarifReport.addFinding(std::move(msgCopy));
-    else if (mSettings.outputFormat == Settings::OutputFormat::xml)
+    } else if (mSettings.outputFormat == Settings::OutputFormat::xml) {
         reportErr(msgCopy.toXML());
-    else
+    } else {
         reportErr(msgStr);
+    }
 }
 
 /**

@@ -7,8 +7,9 @@ import pytest
 import glob
 import json
 import subprocess
+import shutil
 
-from testutils import cppcheck, assert_cppcheck
+from testutils import cppcheck, assert_cppcheck, cppcheck_ex, __lookup_cppcheck_exe
 from xml.etree import ElementTree
 
 
@@ -919,7 +920,6 @@ def test_showtime_top5_file(tmpdir):
             assert lines[i].endswith(' - 2 result(s))')
         else:
             assert lines[i].endswith(' result(s))')
-    assert lines[6].startswith('Overall time:')
     assert stderr == ''
 
 
@@ -1720,6 +1720,51 @@ def test_cpp_probe_2(tmpdir):
     args = ['-q', '--template=simple', '--cpp-header-probe', test_file]
 
     assert_cppcheck(args, ec_exp=0, err_exp=[], out_exp=[])
+
+
+def test_config_invalid(tmpdir):
+    # cppcheck.cfg needs to be next to executable
+    exe = shutil.copy2(__lookup_cppcheck_exe(), tmpdir)
+    if sys.platform == 'win32':
+        shutil.copy2(os.path.join(os.path.dirname(__lookup_cppcheck_exe()), 'cppcheck-core.dll'), tmpdir)
+    shutil.copytree(os.path.join(os.path.dirname(__lookup_cppcheck_exe()), 'cfg'), os.path.join(tmpdir, 'cfg'))
+
+    test_file = os.path.join(tmpdir, 'test.c')
+    with open(test_file, 'wt'):
+        pass
+
+    config_file = os.path.join(tmpdir, 'cppcheck.cfg')
+    with open(config_file, 'wt'):
+        pass
+
+    exitcode, stdout, stderr, exe = cppcheck_ex([test_file], cwd=tmpdir, cppcheck_exe=exe)
+    assert exitcode == 1, stdout if stdout else stderr
+    assert stdout.splitlines() == [
+        'cppcheck: error: could not load cppcheck.cfg - not a valid JSON - syntax error at line 1 near: '
+    ]
+
+
+def test_config_override(tmpdir):
+    # cppcheck.cfg needs to be next to executable
+    exe = shutil.copy2(__lookup_cppcheck_exe(), tmpdir)
+    if sys.platform == 'win32':
+        shutil.copy2(os.path.join(os.path.dirname(__lookup_cppcheck_exe()), 'cppcheck-core.dll'), tmpdir)
+    shutil.copytree(os.path.join(os.path.dirname(__lookup_cppcheck_exe()), 'cfg'), os.path.join(tmpdir, 'cfg'))
+
+    test_file = os.path.join(tmpdir, 'test.c')
+    with open(test_file, 'wt'):
+        pass
+
+    config_file = os.path.join(tmpdir, 'cppcheck.cfg')
+    with open(config_file, 'wt') as f:
+        f.write(json.dumps({
+            'safety': False
+        }))
+
+    exitcode, stdout, stderr, exe = cppcheck_ex(['-q', '--safety', test_file], cwd=tmpdir, cppcheck_exe=exe, remove_checkers_report=False)
+    assert exitcode == 0, stdout if stdout else stderr
+    assert stdout.splitlines() == []
+    assert 'checkersReport' in stderr
 
 
 def test_checkers_report(tmpdir):
@@ -3706,3 +3751,105 @@ int PTR4 q4_var RBR4 = 0;
     assert stderr.splitlines() == [
         '{}:12:5: error: maximum AST depth exceeded [internalAstError]'.format(test_file)
     ]
+
+
+# do not report unmatched misra-* suppressions when misra is not provided
+def test_misra_disabled_unmatched(tmp_path):  #14232
+    test_file = tmp_path / 'test.c'
+    with open(test_file, "w"):
+        pass
+
+    args = [
+        '-q',
+        '--template=simple',
+        '--enable=warning,information',
+        '--suppress=misra-c2012-20.5',
+        '--suppress=uninitvar',
+        str(test_file)
+    ]
+
+    ret, stdout, stderr = cppcheck(args)
+    assert stderr.splitlines() == [
+        'nofile:0:0: information: Unmatched suppression: uninitvar [unmatchedSuppression]'
+    ]
+    assert stdout == ''
+    assert ret == 0, stdout
+
+
+# do not report unmatched premium-* suppressions when application is not premium
+def test_premium_disabled_unmatched(tmp_path):  #13663
+    test_file = tmp_path / 'test.c'
+    with open(test_file, "w"):
+        pass
+
+    args = [
+        '-q',
+        '--template=simple',
+        '--enable=warning,information',
+        '--suppress=premium-misra-cpp-2023-12.2.1',
+        '--suppress=uninitvar',
+        str(test_file)
+    ]
+
+    ret, stdout, stderr = cppcheck(args)
+    assert stderr.splitlines() == [
+        'nofile:0:0: information: Unmatched suppression: uninitvar [unmatchedSuppression]'
+    ]
+    assert stdout == ''
+    assert ret == 0, stdout
+
+
+def test_unmatched_file(tmp_path):  # #14248 / #14249
+    lib_path = tmp_path / 'lib'
+    os.makedirs(lib_path)
+
+    test_file = lib_path / 'test.c'
+    with open(test_file, "w"):
+        pass
+
+    suppr_txt = tmp_path / 'suppr.txt'
+    with open(suppr_txt, "w") as f:
+        f.write('''
+error:lib/test.c
+error2:lib\\test.c
+''')
+
+    suppr_xml = tmp_path / 'suppr.xml'
+    with open(suppr_xml, "w") as f:
+        f.write('''
+<suppressions>
+    <suppress>
+        <id>error3</id>
+        <fileName>lib/test.c</fileName>
+    </suppress>
+    <suppress>
+        <id>error4</id>
+        <fileName>lib\\test.c</fileName>
+    </suppress>
+</suppressions>
+''')
+
+    args = [
+        '-q',
+        '--template=simple',
+        '--enable=information',
+        f'--suppressions-list={suppr_txt}',
+        f'--suppress-xml={suppr_xml}',
+        '--suppress=error5:lib/test.c',
+        '--suppress=error6:lib\\test.c',
+        str(test_file)
+    ]
+
+    lib_file = 'lib' + os.path.sep + 'test.c'
+
+    ret, stdout, stderr = cppcheck(args)
+    assert stdout == ''
+    assert stderr.splitlines() == [
+        f'{lib_file}:-1:0: information: Unmatched suppression: error [unmatchedSuppression]',
+        f'{lib_file}:-1:0: information: Unmatched suppression: error2 [unmatchedSuppression]',
+        f'{lib_file}:-1:0: information: Unmatched suppression: error3 [unmatchedSuppression]',
+        f'{lib_file}:-1:0: information: Unmatched suppression: error4 [unmatchedSuppression]',
+        f'{lib_file}:-1:0: information: Unmatched suppression: error5 [unmatchedSuppression]',
+        f'{lib_file}:-1:0: information: Unmatched suppression: error6 [unmatchedSuppression]'
+    ]
+    assert ret == 0, stdout

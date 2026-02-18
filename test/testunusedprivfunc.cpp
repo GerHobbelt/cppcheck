@@ -23,6 +23,7 @@
 #include "settings.h"
 #include "fixture.h"
 
+#include <cstddef>
 #include <string>
 
 class TestUnusedPrivateFunction : public TestFixture {
@@ -88,7 +89,6 @@ private:
 
     struct CheckOptions
     {
-        CheckOptions() = default;
         Platform::Type platform = Platform::Type::Native;
     };
 

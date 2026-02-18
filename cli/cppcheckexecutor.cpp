@@ -33,6 +33,7 @@
 #include "errortypes.h"
 #include "filesettings.h"
 #include "json.h"
+#include "path.h"
 #include "settings.h"
 #include "singleexecutor.h"
 #include "suppressions.h"
@@ -259,6 +260,9 @@ namespace {
             if (!mSettings.outputFile.empty()) {
                 mErrorOutput = new std::ofstream(settings.outputFile);
             }
+            if (!mSettings.buildDir.empty()) {
+                mCheckersFile = Path::join(settings.buildDir, "checkers.txt");
+            }
         }
 
         ~StdLogger() override {
@@ -309,6 +313,25 @@ namespace {
 
         const std::string& getCtuInfo() const {
             return mCtuInfo;
+        }
+
+        void readActiveCheckers() {
+            if (mCheckersFile.empty())
+                return;
+
+            std::ifstream fin(mCheckersFile);
+            if (fin.is_open())
+            {
+                std::set<std::string> activeCheckers;
+                std::string line;
+                // cppcheck-suppress accessMoved - FP
+                while (std::getline(fin, line))
+                {
+                    // cppcheck-suppress accessMoved - FP
+                    activeCheckers.emplace(std::move(line));
+                }
+                mActiveCheckers = std::move(activeCheckers);
+            }
         }
 
     private:
@@ -375,6 +398,11 @@ namespace {
          * File metrics
          */
         std::vector<std::string> mFileMetrics;
+
+        /**
+         * The file the cached active checkers are stored in
+         */
+        std::string mCheckersFile;
     };
 }
 
@@ -465,6 +493,8 @@ int CppCheckExecutor::check_internal(const Settings& settings, Suppressions& sup
         for (auto i = mFiles.cbegin(); i != mFiles.cend(); ++i)
             fileNames.emplace_back(i->path());
         AnalyzerInformation::writeFilesTxt(settings.buildDir, fileNames, settings.userDefines, mFileSettings);
+
+        stdLogger.readActiveCheckers();
     }
 
     if (!settings.checkersReportFilename.empty())
@@ -522,6 +552,15 @@ int CppCheckExecutor::check_internal(const Settings& settings, Suppressions& sup
 
 void StdLogger::writeCheckersReport(const Suppressions& supprs)
 {
+    if (!mCheckersFile.empty())
+    {
+        std::ofstream fout(mCheckersFile);
+        for (const auto& c : mActiveCheckers)
+        {
+            fout << c << std::endl;
+        }
+    }
+
     const bool summary = mSettings.safety || mSettings.severity.isEnabled(Severity::information);
     const bool xmlReport = mSettings.outputFormat == Settings::OutputFormat::xml && mSettings.xml_version == 3;
     const bool textReport = !mSettings.checkersReportFilename.empty();

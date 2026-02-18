@@ -321,17 +321,17 @@ void TokenList::insertTokens(Token *dest, const Token *src, nonneg int n)
 
 //---------------------------------------------------------------------------
 
-bool TokenList::createTokensFromBuffer(const uint8_t* data, size_t size)
+bool TokenList::createTokensFromBuffer(const char* data, size_t size)
 {
     return createTokensFromBufferInternal(data, size, mFiles.empty() ? "" : *mFiles.cbegin());
 }
 
 //---------------------------------------------------------------------------
 
-bool TokenList::createTokensFromBufferInternal(const uint8_t* data, size_t size, const std::string& file0)
+bool TokenList::createTokensFromBufferInternal(const char* data, size_t size, const std::string& file0)
 {
     simplecpp::OutputList outputList;
-    simplecpp::TokenList tokens(data, size, mFiles, file0, &outputList);
+    simplecpp::TokenList tokens({data, size}, mFiles, file0, &outputList);
 
     createTokens(std::move(tokens));
 
@@ -573,8 +573,6 @@ static bool iscpp11init_impl(const Token * const tok)
         if (nameToken->isCpp11init() != Token::Cpp11init::UNKNOWN)
             return nameToken->isCpp11init() == Token::Cpp11init::CPP11INIT;
         nameToken = nameToken->previous();
-        if (nameToken && nameToken->str() == "," && Token::simpleMatch(nameToken->previous(), "} ,"))
-            nameToken = nameToken->linkAt(-1);
     }
     if (!nameToken)
         return false;
@@ -658,6 +656,9 @@ static bool isQualifier(const Token* tok)
     return Token::Match(tok, "{|;");
 }
 
+/**
+ * @throws InternalError thrown if maximum AST depth is exceeded
+ */
 static void compileUnaryOp(Token *&tok, AST_state& state, void (*f)(Token *&tok, AST_state& state))
 {
     Token *unaryop = tok;
@@ -694,6 +695,9 @@ static void skipGenericType(Token *&tok)
     }
 }
 
+/**
+ * @throws InternalError thrown if maximum AST depth is exceeded
+ */
 static void compileBinOp(Token *&tok, AST_state& state, void (*f)(Token *&tok, AST_state& state))
 {
     Token *binop = tok;
@@ -730,6 +734,9 @@ static void compileBinOp(Token *&tok, AST_state& state, void (*f)(Token *&tok, A
 
 static void compileExpression(Token *&tok, AST_state& state);
 
+/**
+ * @throws InternalError thrown if unexpected tokens are encountered
+ */
 static void compileTerm(Token *&tok, AST_state& state)
 {
     if (!tok)
@@ -929,6 +936,9 @@ static bool isPrefixUnary(const Token* tok, bool cpp)
     return tok->strAt(-1) == ")" && iscast(tok->linkAt(-1), cpp);
 }
 
+/**
+ * @throws InternalError thrown if unexpected tokens are encountered
+ */
 static void compilePrecedence2(Token *&tok, AST_state& state)
 {
     auto doCompileScope = [&](const Token* tok) -> bool {
@@ -1419,6 +1429,9 @@ static void compileComma(Token *&tok, AST_state& state)
     }
 }
 
+/**
+ * @throws InternalError thrown if maximum AST depth is exceeded
+ */
 static void compileExpression(Token *&tok, AST_state& state)
 {
     if (state.depth > AST_MAX_DEPTH)
@@ -1555,6 +1568,9 @@ static Token *skipMethodDeclEnding(Token *tok)
     return nullptr;
 }
 
+/**
+ * @throws InternalError thrown in case of syntax error
+ */
 static Token * createAstAtToken(Token *tok)
 {
     const bool cpp = tok->isCpp();
@@ -1850,7 +1866,12 @@ namespace {
 
         ~OnException() {
 #ifndef _MSC_VER
-            if (std::uncaught_exception())
+#if defined(__cpp_lib_uncaught_exceptions)
+            const bool b = std::uncaught_exceptions() > 0;
+#else
+            const bool b = std::uncaught_exception();
+#endif
+            if (b)
                 f();
 #endif
         }

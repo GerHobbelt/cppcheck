@@ -23,6 +23,7 @@
 // headers that declare mocked functions/variables
 #include "applicationlist.h"
 #include "common.h"
+#include "filesettings.h"
 #include "projectfile.h"
 #include "threadhandler.h"
 #include "threadresult.h"
@@ -33,6 +34,7 @@
 #include "errorlogger.h"
 #include "errortypes.h"
 #include "report.h"
+#include "resultitem.h"
 #include "showtypes.h"
 #include "suppressions.h"
 #include "xmlreport.h"
@@ -132,6 +134,19 @@ void TestResultsTree::test1() const
     QCOMPARE(tree.isRowHidden(0,QModelIndex()), true);  // Added item is hidden
     tree.showResults(ShowTypes::ShowType::ShowInformation, true);
     QCOMPARE(tree.isRowHidden(0,QModelIndex()), false); // Show item
+}
+
+void TestResultsTree::duplicateResults() const
+{
+    // #14359 - filter out duplicate warnings
+    ResultsTree tree(nullptr);
+
+    ErrorItem errorItem;
+    errorItem.summary = errorItem.message = "test";
+    errorItem.severity = Severity::error;
+    errorItem.errorPath << QErrorPathItem();
+    QVERIFY(tree.addErrorItem(errorItem));
+    QVERIFY(!tree.addErrorItem(errorItem));
 }
 
 static QErrorPathItem createErrorPathItem(QString file, int line, int column, QString info) {

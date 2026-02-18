@@ -23,7 +23,6 @@
 #include "errorlogger.h"
 #include "errortypes.h"
 #include "library.h"
-#include "mathlib.h"
 #include "platform.h"
 #include "settings.h"
 #include "symboldatabase.h"
@@ -31,6 +30,7 @@
 #include "tokenize.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <utility>
 #include <vector>
 
@@ -1071,8 +1071,8 @@ void CheckMemoryLeakNoVar::checkForUnreleasedInputArgument(const Scope *scope)
                 const Variable* argvar = tok->function()->getArgumentVar(argnr);
                 if (!argvar || !argvar->valueType())
                     continue;
-                const MathLib::bigint argSize = argvar->valueType()->typeSize(mSettings->platform, /*p*/ true);
-                if (argSize <= 0 || argSize >= mSettings->platform.sizeof_pointer)
+                const size_t argSize = argvar->valueType()->getSizeOf(*mSettings, ValueType::Accuracy::ExactOrZero, ValueType::SizeOf::Pointer);
+                if (argSize == 0 || argSize >= mSettings->platform.sizeof_pointer)
                     continue;
             }
             functionCallLeak(arg, arg->str(), functionName);

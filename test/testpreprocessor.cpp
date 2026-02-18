@@ -21,6 +21,7 @@
 // the code for a known configuration, it generates the code for each configuration.
 
 #include "errortypes.h"
+#include "library.h"
 #include "path.h"
 #include "platform.h"
 #include "preprocessor.h"
@@ -55,13 +56,14 @@ private:
         std::vector<std::string> files;
         simplecpp::TokenList tokens1 = simplecpp::TokenList(code, files, "file.cpp", &outputList);
         Preprocessor p(tokens1, settingsDefault, errorLogger, Path::identify(tokens1.getFiles()[0], false));
-        simplecpp::TokenList tokens2 = p.preprocess("", files, true);
+        ASSERT(p.loadFiles(files));
+        simplecpp::TokenList tokens2 = p.preprocess("", files, outputList);
         (void)p.reportOutput(outputList, true);
         return tokens2.stringify();
     }
 
     template<size_t size>
-    static void preprocess(const char (&code)[size], std::vector<std::string> &files, const std::string& file0, TokenList& tokenlist, const simplecpp::DUI& dui)
+    void preprocess(const char (&code)[size], std::vector<std::string> &files, const std::string& file0, TokenList& tokenlist, const simplecpp::DUI& dui)
     {
         if (!files.empty())
             throw std::runtime_error("file list not empty");
@@ -69,13 +71,15 @@ private:
         if (tokenlist.front())
             throw std::runtime_error("token list not empty");
 
-        const simplecpp::TokenList tokens1(code, files, file0);
+        simplecpp::OutputList outputList;
+        const simplecpp::TokenList tokens1(code, files, file0, &outputList);
 
         // Preprocess..
         simplecpp::TokenList tokens2(files);
         simplecpp::FileDataCache cache;
-        // TODO: provide and handle outputList
-        simplecpp::preprocess(tokens2, tokens1, files, cache, dui);
+        simplecpp::preprocess(tokens2, tokens1, files, cache, dui, &outputList);
+        Preprocessor preprocessor(tokens2, settingsDefault, *this, Standards::Language::C);
+        (void)preprocessor.reportOutput(outputList, true);
 
         // Tokenizer..
         tokenlist.createTokens(std::move(tokens2));
@@ -117,7 +121,8 @@ private:
         simplecpp::OutputList outputList;
         std::vector<std::string> files;
 
-        simplecpp::TokenList tokens(code, size, files, Path::simplifyPath(filename), &outputList);
+        simplecpp::TokenList tokens({code, size}, files, Path::simplifyPath(filename), &outputList);
+
         // TODO: we should be using the actual Preprocessor implementation
         Preprocessor preprocessor(tokens, settings, errorlogger, Path::identify(tokens.getFiles()[0], false));
 
@@ -313,6 +318,10 @@ private:
         TEST_CASE(getConfigs11); // #9832 - include guards
         TEST_CASE(getConfigs12); // #14222
         TEST_CASE(getConfigs13); // #14222
+        TEST_CASE(getConfigs14); // #1059
+        TEST_CASE(getConfigs15); // #1059
+        TEST_CASE(getConfigs16); // #1059
+        TEST_CASE(getConfigs17); // #1059
         TEST_CASE(getConfigsError);
 
         TEST_CASE(getConfigsD1);
@@ -368,9 +377,11 @@ private:
         if (library)
             ASSERT(settings.library.load("", library, false).errorcode == Library::ErrorCode::OK);
         std::vector<std::string> files;
-        // TODO: this adds an empty filename
-        simplecpp::TokenList tokens(code,files);
+        simplecpp::OutputList outputList;
+        simplecpp::TokenList tokens(code,files,"test.c",&outputList);
         Preprocessor preprocessor(tokens, settings, *this, Standards::Language::C); // TODO: do we need to consider #file?
+        ASSERT(preprocessor.loadFiles(files));
+        ASSERT(!preprocessor.reportOutput(outputList, true));
         preprocessor.removeComments();
         const std::set<std::string> configs = preprocessor.getConfigs();
         std::string ret;
@@ -382,9 +393,9 @@ private:
     template<size_t size>
     std::size_t getHash(const char (&code)[size]) {
         std::vector<std::string> files;
-        // TODO: this adds an empty filename
-        simplecpp::TokenList tokens(code,files);
+        simplecpp::TokenList tokens(code,files,"test.c");
         Preprocessor preprocessor(tokens, settingsDefault, *this, Standards::Language::C); // TODO: do we need to consider #file?
+        ASSERT(preprocessor.loadFiles(files));
         preprocessor.removeComments();
         return preprocessor.calculateHash("");
     }
@@ -645,7 +656,7 @@ private:
                                 "#else\n"
                                 "    B\n"
                                 "#endif\n";
-        TODO_ASSERT_EQUALS("\nLIBVER=101\n", "\n", getConfigsStr(filedata));
+        ASSERT_EQUALS("\nLIBVER=101\n", getConfigsStr(filedata));
     }
 
     void if_cond2() {
@@ -1981,9 +1992,9 @@ private:
     }
 
     void inline_suppressions() {
-        /*const*/ Settings settings;
-        settings.inlineSuppressions = true;
-        settings.checks.enable(Checks::missingInclude);
+        const auto settings = dinit(Settings,
+                                    $.inlineSuppressions = true,
+                                        $.checks.enable (Checks::missingInclude));
 
         const char code[] = "// cppcheck-suppress missingInclude\n"
                             "#include \"missing.h\"\n"
@@ -2282,6 +2293,34 @@ private:
         ASSERT_EQUALS("\n", getConfigsStr(filedata, nullptr, "gnu.cfg"));
     }
 
+    void getConfigs14() { // #1059
+        const char filedata[] = "#if A >= 1\n"
+                                "1\n"
+                                "#endif\n";
+        ASSERT_EQUALS("\nA=1\n", getConfigsStr(filedata));
+    }
+
+    void getConfigs15() { // #1059
+        const char filedata[] = "#if A <= 1\n"
+                                "1\n"
+                                "#endif\n";
+        ASSERT_EQUALS("\nA=1\n", getConfigsStr(filedata));
+    }
+
+    void getConfigs16() { // #1059
+        const char filedata[] = "#if A > 1\n"
+                                "1\n"
+                                "#endif\n";
+        ASSERT_EQUALS("\nA=2\n", getConfigsStr(filedata));
+    }
+
+    void getConfigs17() { // #1059
+        const char filedata[] = "#if A < 1\n"
+                                "1\n"
+                                "#endif\n";
+        ASSERT_EQUALS("\nA=0\n", getConfigsStr(filedata));
+    }
+
     void getConfigsError() {
         const char filedata1[] = "#ifndef X\n"
                                  "#error \"!X\"\n"
@@ -2408,10 +2447,11 @@ private:
 
     // test for existing local include
     void testMissingInclude() {
-        /*const*/ Settings settings;
-        settings.clearIncludeCache = true;
-        settings.checks.enable(Checks::missingInclude);
-        settings.templateFormat = "simple"; // has no effect
+        const auto settings = dinit(Settings,
+                                    $.clearIncludeCache = true,
+                                        $.checks.enable (Checks::missingInclude),
+                                        $.templateFormat = "simple" // has no effect
+                                    );
         setTemplateFormat("simple");
 
         ScopedFile header("header.h", "");
@@ -2424,10 +2464,11 @@ private:
 
     // test for missing local include
     void testMissingInclude2() {
-        /*const*/ Settings settings;
-        settings.clearIncludeCache = true;
-        settings.checks.enable(Checks::missingInclude);
-        settings.templateFormat = "simple"; // has no effect
+        const auto settings = dinit(Settings,
+                                    $.clearIncludeCache = true,
+                                        $.checks.enable (Checks::missingInclude),
+                                        $.templateFormat = "simple" // has no effect
+                                    );
         setTemplateFormat("simple");
 
         const char code[] = "#include \"header.h\"";
@@ -2438,10 +2479,11 @@ private:
 
     // test for missing local include - no include path given
     void testMissingInclude3() {
-        /*const*/ Settings settings;
-        settings.clearIncludeCache = true;
-        settings.checks.enable(Checks::missingInclude);
-        settings.templateFormat = "simple"; // has no effect
+        const auto settings = dinit(Settings,
+                                    $.clearIncludeCache = true,
+                                        $.checks.enable (Checks::missingInclude),
+                                        $.templateFormat = "simple" // has no effect
+                                    );
         setTemplateFormat("simple");
 
         ScopedFile header("header.h", "", "inc");
@@ -2454,11 +2496,12 @@ private:
 
     // test for existing local include - include path provided
     void testMissingInclude4() {
-        /*const*/ Settings settings;
-        settings.clearIncludeCache = true;
-        settings.checks.enable(Checks::missingInclude);
-        settings.includePaths.emplace_back("inc");
-        settings.templateFormat = "simple"; // has no effect
+        const auto settings = dinit(Settings,
+                                    $.clearIncludeCache = true,
+                                        $.checks.enable (Checks::missingInclude),
+                                        $.includePaths.emplace_back ("inc"),
+                                        $.templateFormat = "simple" // has no effect
+                                    );
         setTemplateFormat("simple");
 
         ScopedFile header("header.h", "", "inc");
@@ -2471,11 +2514,12 @@ private:
 
     // test for existing local include - absolute path
     void testMissingInclude5() {
-        /*const*/ Settings settings;
-        settings.clearIncludeCache = true;
-        settings.checks.enable(Checks::missingInclude);
-        settings.includePaths.emplace_back("inc");
-        settings.templateFormat = "simple"; // has no effect
+        const auto settings = dinit(Settings,
+                                    $.clearIncludeCache = true,
+                                        $.checks.enable (Checks::missingInclude),
+                                        $.includePaths.emplace_back ("inc"),
+                                        $.templateFormat = "simple" // has no effect
+                                    );
         setTemplateFormat("simple");
 
         ScopedFile header("header.h", "", Path::getCurrentPath());
@@ -2488,10 +2532,11 @@ private:
 
     // test for missing local include - absolute path
     void testMissingInclude6() {
-        /*const*/ Settings settings;
-        settings.clearIncludeCache = true;
-        settings.checks.enable(Checks::missingInclude);
-        settings.templateFormat = "simple"; // has no effect
+        const auto settings = dinit(Settings,
+                                    $.clearIncludeCache = true,
+                                        $.checks.enable (Checks::missingInclude),
+                                        $.templateFormat = "simple" // has no effect
+                                    );
         setTemplateFormat("simple");
 
         const std::string header = Path::join(Path::getCurrentPath(), "header.h");
@@ -2504,10 +2549,11 @@ private:
 
     // test for missing system include - system includes are not searched for in relative path
     void testMissingSystemInclude() {
-        /*const*/ Settings settings;
-        settings.clearIncludeCache = true;
-        settings.checks.enable(Checks::missingInclude);
-        settings.templateFormat = "simple"; // has no effect
+        const auto settings = dinit(Settings,
+                                    $.clearIncludeCache = true,
+                                        $.checks.enable (Checks::missingInclude),
+                                        $.templateFormat = "simple" // has no effect
+                                    );
         setTemplateFormat("simple");
 
         ScopedFile header("header.h", "");
@@ -2520,10 +2566,11 @@ private:
 
     // test for missing system include
     void testMissingSystemInclude2() {
-        /*const*/ Settings settings;
-        settings.clearIncludeCache = true;
-        settings.checks.enable(Checks::missingInclude);
-        settings.templateFormat = "simple"; // has no effect
+        const auto settings = dinit(Settings,
+                                    $.clearIncludeCache = true,
+                                        $.checks.enable (Checks::missingInclude),
+                                        $.templateFormat = "simple" // has no effect
+                                    );
         setTemplateFormat("simple");
 
         const char code[] = "#include <header.h>";
@@ -2534,28 +2581,30 @@ private:
 
     // test for existing system include in system include path
     void testMissingSystemInclude3() {
-        /*const*/ Settings settings;
-        settings.clearIncludeCache = true;
-        settings.checks.enable(Checks::missingInclude);
-        settings.templateFormat = "simple"; // has no effect
+        const auto settings = dinit(Settings,
+                                    $.clearIncludeCache = true,
+                                        $.checks.enable (Checks::missingInclude),
+                                        $.templateFormat = "simple", // has no effect
+                                        $.includePaths.emplace_back ("system")
+                                    );
         setTemplateFormat("simple");
-        settings.includePaths.emplace_back("system");
 
         ScopedFile header("header.h", "", "system");
 
         const char code[] = "#include <header.h>";
-        (void)getcodeforcfg(settings0, *this, code, "", "test.c");
+        (void)getcodeforcfg(settings, *this, code, "", "test.c");
 
         ASSERT_EQUALS("", errout_str());
     }
 
     // test for existing system include - absolute path
     void testMissingSystemInclude4() {
-        /*const*/ Settings settings;
-        settings.clearIncludeCache = true;
-        settings.checks.enable(Checks::missingInclude);
-        settings.includePaths.emplace_back("inc");
-        settings.templateFormat = "simple"; // has no effect
+        const auto settings = dinit(Settings,
+                                    $.clearIncludeCache = true,
+                                        $.checks.enable (Checks::missingInclude),
+                                        $.includePaths.emplace_back ("inc");
+                                    $.templateFormat = "simple" // has no effect
+                                    );
         setTemplateFormat("simple");
 
         ScopedFile header("header.h", "", Path::getCurrentPath());
@@ -2568,10 +2617,11 @@ private:
 
     // test for missing system include - absolute path
     void testMissingSystemInclude5() {
-        /*const*/ Settings settings;
-        settings.clearIncludeCache = true;
-        settings.checks.enable(Checks::missingInclude);
-        settings.templateFormat = "simple"; // has no effect
+        const auto settings = dinit(Settings,
+                                    $.clearIncludeCache = true,
+                                        $.checks.enable (Checks::missingInclude),
+                                        $.templateFormat = "simple" // has no effect
+                                    );
         setTemplateFormat("simple");
 
         const std::string header = Path::join(Path::getCurrentPath(), "header.h");
@@ -2584,10 +2634,12 @@ private:
 
     // test for missing local and system include
     void testMissingIncludeMixed() {
-        /*const*/ Settings settings;
-        settings.clearIncludeCache = true;
-        settings.checks.enable(Checks::missingInclude);
-        settings.templateFormat = "simple"; // has no effect
+        const auto settings = dinit(Settings,
+                                    $.clearIncludeCache = true,
+                                        $.checks.enable (Checks::missingInclude),
+
+                                        $.templateFormat = "simple" // has no effect
+                                    );
         setTemplateFormat("simple");
 
         ScopedFile header("header.h", "");
@@ -2605,11 +2657,12 @@ private:
     }
 
     void testMissingIncludeCheckConfig() {
-        /*const*/ Settings settings;
-        settings.clearIncludeCache = true;
-        settings.checks.enable(Checks::missingInclude);
-        settings.includePaths.emplace_back("system");
-        settings.templateFormat = "simple"; // has no effect
+        const auto settings = dinit(Settings,
+                                    $.clearIncludeCache = true,
+                                        $.checks.enable (Checks::missingInclude),
+                                        $.includePaths.emplace_back ("system");
+                                    $.templateFormat = "simple" // has no effect
+                                    );
         setTemplateFormat("simple");
 
         ScopedFile header("header.h", "");
@@ -2685,7 +2738,7 @@ private:
         ASSERT(getHash(code2) != getHash(code3));
     }
 
-    void standard() const {
+    void standard() {
 
         const char code[] = "int a;";
         // TODO: this bypasses the standard determined from the settings - the parameter should not be exposed
@@ -2727,7 +2780,8 @@ private:
             dui.std = "gnu77";
             std::vector<std::string> files;
             TokenList tokenlist{settingsDefault, Standards::Language::CPP};
-            preprocess(code, files, "test.cpp", tokenlist, dui);
+            // TODO: can this happen from application code? if yes we need to turn it into a proper error
+            ASSERT_THROW_EQUALS_2(preprocess(code, files, "test.cpp", tokenlist, dui), std::runtime_error, "unexpected simplecpp::Output type 9");
             ASSERT(!tokenlist.front()); // nothing is tokenized when an unknown standard is provided
         }
     }

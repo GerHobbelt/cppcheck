@@ -669,12 +669,15 @@ namespace {
             return mNameToken ? mNameToken->str() : "";
         }
 
-        void replace(Token* tok) {
+        /**
+         * @throws InternalError thrown if simplification failed
+         */
+        void replace(Token* tok, const std::string &originalname) {
             if (tok == mNameToken)
                 return;
 
             mUsed = true;
-            const bool isFunctionPointer = Token::Match(mNameToken, "%name% )");
+            const bool isFunctionPointer = Tokenizer::isFunctionPointer(mNameToken);
 
             // Special handling for T(...) when T is a pointer
             if (Token::Match(tok, "%name% [({]") && !isFunctionPointer && !Token::simpleMatch(tok->linkAt(1), ") (")) {
@@ -701,7 +704,7 @@ namespace {
                         insertTokens(tok2, mRangeTypeQualifiers);
                     }
                     else { // functional-style cast
-                        tok->originalName(tok->str());
+                        tok->originalName(originalname);
                         tok->isSimplifiedTypedef(true);
                         tok->str("(");
                         Token* tok2 = insertTokens(tok, mRangeType);
@@ -721,14 +724,14 @@ namespace {
             if (isFunctionPointer && isCast(tok->previous())) {
                 tok->insertToken("*");
                 Token* const tok_1 = insertTokens(tok, std::pair<Token*, Token*>(mRangeType.first, mNameToken->linkAt(1)));
-                tok_1->originalName(tok->str());
+                tok_1->originalName(originalname);
                 tok->deleteThis();
                 return;
             }
 
             // Inherited type => skip "struct" / "class"
             if (Token::Match(mRangeType.first, "const| struct|class %name% {") && Token::Match(tok->previous(), "public|protected|private|<")) {
-                tok->originalName(tok->str());
+                tok->originalName(originalname);
                 tok->str(mRangeType.second->strAt(-1));
                 return;
             }
@@ -736,7 +739,7 @@ namespace {
             if (Token::Match(tok, "%name% ::")) {
                 if (Token::Match(mRangeType.first, "const| struct|class|union|enum %name% %name%|{") ||
                     Token::Match(mRangeType.first, "%name% %name% ;")) {
-                    tok->originalName(tok->str());
+                    tok->originalName(originalname);
                     tok->str(mRangeType.second->strAt(-1));
                 } else {
                     mReplaceFailed = true;
@@ -790,8 +793,8 @@ namespace {
             Token* const tok2 = insertTokens(tok, rangeType);
             Token* const tok3 = insertTokens(tok2, mRangeTypeQualifiers);
 
-            tok2->originalName(tok->str());
-            tok3->originalName(tok->str());
+            tok2->originalName(originalname);
+            tok3->originalName(originalname);
             Token *after = tok3;
             while (Token::Match(after, "%name%|*|&|&&|::"))
                 after = after->next();
@@ -1019,16 +1022,26 @@ namespace {
     };
 }
 
+bool Tokenizer::isFunctionPointer(const Token* tok) {
+    return Token::Match(tok, "%name% ) (");
+}
+
 void Tokenizer::simplifyTypedef()
 {
     // Simplify global typedefs that are not redefined with the fast 1-pass simplification.
     // Then use the slower old typedef simplification.
-    std::map<std::string, int> numberOfTypedefs;
+    std::map<std::string, std::set<std::string>> numberOfTypedefs;
     for (Token* tok = list.front(); tok; tok = tok->next()) {
         if (tok->str() == "typedef") {
             TypedefSimplifier ts(tok);
-            if (!ts.fail())
-                numberOfTypedefs[ts.name()]++;
+            if (ts.fail() || !ts.nameToken())
+                continue;
+            std::string existing_data_type;
+            for (const Token* t = ts.getTypedefToken()->next(); t != ts.endToken(); t = t->next()) {
+                if (t != ts.nameToken())
+                    existing_data_type += t->str() + " ";
+            }
+            numberOfTypedefs[ts.name()].insert(existing_data_type);
             continue;
         }
     }
@@ -1046,8 +1059,7 @@ void Tokenizer::simplifyTypedef()
 
         if (indentlevel == 0 && tok->str() == "typedef") {
             TypedefSimplifier ts(tok);
-            if (!ts.fail() && numberOfTypedefs[ts.name()] == 1 &&
-                (numberOfTypedefs.find(ts.getTypedefToken()->strAt(1)) == numberOfTypedefs.end() || ts.getTypedefToken()->strAt(2) == "(")) {
+            if (!ts.fail() && numberOfTypedefs[ts.name()].size() == 1) {
                 if (mSettings.severity.isEnabled(Severity::portability) && ts.isInvalidConstFunctionType(typedefs))
                     invalidConstFunctionTypeError(tok->next());
                 typedefs.emplace(ts.name(), ts);
@@ -1060,8 +1072,11 @@ void Tokenizer::simplifyTypedef()
         auto it = typedefs.find(tok->str());
         if (it != typedefs.end() && it->second.canReplace(tok)) {
             std::set<std::string> r;
+            std::string originalname;
             while (it != typedefs.end() && r.insert(tok->str()).second) {
-                it->second.replace(tok);
+                if (originalname.empty())
+                    originalname = tok->str();
+                it->second.replace(tok, originalname);
                 it = typedefs.find(tok->str());
             }
         } else if (tok->str() == "enum") {
@@ -1088,7 +1103,7 @@ void Tokenizer::simplifyTypedef()
                 typedefInfo.lineNumber = typedefToken->linenr();
                 typedefInfo.column = typedefToken->column();
                 typedefInfo.used = t.second.isUsed();
-                typedefInfo.isFunctionPointer = Token::Match(t.second.nameToken(), "%name% ) (");
+                typedefInfo.isFunctionPointer = isFunctionPointer(t.second.nameToken());
                 if (typedefInfo.isFunctionPointer) {
                     const Token* tok = typedefToken;
                     while (tok != t.second.endToken()) {
@@ -1622,7 +1637,7 @@ void Tokenizer::simplifyTypedefCpp()
         typedefInfo.lineNumber = typeName->linenr();
         typedefInfo.column = typeName->column();
         typedefInfo.used = false;
-        typedefInfo.isFunctionPointer = Token::Match(typeName, "%name% ) (");
+        typedefInfo.isFunctionPointer = isFunctionPointer(typeName);
         if (typedefInfo.isFunctionPointer) {
             const Token* t = typeDef;
             while (t != tok) {
@@ -3466,7 +3481,7 @@ bool Tokenizer::simplifyTokens1(const std::string &configuration, int fileIndex)
             if (tok->tokType() == Token::eChar && tok->values().empty()) {
                 try {
                     simplecpp::characterLiteralToLL(tok->str());
-                } catch (const std::exception &e) {
+                } catch (const std::runtime_error &e) {
                     unhandledCharLiteral(tok, e.what());
                 }
             }
@@ -4230,6 +4245,9 @@ void VariableMap::addVariable(const std::string& varname, bool globalNamespace)
     it->second = ++mVarId;
 }
 
+/**
+ * @throws Token* thrown when closing brackets are missing
+ */
 static bool setVarIdParseDeclaration(Token*& tok, const VariableMap& variableMap, bool executableScope, Standards::cstd_t cStandard)
 {
     const Token* const tok1 = tok;
@@ -7155,7 +7173,7 @@ void Tokenizer::simplifyFunctionPointers()
         while (Token::Match(tok2, "%type%|:: %type%|::"))
             tok2 = tok2->next();
 
-        if (!Token::Match(tok2, "%name% ) (") &&
+        if (!isFunctionPointer(tok2) &&
             !Token::Match(tok2, "%name% [ ] ) (") &&
             !(Token::Match(tok2, "%name% (") && Token::simpleMatch(tok2->linkAt(1), ") ) (")))
             continue;
@@ -7448,7 +7466,7 @@ void Tokenizer::simplifyVarDecl(Token * tokBegin, const Token * const tokEnd, co
             }
             // Function pointer
             if (Token::simpleMatch(varName, "( *") &&
-                Token::Match(varName->link()->previous(), "%name% ) (") &&
+                isFunctionPointer(varName->link()->previous()) &&
                 Token::simpleMatch(varName->link()->linkAt(1), ") =")) {
                 Token *endDecl = varName->link()->linkAt(1);
                 varName = varName->link()->previous();
@@ -8668,6 +8686,9 @@ void Tokenizer::findGarbageCode() const
                 }
                 if (!Token::Match(tok->next(), "( !!)"))
                     syntaxError(tok);
+                if (Token::simpleMatch(tok->linkAt(1), ") }")) {
+                    syntaxError(tok->linkAt(1)->next());
+                }
                 if (tok->str() != "for") {
                     if (isGarbageExpr(tok->next(), tok->linkAt(1), cpp && (mSettings.standards.cpp>=Standards::cppstd_t::CPP17)))
                         syntaxError(tok);
@@ -9376,7 +9397,7 @@ Token* Tokenizer::getAttributeFuncTok(Token* tok, bool gccattr) const {
         if (Token::simpleMatch(prev, ")")) {
             if (Token::Match(prev->link()->previous(), "%name% ("))
                 return prev->link()->previous();
-            if (Token::Match(prev->link()->tokAt(-2), "%name% ) ("))
+            if (isFunctionPointer(prev->link()->tokAt(-2)))
                 return prev->link()->tokAt(-2);
         }
         if (Token::simpleMatch(prev, ")") && Token::Match(prev->link()->tokAt(-2), "operator %op% (") && isCPP())
@@ -9586,17 +9607,27 @@ void Tokenizer::simplifyCPPAttribute()
                 if (!head)
                     syntaxError(tok);
 
-                while (Token::Match(head->next(), "%name%|*|&|&&|const|static|inline|volatile"))
-                    head = head->next();
-                if (Token::Match(head, "%name%") && !Token::Match(head, "auto ["))
-                    head->isAttributeMaybeUnused(true);
-                else if (Token::Match(tok->previous(), "%name%") && Token::Match(tok->link(), "] [;={]")) {
-                    tok->previous()->isAttributeMaybeUnused(true);
+                if (Token::simpleMatch(head, ";")) {
+                    Token *backTok = tok;
+                    while (Token::Match(backTok, "]|[|)")) {
+                        if (Token::Match(backTok, "]|)"))
+                            backTok = backTok->link();
+                        backTok = backTok->previous();
+                    }
+                    if (Token::Match(backTok, "%name%")) {
+                        backTok->isAttributeMaybeUnused(true);
+                    }
                 } else {
-                    if (Token::simpleMatch(head->next(), "[")) {
+                    while (Token::Match(head->next(), "%name%|::|*|&|&&"))
+                        head = head->next();
+                    if (Token::Match(head, "%name%") && !Token::Match(head, "auto ["))
+                        head->isAttributeMaybeUnused(true);
+                    else if (Token::Match(tok->previous(), "%name%") && Token::Match(tok->link(), "] [;={]")) {
+                        tok->previous()->isAttributeMaybeUnused(true);
+                    } else if (Token::simpleMatch(head->next(), "[")) {
                         head = head->next();
                         const Token *end = head->link();
-                        for (head = head->next(); end && head != end; head = head->next()) {
+                        for (head = head->next(); head != end; head = head->next()) {
                             if (Token::Match(head, "%name%")) {
                                 head->isAttributeMaybeUnused(true);
                             }
@@ -10085,17 +10116,7 @@ void Tokenizer::simplifyBitfields()
         if (!Token::Match(tok, ";|{|}|public:|protected:|private:"))
             continue;
 
-        bool isEnum = false;
-        if (tok->str() == "}") {
-            const Token *type = tok->link()->previous();
-            while (type && type->isName()) {
-                if (type->str() == "enum") {
-                    isEnum = true;
-                    break;
-                }
-                type = type->previous();
-            }
-        }
+        const bool isEnum = tok->str() == "}" && isEnumStart(tok->link());
 
         const auto tooLargeError = [this](const Token *tok) {
             const auto max = std::numeric_limits<short>::max();

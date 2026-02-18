@@ -24,8 +24,6 @@
 
 #include <chrono>
 #include <cstdint>
-#include <ctime>
-#include <functional>
 #include <map>
 #include <mutex>
 #include <string>
@@ -91,7 +89,8 @@ public:
 
     void stop();
 
-    static void run(std::string str, ShowTime showtimeMode, TimerResultsIntf* timerResults, const std::function<void()>& f) {
+    template<class TFunc>
+    static void run(std::string str, ShowTime showtimeMode, TimerResultsIntf* timerResults, const TFunc& f) {
         Timer t(std::move(str), showtimeMode, timerResults);
         f();
     }

@@ -27,6 +27,8 @@
 #include <list>
 #include <string>
 
+#include <simplecpp.h>
+
 class TestUnusedVar : public TestFixture {
 public:
     TestUnusedVar() : TestFixture("TestUnusedVar") {}
@@ -1633,9 +1635,10 @@ private:
     void structmember15() { // #3088
         std::list<Directive> directives;
         std::vector<std::string> f = { "test.cpp" };
-        simplecpp::Location loc(f);
+        simplecpp::TokenList tokenList(f);
+        simplecpp::Location loc;
         loc.line = 1;
-        directives.emplace_back(loc, "#pragma pack(1)");
+        directives.emplace_back(tokenList, loc, "#pragma pack(1)");
         checkStructMemberUsage("\nstruct Foo { int x; int y; };", dinit(CheckStructMemberUsageOptions, $.directives = &directives));
         ASSERT_EQUALS("", errout_str());
     }
@@ -5228,6 +5231,13 @@ private:
                               "    }\n"
                               "}");
         ASSERT_EQUALS("", errout_str());
+
+        functionVariableUsage("void f(const std::vector<int>& v) {\n" // #13303
+                              "    std::vector<int>::const_iterator it = v.cbegin();\n"
+                              "    if (*it == 0)\n"
+                              "        it = v.cend();\n"
+                              "}\n");
+        ASSERT_EQUALS("[test.cpp:4:12]: (style) Variable 'it' is assigned a value that is never used. [unreadVariable]\n", errout_str());
     }
 
     void localvaralias19() { // #9828
@@ -6524,6 +6534,12 @@ private:
                               "    [[maybe_unused]] char b[1][2];\n"
                               "}");
         ASSERT_EQUALS("", errout_str());
+
+        functionVariableUsage("int main() {\n"
+                              "    std::string a [[maybe_unused]];\n"
+                              "    f();\n"
+                              "}");
+        ASSERT_EQUALS("", errout_str());
     }
 
     void localvarrvalue() { // ticket #13977
@@ -6983,6 +6999,15 @@ private:
                               "    return hash[0];\n"
                               "}\n");
         ASSERT_EQUALS("", errout_str());
+
+        functionVariableUsage("template <int N>\n" // #14199
+                              "struct S {\n"
+                              "    int i;\n"
+                              "};\n"
+                              "void f() {\n"
+                              "    S<0> s;\n"
+                              "}\n");
+        ASSERT_EQUALS("[test.cpp:6:10]: (style) Unused variable: s [unusedVariable]\n", errout_str());
     }
 
     void localvarFuncPtr() {

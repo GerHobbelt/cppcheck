@@ -403,6 +403,9 @@ void Token::replace(Token *replaceThis, Token *start, Token *end)
     delete replaceThis;
 }
 
+/**
+ * @throws InternalError thrown on unexpected command or missing varid with %varid%
+ */
 static
 #if defined(__GNUC__)
 // GCC does not inline this by itself
@@ -784,7 +787,7 @@ nonneg int Token::getStrSize(const Token *tok, const Settings &settings)
     if (tok->valueType()) {
         ValueType vt(*tok->valueType());
         vt.pointer = 0;
-        sizeofType = ValueFlow::getSizeOf(vt, settings, ValueFlow::Accuracy::ExactOrZero);
+        sizeofType = vt.getSizeOf(settings, ValueType::Accuracy::ExactOrZero, ValueType::SizeOf::Pointer);
     }
     return getStrArraySize(tok) * sizeofType;
 }

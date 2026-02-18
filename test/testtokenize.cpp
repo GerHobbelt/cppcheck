@@ -39,6 +39,8 @@
 
 #include <simplecpp.h>
 
+class ErrorLogger;
+
 class TestTokenizer : public TestFixture {
 public:
     TestTokenizer() : TestFixture("TestTokenizer") {}
@@ -276,7 +278,8 @@ private:
         TEST_CASE(functionAttributeListAfter);
         TEST_CASE(functionAttributeListAfter2);
         TEST_CASE(cppMaybeUnusedBefore);
-        TEST_CASE(cppMaybeUnusedAfter);
+        TEST_CASE(cppMaybeUnusedAfter1);
+        TEST_CASE(cppMaybeUnusedAfter2);
         TEST_CASE(cppMaybeUnusedStructuredBinding);
 
         TEST_CASE(splitTemplateRightAngleBrackets);
@@ -599,6 +602,8 @@ private:
         std::vector<std::string> files;
         simplecpp::TokenList tokens1(code, files, filename, &outputList);
         Preprocessor preprocessor(tokens1, settings, *this, Path::identify(tokens1.getFiles()[0], false));
+        (void)preprocessor.reportOutput(outputList, true);
+        ASSERT(preprocessor.loadFiles(files));
         std::list<Directive> directives = preprocessor.createDirectives();
 
         TokenList tokenlist{settings, Path::identify(filename, false)};
@@ -4256,9 +4261,22 @@ private:
         ASSERT(var && var->isAttributeMaybeUnused());
     }
 
-    void cppMaybeUnusedAfter() {
+    void cppMaybeUnusedAfter1() {
         const char code[] = "int var [[maybe_unused]] {};";
         const char expected[] = "int var { } ;";
+
+        SimpleTokenizer tokenizer(settings0, *this);
+        ASSERT(tokenizer.tokenize(code));
+
+        ASSERT_EQUALS(expected, tokenizer.tokens()->stringifyList(nullptr, false));
+
+        const Token *var = Token::findsimplematch(tokenizer.tokens(), "var");
+        ASSERT(var && var->isAttributeMaybeUnused());
+    }
+
+    void cppMaybeUnusedAfter2() {
+        const char code[] = "std::string var [[maybe_unused]];";
+        const char expected[] = "std :: string var ;";
 
         SimpleTokenizer tokenizer(settings0, *this);
         ASSERT(tokenizer.tokenize(code));
@@ -4943,6 +4961,20 @@ private:
                       tokenizeAndStringify("struct AB {\n"
                                            "  enum Foo {A,B} foo : 4;\n"
                                            "};"));
+
+        ASSERT_EQUALS("struct S {\n" // #14324
+                      "enum E : int { E0 , E1 } ; enum E e ;\n"
+                      "} ;",
+                      tokenizeAndStringify("struct S {\n"
+                                           "    enum E : int { E0, E1 } e : 2;\n"
+                                           "};\n"));
+
+        ASSERT_EQUALS("struct S {\n"
+                      "enum class E : std :: uint8_t { E0 , E1 } ; enum E e ;\n"
+                      "} ;",
+                      tokenizeAndStringify("struct S {\n"
+                                           "    enum class E : std::uint8_t { E0, E1 } e : 2;\n"
+                                           "};\n"));
     }
 
     void bitfields16() {
@@ -5349,8 +5381,8 @@ private:
         ASSERT_EQUALS("; x = 123 ;", tokenizeAndStringify(";x=({123;});"));
         ASSERT_EQUALS("; x = y ;", tokenizeAndStringify(";x=({y;});"));
         // #13419: Do not simplify compound statements in for loop
-        ASSERT_EQUALS("void foo ( int x ) { for ( ; ( { { } ; x < 1 ; } ) ; ) }",
-                      tokenizeAndStringify("void foo(int x) { for (;({ {}; x<1; });) }"));
+        ASSERT_EQUALS("void foo ( int x ) { for ( ; ( { { } ; x < 1 ; } ) ; ) { ; } }",
+                      tokenizeAndStringify("void foo(int x) { for (;({ {}; x<1; });); }"));
     }
 
     void simplifyOperatorName1() {
@@ -7631,6 +7663,11 @@ private:
 
         ASSERT_THROW_INTERNAL(tokenizeAndStringify("{ for (()()) }"), SYNTAX); // #11643
 
+        ASSERT_THROW_INTERNAL(tokenizeAndStringify("void f(const std::vector<std::string>& v) {\n" // #14326
+                                                   "    for (const std::string&s : v)\n"
+                                                   "}"),
+                              SYNTAX);
+
         ASSERT_NO_THROW(tokenizeAndStringify("S* g = ::new(ptr) S();")); // #12552
         ASSERT_NO_THROW(tokenizeAndStringify("void f(int* p) { return ::delete p; }"));
 
@@ -8470,6 +8507,10 @@ private:
                         "    int* p;\n"
                         "};\n",
                         "{ } } {",
+                        Token::Cpp11init::CPP11INIT);
+
+        testIsCpp11init("void f() { g([]() {}, { 1 }); }\n",
+                        "{ 1",
                         Token::Cpp11init::CPP11INIT);
 
         ASSERT_NO_THROW(tokenizeAndStringify("template<typename U> struct X {};\n" // don't crash

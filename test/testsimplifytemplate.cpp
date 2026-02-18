@@ -32,6 +32,8 @@
 #include <utility>
 #include <vector>
 
+class ErrorLogger;
+
 class TestSimplifyTemplate : public TestFixture {
 public:
     TestSimplifyTemplate() : TestFixture("TestSimplifyTemplate") {}
@@ -318,6 +320,11 @@ private:
 
         TEST_CASE(dumpTemplateArgFrom);
     }
+
+    class TemplateSimplifierTest : public TemplateSimplifier
+    {
+        friend class TestSimplifyTemplate;
+    };
 
     class TokenizerTest : public Tokenizer
     {
@@ -5647,7 +5654,7 @@ private:
         tokenizer.splitTemplateRightAngleBrackets(false);
 
         std::vector<const Token *> typeParametersInDeclaration;
-        TemplateSimplifier::getTemplateParametersInDeclaration(tokenizer.tokens()->tokAt(2), typeParametersInDeclaration);
+        TemplateSimplifierTest::getTemplateParametersInDeclaration(tokenizer.tokens()->tokAt(2), typeParametersInDeclaration);
 
         if (params.size() != typeParametersInDeclaration.size())
             return false;
@@ -5947,7 +5954,7 @@ private:
 
         ASSERT_LOC(tokenizer.tokenize(code), file, line);
 
-        return (TemplateSimplifier::instantiateMatch)(tokenizer.tokens(), numberOfArguments, false, patternAfter);
+        return (TemplateSimplifierTest::instantiateMatch)(tokenizer.tokens(), numberOfArguments, false, patternAfter);
     }
 
     void instantiateMatchTest() {

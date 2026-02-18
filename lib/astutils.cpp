@@ -2943,6 +2943,9 @@ static bool isExpressionChangedAt(const F& getExprTok,
         auto expr = getExprTok();
         if (!expr && !(tok->valueType() && tok->valueType()->pointer == 0 && tok->valueType()->reference == Reference::None))
             aliased = true;
+        if (!aliased && expr && expr->varId() && tok->isCast() && tok->valueType() && tok->valueType()->reference != Reference::None &&
+            Token::Match(tok->astOperand2() ? tok->astOperand2() : tok->astOperand1(), "%varid%", expr->varId()))
+            aliased = true;
         if (!aliased)
             aliased = isAliasOf(tok, expr, &i);
         if (!aliased)
@@ -3678,7 +3681,7 @@ bool isGlobalData(const Token *expr)
             // TODO check if pointer points at local data
             const Variable *lhsvar = tok->astOperand1()->variable();
             const ValueType *lhstype = tok->astOperand1()->valueType();
-            if (lhsvar->isPointer()) {
+            if (lhsvar->isPointer() || !lhstype || lhstype->type == ValueType::Type::ITERATOR) {
                 globalData = true;
                 return ChildrenToVisit::none;
             }
@@ -3686,7 +3689,7 @@ bool isGlobalData(const Token *expr)
                 globalData = true;
                 return ChildrenToVisit::none;
             }
-            if (lhsvar->isArgument() && (!lhstype || (lhstype->type <= ValueType::Type::VOID && !lhstype->container))) {
+            if (lhsvar->isArgument() && lhstype->type <= ValueType::Type::VOID && !lhstype->container) {
                 globalData = true;
                 return ChildrenToVisit::none;
             }

@@ -148,6 +148,15 @@ public:
     void clear() {
         mVarUsage.clear();
     }
+    void clearConst() {
+        std::set<int> keys;
+        for (const std::pair<const nonneg int, Variables::VariableUsage>& var : mVarUsage) {
+            if (var.second._var && var.second._var->isConst())
+                keys.emplace(var.first);
+        }
+        for (const int key : keys)
+            mVarUsage.erase(key);
+    }
     const std::map<nonneg int, VariableUsage> &varUsage() const {
         return mVarUsage;
     }
@@ -796,9 +805,8 @@ void CheckUnusedVar::checkFunctionVariableUsage_iterateScopes(const Scope* const
         // templates
         if (tok->isName() && endsWith(tok->str(), '>')) {
             // TODO: This is a quick fix to handle when constants are used
-            // as template parameters. Try to handle this better, perhaps
-            // only remove constants.
-            variables.clear();
+            // as template parameters.
+            variables.clearConst();
         }
 
         else if (Token::Match(tok->previous(), "[;{}]")) {
@@ -1273,12 +1281,6 @@ void CheckUnusedVar::checkFunctionVariableUsage()
                 continue;
 
             if (!tok->astOperand1())
-                continue;
-
-            const Token *iteratorToken = tok->astOperand1();
-            while (Token::Match(iteratorToken, "[.*]"))
-                iteratorToken = iteratorToken->astOperand1();
-            if (iteratorToken && iteratorToken->variable() && iteratorToken->variable()->typeEndToken()->str().find("iterator") != std::string::npos)
                 continue;
 
             const Token *op1tok = tok->astOperand1();

@@ -195,6 +195,7 @@ private:
         TEST_CASE(duplicateExpression16); // #10569
         TEST_CASE(duplicateExpression17); // #12036
         TEST_CASE(duplicateExpression18);
+        TEST_CASE(duplicateExpression19);
         TEST_CASE(duplicateExpressionLoop);
         TEST_CASE(duplicateValueTernary);
         TEST_CASE(duplicateValueTernarySizeof); // #13773
@@ -3981,6 +3982,19 @@ private:
               "    t.s->i = 0;\n"
               "}\n");
         ASSERT_EQUALS("", errout_str());
+
+        check("struct B {};\n" // #13877
+              "struct D : B { int i; };\n"
+              "void f(B& b) {\n"
+              "    static_cast<D&>(b).i = 0;\n"
+              "}\n"
+              "void g(B& b) {\n"
+              "    std::cin >> static_cast<D&>(b).i;\n"
+              "}\n"
+              "int h(B& b) {\n"
+              "    return static_cast<const D&>(b).i;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:9:10]: (style) Parameter 'b' can be declared as reference to const [constParameterReference]\n", errout_str());
     }
 
     void constParameterCallback() {
@@ -7984,6 +7998,14 @@ private:
                "#define MACRO_ALL (MACRO1 | MACRO2)\n"
                "void f() {\n"
                "    if (MACRO_ALL == 0) {}\n"
+               "}\n");
+        ASSERT_EQUALS("", errout_str());
+    }
+
+    void duplicateExpression19() {
+        checkP("const int i = 0;\n"
+               "void f() {\n"
+               "    assert(i == 0);\n"
                "}\n");
         ASSERT_EQUALS("", errout_str());
     }

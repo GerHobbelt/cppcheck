@@ -239,6 +239,11 @@ bool ResultsTree::addErrorItem(const ErrorItem& errorItem)
     if (errorItem.errorPath.isEmpty())
         return false;
 
+    const QString s = errorItem.toString();
+    if (mErrorList.contains(s))
+        return false;
+    mErrorList.append(s);
+
     QSharedPointer<ErrorItem> errorItemPtr{new ErrorItem(errorItem)};
 
     if (mReportType != ReportType::normal) {
@@ -393,6 +398,8 @@ ResultItem *ResultsTree::findFileItem(const QString &name) const
 
 void ResultsTree::clear()
 {
+    mErrorList.clear();
+
     mModel->removeRows(0, mModel->rowCount());
 
     if (const ProjectFile *activeProject = ProjectFile::getActiveProject()) {
@@ -419,6 +426,7 @@ void ResultsTree::clear(const QString &filename)
         if (stripped == fileItem->text() ||
             filename == fileItem->errorItem->file0) {
             mModel->removeRow(i);
+            mErrorList.removeAll(fileItem->errorItem->toString());
             break;
         }
     }
@@ -436,6 +444,7 @@ void ResultsTree::clearRecheckFile(const QString &filename)
         storedfile = ((!mCheckPath.isEmpty() && storedfile.startsWith(mCheckPath)) ? storedfile.mid(mCheckPath.length() + 1) : storedfile);
         if (actualfile == storedfile) {
             mModel->removeRow(i);
+            mErrorList.removeAll(fileItem->errorItem->toString());
             break;
         }
     }
@@ -805,10 +814,6 @@ void ResultsTree::startApplication(const ResultItem *target, int application)
             }
         }
 #endif // Q_OS_WIN
-
-#if (QT_VERSION < QT_VERSION_CHECK(6, 0, 0))
-        const QString cmdLine = QString("%1 %2").arg(program).arg(params);
-#endif
 
         const bool success = QProcess::startDetached(program, QProcess::splitCommand(params));
         if (!success) {

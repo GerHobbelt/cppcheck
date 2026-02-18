@@ -18,9 +18,9 @@
 
 #include "vfvalue.h"
 
-#include "errortypes.h"
 #include "mathlib.h"
 #include "token.h"
+#include "utils.h"
 
 #include <sstream>
 #include <string>
@@ -129,7 +129,7 @@ namespace ValueFlow {
             return result;
         }
         }
-        throw InternalError(nullptr, "Invalid ValueFlow Value type");
+        cppcheck::unreachable();
     }
 
     const char *Value::toString(MoveKind moveKind) {

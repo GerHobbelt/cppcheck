@@ -58,12 +58,14 @@ private:
         TEST_CASE(suppressionsFileNameWithExtraPath);
         TEST_CASE(suppressionsSettingsFiles);
         TEST_CASE(suppressionsSettingsFS);
+#ifdef HAS_THREADING_MODEL_THREAD
         TEST_CASE(suppressionsSettingsThreadsFiles);
         TEST_CASE(suppressionsSettingsThreadsFS);
-#if !defined(WIN32) && !defined(__MINGW32__) && !defined(__CYGWIN__)
+#endif // HAS_THREADING_MODEL_THREAD
+#ifdef HAS_THREADING_MODEL_FORK
         TEST_CASE(suppressionsSettingsProcessesFiles);
         TEST_CASE(suppressionsSettingsProcessesFS);
-#endif
+#endif // HAS_THREADING_MODEL_FORK
         TEST_CASE(suppressionsMultiFileFiles);
         TEST_CASE(suppressionsMultiFileFS);
         TEST_CASE(suppressionsPathSeparator);
@@ -88,8 +90,8 @@ private:
         TEST_CASE(suppressingSyntaxErrorsFS); // #7076
         TEST_CASE(suppressingSyntaxErrorsInlineFiles); // #5917
         TEST_CASE(suppressingSyntaxErrorsInlineFS); // #5917
-        TEST_CASE(suppressingSyntaxErrorsWhileFileReadFiles); // PR #1333
-        TEST_CASE(suppressingSyntaxErrorsWhileFileReadFS); // PR #1333
+        TEST_CASE(suppressingSimplecppErrorsWhileFileReadFiles); // PR #1333
+        TEST_CASE(suppressingSimplecppErrorsWhileFileReadFS); // PR #1333
         TEST_CASE(symbol);
 
         TEST_CASE(unusedFunctionFiles);
@@ -294,6 +296,7 @@ private:
         return exitCode;
     }
 
+#ifdef HAS_THREADING_MODEL_THREAD
     unsigned int checkSuppressionThreadsFiles(const char code[], const std::string &suppression = "") {
         return _checkSuppressionThreads(code, false, suppression);
     }
@@ -341,8 +344,9 @@ private:
 
         return exitCode;
     }
+#endif // HAS_THREADING_MODEL_THREAD
 
-#if !defined(WIN32) && !defined(__MINGW32__) && !defined(__CYGWIN__)
+#ifdef HAS_THREADING_MODEL_FORK
     unsigned int checkSuppressionProcessesFiles(const char code[], const std::string &suppression = "") {
         return _checkSuppressionProcesses(code, false, suppression);
     }
@@ -390,7 +394,7 @@ private:
 
         return exitCode;
     }
-#endif
+#endif // HAS_THREADING_MODEL_FORK
 
     // TODO: check all results
     void runChecks(unsigned int (TestSuppressions::*check)(const char[], const std::string &)) {
@@ -426,7 +430,7 @@ private:
                                         "    a++;\n"
                                         "}\n",
                                         ""));
-        ASSERT_EQUALS("[test.cpp:2:0]: (error) File suppression should be at the top of the file [preprocessorErrorDirective]\n"
+        ASSERT_EQUALS("[test.cpp:2:0]: (error) File suppression should be at the top of the file [invalidSuppression]\n"
                       "[test.cpp:4:5]: (error) Uninitialized variable: a [uninitvar]\n", errout_str());
 
         ASSERT_EQUALS(1, (this->*check)("void f() {\n"
@@ -435,7 +439,7 @@ private:
                                         "}\n"
                                         "// cppcheck-suppress-file uninitvar\n",
                                         ""));
-        ASSERT_EQUALS("[test.cpp:5:0]: (error) File suppression should be at the top of the file [preprocessorErrorDirective]\n"
+        ASSERT_EQUALS("[test.cpp:5:0]: (error) File suppression should be at the top of the file [invalidSuppression]\n"
                       "[test.cpp:3:5]: (error) Uninitialized variable: a [uninitvar]\n", errout_str());
 
         ASSERT_EQUALS(0, (this->*check)("// cppcheck-suppress-file uninitvar\n"
@@ -687,7 +691,7 @@ private:
                                         "    b++;\n"
                                         "}\n",
                                         ""));
-        ASSERT_EQUALS("[test.cpp:2:0]: (error) Suppress Begin: No matching end [preprocessorErrorDirective]\n"
+        ASSERT_EQUALS("[test.cpp:2:0]: (error) Suppress Begin: No matching end [invalidSuppression]\n"
                       "[test.cpp:4:5]: (error) Uninitialized variable: a [uninitvar]\n"
                       "[test.cpp:6:5]: (error) Uninitialized variable: b [uninitvar]\n", errout_str());
 
@@ -699,7 +703,7 @@ private:
                                         "    // cppcheck-suppress-end uninitvar\n"
                                         "}\n",
                                         ""));
-        ASSERT_EQUALS("[test.cpp:6:0]: (error) Suppress End: No matching begin [preprocessorErrorDirective]\n"
+        ASSERT_EQUALS("[test.cpp:6:0]: (error) Suppress End: No matching begin [invalidSuppression]\n"
                       "[test.cpp:3:5]: (error) Uninitialized variable: a [uninitvar]\n"
                       "[test.cpp:5:5]: (error) Uninitialized variable: b [uninitvar]\n", errout_str());
 
@@ -920,6 +924,7 @@ private:
         runChecks(&TestSuppressions::checkSuppressionFS);
     }
 
+#ifdef HAS_THREADING_MODEL_THREAD
     void suppressionsSettingsThreadsFiles() {
         runChecks(&TestSuppressions::checkSuppressionThreadsFiles);
     }
@@ -927,8 +932,9 @@ private:
     void suppressionsSettingsThreadsFS() {
         runChecks(&TestSuppressions::checkSuppressionThreadsFS);
     }
+#endif // HAS_THREADING_MODEL_THREAD
 
-#if !defined(WIN32) && !defined(__MINGW32__) && !defined(__CYGWIN__)
+#ifdef HAS_THREADING_MODEL_FORK
     void suppressionsSettingsProcessesFiles() {
         runChecks(&TestSuppressions::checkSuppressionProcessesFiles);
     }
@@ -936,7 +942,7 @@ private:
     void suppressionsSettingsProcessesFS() {
         runChecks(&TestSuppressions::checkSuppressionProcessesFS);
     }
-#endif
+#endif // HAS_THREADING_MODEL_FORK
 
     void suppressionsMultiFileInternal(unsigned int (TestSuppressions::*check)(std::map<std::string, std::string> &f, const std::string &)) {
         std::map<std::string, std::string> files;
@@ -1341,7 +1347,7 @@ private:
         suppressingSyntaxErrorsInlineInternal(&TestSuppressions::checkSuppressionFS);
     }
 
-    void suppressingSyntaxErrorsWhileFileReadInternal(unsigned int (TestSuppressions::*check)(const char[], const std::string &)) { // syntaxError while file read should be suppressible (PR #1333)
+    void suppressingSimplecppErrorsWhileFileReadInternal(unsigned int (TestSuppressions::*check)(const char[], const std::string &)) { // syntaxError while file read should be suppressible (PR #1333)
         const char code[] = "CONST (genType, KS_CONST) genService[KS_CFG_NR_OF_NVM_BLOCKS] =\n"
                             "{\n"
                             "[!VAR \"BC\" = \"$BC + 1\"!][!//\n"
@@ -1359,12 +1365,12 @@ private:
         ASSERT_EQUALS("", errout_str());
     }
 
-    void suppressingSyntaxErrorsWhileFileReadFiles() {
-        suppressingSyntaxErrorsWhileFileReadInternal(&TestSuppressions::checkSuppressionFiles);
+    void suppressingSimplecppErrorsWhileFileReadFiles() {
+        suppressingSimplecppErrorsWhileFileReadInternal(&TestSuppressions::checkSuppressionFiles);
     }
 
-    void suppressingSyntaxErrorsWhileFileReadFS() {
-        suppressingSyntaxErrorsWhileFileReadInternal(&TestSuppressions::checkSuppressionFiles);
+    void suppressingSimplecppErrorsWhileFileReadFS() {
+        suppressingSimplecppErrorsWhileFileReadInternal(&TestSuppressions::checkSuppressionFiles);
     }
 
     // TODO: this tests an internal function - should it be private?

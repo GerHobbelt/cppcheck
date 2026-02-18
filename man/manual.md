@@ -126,13 +126,13 @@ Typically a `compile_commands.json` contains absolute paths. However no matter i
  * a file with relative path `src/test2.c` can be checked.
  * a file with relative path `src/test3.cpp` is not checked.
 
-### Excluding a file or folder from checking
+### Ignore files matching a given pattern
 
-The option `-i` specifies a pattern to files/folders to exclude. With this command no files in `src/c` are checked:
+With `-i <str>` you can configure filename/directory patterns that should be ignored.
 
-    cppcheck -isrc/c src
+A file that is ignored will not be checked directly (the complete translation unit is skipped). Any header #include'd from a source file which is not ignored is checked indirectly, regardless if the header is ignored.
 
-The `-i` option is not used during preprocessing, it can't be used to exclude headers that are included.
+> *Note*: If you want to filter out warnings for a header file then `-i` will not work. Use suppressions instead.
 
 You can use `**`, `*` and `?` in the pattern to specify excluded folders/files.  
 `**`: matches zero or more characters, including path separators  
@@ -144,6 +144,7 @@ A use case for `-i` is to check a project, but exclude certain files/folders:
     cppcheck --project=compile_commands.json -itest
 
 Typically a `compile_commands.json` contains absolute paths. However no matter if `compile_commands.json` contains absolute paths or relative paths, the option `-itest` would mean that:
+
  * a file with relative path `test1.cpp` can be checked.
  * a file with relative path `test/somefile.cpp` is not checked
 
@@ -286,15 +287,20 @@ To ignore certain folders in the project you can use `-i`. This will skip the an
 
     cppcheck --project=foobar.cppcheck -ifoo
 
-## CMake
+## Compilation database (cmake etc)
 
-Generate a compile database (a JSON file containing compilation commands for each source file):
+Many build systems can generate a compilation database (a JSON file containing compilation commands for each source file).
+Example `cmake` command to generate the file:
 
     cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=ON .
 
-The file `compile_commands.json` is created in the current folder. Now run Cppcheck like this:
+When you have a `compile_commands.json` file you can run Cppcheck like this:
 
     cppcheck --project=compile_commands.json
+
+By default only 1 configuration is checked because that is consistent with the compilation. If you want to check more configurations you can use `--max-configs` or `--force`. For example:
+
+    cppcheck --project=compile_commands.json --force
 
 To ignore certain folders you can use `-i`. This will skip analysis of source files in the `foo` folder.
 
@@ -337,11 +343,15 @@ To ignore certain folders in the project you can use `-i`. This will skip analys
 
 ## Other
 
-If you can generate a compile database, then it is possible to import that in Cppcheck.
+If you generate a compilation database, then it is possible to import that in Cppcheck.
 
-In Linux you can use for instance the `bear` (build ear) utility to generate a compile database from arbitrary build tools:
+### Makefile
+
+In Linux you can convert a Makefile to a compile_commands.json using for instance `bear` (build ear) utility:
 
     bear -- make
+
+If you don't use Linux; there are python scripts that converts a Makefile into a compilation database.
 
 # Preprocessor Settings
 
@@ -387,14 +397,14 @@ Example:
     cppcheck test.c
 
     # only test configuration "-DA"
-    # No bug is found (#error)
+    # No bug is found; because C is not defined the #error will cause a preprocessor error
     cppcheck -DA test.c
 
     # only test configuration "-DA -DC"
     # The first bug is found
     cppcheck -DA -DC test.c
 
-    # The configuration "-DC" is tested
+    # Test all configurations that does not define "A"
     # The last bug is found
     cppcheck -UA test.c
 
@@ -402,6 +412,13 @@ Example:
     # The two first bugs are found
     cppcheck --force -DA test.c
 
+    # only test 1 valid configuration
+    # Bug(s) will be found
+    cppcheck --max-configs=1 test.c
+
+    # test 2 valid configurations with "X" defined.
+    # Bug(s) will be found
+    cppcheck --max-configs=2 -DX test.c
 
 ## Include paths
 

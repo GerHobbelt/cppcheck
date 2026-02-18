@@ -337,7 +337,7 @@ private:
         bool cpp = true;
         bool inconclusive = true;
         bool verbose = false;
-        Settings* settings = nullptr;
+        Settings* settings = nullptr; // TODO: split from this
     };
 
 #define check(...) check_(__FILE__, __LINE__, __VA_ARGS__)
@@ -3974,6 +3974,13 @@ private:
               "    return (void*)&s;\n"
               "}\n"); // don't crash
         ASSERT_EQUALS("", errout_str());
+
+        check("struct S { int i; };\n" // #14251
+              "struct T { std::optional<S> s; };\n"
+              "void f(T& t) {\n"
+              "    t.s->i = 0;\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
     }
 
     void constParameterCallback() {
@@ -4590,6 +4597,19 @@ private:
               "    }\n"
               "}\n");
         ASSERT_EQUALS("[test.cpp:4:15]: (style) Variable 'p' can be declared as pointer to const [constVariablePointer]\n",
+                      errout_str());
+
+        check("uintptr_t f(int* p) {\n"
+              "    return (uintptr_t)p;\n"
+              "}\n"
+              "uintptr_t g(int* p) {\n"
+              "    return static_cast<uintptr_t>(p);\n"
+              "}\n"
+              "U h(int* p) {\n"
+              "    return (U)p;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:1:18]: (style) Parameter 'p' can be declared as pointer to const [constParameterPointer]\n"
+                      "[test.cpp:4:18]: (style) Parameter 'p' can be declared as pointer to const [constParameterPointer]\n",
                       errout_str());
     }
 
@@ -8183,6 +8203,18 @@ private:
               "    return (x >= 0.0) ? 0.0 : -0.0;\n"
               "}\n");
         ASSERT_EQUALS("", errout_str());
+
+        check("struct A {};\n" // # 14300
+              "struct B {};\n"
+              "void f(bool x) {\n"
+              "    A* a = new A();\n"
+              "    B* b = new B();\n"
+              "    auto p = x ? static_cast<void*>(a) : static_cast<void*>(b);\n"
+              "    (void)p;\n"
+              "    delete a;\n"
+              "    delete b;\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
     }
 
     void duplicateValueTernarySizeof() { // #13773
@@ -11025,6 +11057,15 @@ private:
               "    a = x;\n"
               "}\n");
         ASSERT_EQUALS("", errout_str());
+
+        check("int f(int a, int b, int c) {\n" // #4491
+              "    int x = a + b;\n"
+              "    if (c)\n"
+              "        x = a + b;\n"
+              "    return x;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:2:11] -> [test.cpp:4:9]: (style) Variable 'x' is assigned an expression that holds the same value. [redundantAssignment]\n",
+                      errout_str());
     }
 
     void varFuncNullUB() { // #4482

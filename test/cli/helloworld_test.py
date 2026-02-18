@@ -123,7 +123,10 @@ def test_addon_with_gui_project(tmp_path):
     ret, stdout, stderr = cppcheck(args, cwd=tmp_path)
     filename = os.path.join('helloworld', 'main.c')
     assert ret == 0, stdout
-    assert stdout == 'Checking %s ...\n' % filename
+    assert stdout.strip().split('\n') == [
+        'Checking %s ...' % filename,
+        'Checking %s: SOME_CONFIG...' % filename
+    ]
     assert stderr == ('[%s:5]: (error) Division by zero.\n'
                       '[%s:4]: (style) misra violation (use --rule-texts=<file> to get proper output)\n' % (filename, filename))
 
@@ -357,7 +360,7 @@ def test_missing_include_system():  # #11283
     ]
 
     _, _, stderr = cppcheck(args, cwd=__script_dir)
-    assert stderr.replace('\\', '/') == 'helloworld/main.c:1:0: information: Include file: <stdio.h> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]\n'
+    assert stderr.replace('\\', '/') == 'helloworld/main.c:1:2: information: Include file: <stdio.h> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]\n'
 
 
 def test_sarif():

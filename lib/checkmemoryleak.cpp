@@ -744,8 +744,15 @@ bool CheckMemoryLeakStructMember::isMalloc(const Variable *variable) const
     for (const Token *tok2 = variable->nameToken(); tok2 && tok2 != variable->scope()->bodyEnd; tok2 = tok2->next()) {
         if (Token::Match(tok2, "= %varid% [;=]", declarationId))
             return false;
-        if (Token::Match(tok2, "%varid% = %name% (", declarationId) && mSettings->library.getAllocFuncInfo(tok2->tokAt(2)))
-            alloc = true;
+        if (Token::Match(tok2, "%varid% =", declarationId)) {
+            const Token* tok3 = tok2->tokAt(1)->astOperand2();
+            while (tok3 && tok3->isCast())
+                tok3 = tok3->astOperand2() ? tok3->astOperand2() : tok3->astOperand1();
+            if ((tok3 && Token::Match(tok3->tokAt(-1), "%name% (") && mSettings->library.getAllocFuncInfo(tok3->tokAt(-1))) ||
+                (Token::simpleMatch(tok3, "new") && tok3->isCpp())) {
+                alloc = true;
+            }
+        }
     }
     return alloc;
 }
@@ -851,8 +858,14 @@ void CheckMemoryLeakStructMember::checkStructVariable(const Variable* const vari
             // This struct member is allocated.. check that it is deallocated
             int indentlevel3 = indentlevel2;
             for (const Token *tok3 = tok2; tok3; tok3 = tok3->next()) {
-                if (tok3->str() == "{")
+                if (tok3->str() == "{") {
+                    if (tok3->scope()->type == ScopeType::eIf && tok3 == tok3->scope()->bodyStart) { // bailout: member checked in if condition
+                        const Token* const condBeg = tok3->scope()->classDef->tokAt(1);
+                        if (Token::findmatch(condBeg, ". %varid%", condBeg->link(), assignToks.first->varId()))
+                            break;
+                    }
                     ++indentlevel3;
+                }
 
                 else if (tok3->str() == "}") {
                     if (indentlevel3 == 0) {

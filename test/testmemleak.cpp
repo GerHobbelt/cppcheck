@@ -1673,6 +1673,7 @@ private:
         TEST_CASE(assign2);
         TEST_CASE(assign3);
         TEST_CASE(assign4); // #11019
+        TEST_CASE(assign5);
 
         // Failed allocation
         TEST_CASE(failedAllocation);
@@ -1916,6 +1917,41 @@ private:
               "    t->x.p = malloc(10);\n"
               "    t->y[2].p = malloc(10);\n"
               "}\n", false);
+        ASSERT_EQUALS("", errout_str());
+    }
+
+    void assign5() {
+        check("struct S { int fd; };\n"
+              "void f() {\n"
+              "    struct S* s = (struct S*)malloc(sizeof(struct S));\n"
+              "    s->fd = open(\"abc\", O_RDWR | O_NOCTTY);\n"
+              "    free(s);\n"
+              "}\n"
+              "void g() {\n"
+              "    struct S* s = static_cast<struct S*>(malloc(sizeof(struct S)));\n"
+              "    s->fd = open(\"abc\", O_RDWR | O_NOCTTY);\n"
+              "    free(s);\n"
+              "}\n"
+              "void h() {\n"
+              "    S* s = new S;\n"
+              "    s->fd = open(\"abc\", O_RDWR | O_NOCTTY);\n"
+              "    delete s;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:5:5]: (error) Resource leak: s.fd [resourceLeak]\n"
+                      "[test.cpp:10:5]: (error) Resource leak: s.fd [resourceLeak]\n"
+                      "[test.cpp:16:1]: (error) Resource leak: s.fd [resourceLeak]\n",
+                      errout_str());
+
+        check("struct S { int fd; };\n" // #13031
+              "void f() {\n"
+              "    struct S* s = malloc(sizeof(struct S));\n"
+              "    s->fd = open(\"abc\", O_RDWR | O_NOCTTY);\n"
+              "    if (s->fd < 0) {\n"
+              "        free(s);\n"
+              "        return NULL;\n"
+              "    }\n"
+              "    return s;\n"
+              "}\n");
         ASSERT_EQUALS("", errout_str());
     }
 

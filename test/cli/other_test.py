@@ -25,13 +25,13 @@ def test_missing_include(tmpdir):  # #11283
     test_file = os.path.join(tmpdir, 'test.c')
     with open(test_file, 'wt') as f:
         f.write("""
-                #include "test.h"
-                """)
+#include "test.h"
+""")
 
     args = ['--enable=missingInclude', '--template=simple', test_file]
 
     _, _, stderr = cppcheck(args)
-    assert stderr == '{}:2:0: information: Include file: "test.h" not found. [missingInclude]\n'.format(test_file)
+    assert stderr == '{}:2:2: information: Include file: "test.h" not found. [missingInclude]\n'.format(test_file)
 
 
 def __test_missing_include_check_config(tmpdir, use_j):
@@ -1016,13 +1016,13 @@ def test_file_order(tmpdir):
     lines = stdout.splitlines()
     assert lines == [
         'Checking {} ...'.format(test_file_c),
-        '1/4 files checked 0% done',
+        '1/4 files checked 25% done',
         'Checking {} ...'.format(test_file_d),
-        '2/4 files checked 0% done',
+        '2/4 files checked 50% done',
         'Checking {} ...'.format(test_file_b),
-        '3/4 files checked 0% done',
+        '3/4 files checked 75% done',
         'Checking {} ...'.format(test_file_a),
-        '4/4 files checked 0% done'
+        '4/4 files checked 100% done'
     ]
     assert stderr == ''
 
@@ -1044,13 +1044,13 @@ def test_markup(tmpdir):
     args = ['--library=qt', test_file_1, test_file_2, test_file_3, test_file_4, '-j1']
     out_lines = [
         'Checking {} ...'.format(test_file_2),
-        '1/4 files checked 0% done',
+        '1/4 files checked 25% done',
         'Checking {} ...'.format(test_file_4),
-        '2/4 files checked 0% done',
+        '2/4 files checked 50% done',
         'Checking {} ...'.format(test_file_1),
-        '3/4 files checked 0% done',
+        '3/4 files checked 75% done',
         'Checking {} ...'.format(test_file_3),
-        '4/4 files checked 0% done'
+        '4/4 files checked 100% done'
     ]
 
     assert_cppcheck(args, ec_exp=0, err_exp=[], out_exp=out_lines)
@@ -1075,23 +1075,17 @@ def test_markup_j(tmpdir):
     exitcode, stdout, stderr = cppcheck(args)
     assert exitcode == 0, stdout if stdout else stderr
     lines = stdout.splitlines()
-    for i in range(1, 5):
-        lines.remove('{}/4 files checked 0% done'.format(i))
 
-    # this test started to fail in the -j2 injection run when using ThreadExecutor although it always specifies -j2.
-    # the order of the files in the output changed so just check for the file extentions
-    assert len(lines) == 4
-    assert lines[0].endswith('.cpp ...')
-    assert lines[1].endswith('.cpp ...')
-    assert lines[2].endswith('.qml ...')
-    assert lines[3].endswith('.qml ...')
-
-    #assert lines == [
-    #    'Checking {} ...'.format(test_file_2),
-    #    'Checking {} ...'.format(test_file_4),
-    #    'Checking {} ...'.format(test_file_1),
-    #    'Checking {} ...'.format(test_file_3)
-    #]
+    assert sorted(lines) == [
+        '1/4 files checked 25% done',
+        '2/4 files checked 50% done',
+        '3/4 files checked 75% done',
+        '4/4 files checked 100% done',
+        'Checking {} ...'.format(test_file_1),
+        'Checking {} ...'.format(test_file_2),
+        'Checking {} ...'.format(test_file_3),
+        'Checking {} ...'.format(test_file_4)
+    ]
     assert stderr == ''
 
 
@@ -1213,11 +1207,11 @@ def test_file_duplicate_2(tmpdir):
     lines = stdout.splitlines()
     assert lines == [
         'Checking {} ...'.format(test_file_c),
-        '1/3 files checked 0% done',
+        '1/3 files checked 33% done',
         'Checking {} ...'.format(test_file_a),
-        '2/3 files checked 0% done',
+        '2/3 files checked 66% done',
         'Checking {} ...'.format(test_file_b),
-        '3/3 files checked 0% done'
+        '3/3 files checked 100% done'
     ]
     assert stderr == ''
 
@@ -1245,28 +1239,28 @@ def test_file_duplicate_3(tmpdir):
     if sys.platform == 'win32':
         assert lines == [
             'Checking {} ...'.format('a.c'),
-            '1/6 files checked 0% done',
+            '1/6 files checked 16% done',
             'Checking {} ...'.format('a.c'),
-            '2/6 files checked 0% done',
+            '2/6 files checked 33% done',
             'Checking {} ...'.format('a.c'),
-            '3/6 files checked 0% done',
+            '3/6 files checked 50% done',
             'Checking {} ...'.format(test_file_a),
-            '4/6 files checked 0% done',
+            '4/6 files checked 66% done',
             'Checking {} ...'.format(test_file_a),
-            '5/6 files checked 0% done',
+            '5/6 files checked 83% done',
             'Checking {} ...'.format(test_file_a),
-            '6/6 files checked 0% done'
+            '6/6 files checked 100% done'
         ]
     else:
         assert lines == [
             'Checking {} ...'.format('a.c'),
-            '1/4 files checked 0% done',
+            '1/4 files checked 25% done',
             'Checking {} ...'.format('a.c'),
-            '2/4 files checked 0% done',
+            '2/4 files checked 50% done',
             'Checking {} ...'.format(test_file_a),
-            '3/4 files checked 0% done',
+            '3/4 files checked 75% done',
             'Checking {} ...'.format(test_file_a),
-            '4/4 files checked 0% done'
+            '4/4 files checked 100% done'
         ]
     assert stderr == ''
 
@@ -1298,17 +1292,17 @@ def test_file_duplicate_4(tmpdir):
     # TODO: only a single file should be checked
     assert lines == [
         'Checking {} ...'.format('a.c'),
-        '1/6 files checked 0% done',
+        '1/6 files checked 16% done',
         'Checking {} ...'.format('a.c'),
-        '2/6 files checked 0% done',
+        '2/6 files checked 33% done',
         'Checking {} ...'.format('a.c'),
-        '3/6 files checked 0% done',
+        '3/6 files checked 50% done',
         'Checking {} ...'.format(test_file_a),
-        '4/6 files checked 0% done',
+        '4/6 files checked 66% done',
         'Checking {} ...'.format(test_file_a),
-        '5/6 files checked 0% done',
+        '5/6 files checked 83% done',
         'Checking {} ...'.format(test_file_a),
-        '6/6 files checked 0% done'
+        '6/6 files checked 100% done'
     ]
     assert stderr == ''
 
@@ -1663,7 +1657,7 @@ def test_filelist(tmpdir):
     ]
     assert len(expected), len(lines)
     for i in range(1, len(expected)+1):
-        lines.remove('{}/{} files checked 0% done'.format(i, len(expected)))
+        lines.remove('{}/{} files checked {}% done'.format(i, len(expected), int(100 * i // len(expected))))
     assert lines == expected
 
 
@@ -3853,3 +3847,142 @@ error2:lib\\test.c
         f'{lib_file}:-1:0: information: Unmatched suppression: error6 [unmatchedSuppression]'
     ]
     assert ret == 0, stdout
+
+
+def test_simplecpp_warning(tmp_path):
+    test_file = tmp_path / 'test.c'
+    with open(test_file, "w") as f:
+        f.write(
+"""
+#define warning "warn msg"
+""")
+
+    args = [
+        '-q',
+        '--template=simple',
+        str(test_file)
+    ]
+
+    exitcode, stdout, stderr = cppcheck(args)
+    assert exitcode == 0, stdout
+    assert stdout.splitlines() == []
+    assert stderr.splitlines() == []
+
+
+def test_simplecpp_unhandled_char(tmp_path):
+    test_file = tmp_path / 'test.c'
+    with open(test_file, "w", encoding='utf-8') as f:
+        f.write(
+"""
+int 你=0;
+""")
+
+    args = [
+        '-q',
+        '--template=simple',
+        '--emit-duplicates',
+        str(test_file)
+    ]
+
+    exitcode, stdout, stderr = cppcheck(args)
+    assert exitcode == 0, stdout
+    assert stdout.splitlines() == []
+    assert stderr.splitlines() == [
+        '{}:2:5: error: The code contains unhandled character(s) (character code=228). Neither unicode nor extended ascii is supported. [unhandledChar]'.format(test_file)
+    ]
+
+
+def test_simplecpp_include_nested_too_deeply(tmp_path):
+    test_file = tmp_path / 'test.c'
+    with open(test_file, "w") as f:
+        f.write('#include "test.h"')
+
+    test_h = tmp_path / 'test.h'
+    with open(test_h, "w") as f:
+        f.write('#include "test_0.h"')
+
+    for i in range(400):
+        test_h = tmp_path / f'test_{i}.h'
+        with open(test_h, "w") as f:
+            f.write('#include "test_{}.h"'.format(i+1))
+
+    args = [
+        '-q',
+        '--template=simple',
+        '--emit-duplicates',
+        str(test_file)
+    ]
+
+    exitcode, stdout, stderr = cppcheck(args)
+    assert exitcode == 0, stdout
+    assert stdout.splitlines() == []
+    test_h = tmp_path / 'test_398.h'
+    assert stderr.splitlines() == [
+        # TODO: should only report the error once
+        '{}:1:2: error: #include nested too deeply [includeNestedTooDeeply]'.format(test_h),
+        '{}:1:2: error: #include nested too deeply [includeNestedTooDeeply]'.format(test_h)
+    ]
+
+
+def test_simplecpp_syntax_error(tmp_path):
+    test_file = tmp_path / 'test.c'
+    with open(test_file, "w") as f:
+        f.write('#include ""')
+
+    args = [
+        '-q',
+        '--template=simple',
+        '--emit-duplicates',
+        str(test_file)
+    ]
+
+    exitcode, stdout, stderr = cppcheck(args)
+    assert exitcode == 0, stdout
+    assert stdout.splitlines() == []
+    assert stderr.splitlines() == [
+        # TODO: should only report the error once
+        '{}:1:2: error: No header in #include [syntaxError]'.format(test_file),
+        '{}:1:2: error: No header in #include [syntaxError]'.format(test_file)
+    ]
+
+
+@pytest.mark.parametrize('max_configs,number_of_configs,check_config,expected_warn', [
+    # max configs = default, max configs < number of configs => warn
+    (None, 20, False, True),
+    (None, 20, True, True),
+
+    # max configs != default, max configs < number of configs => warn if --check-config
+    (6, 20, False, False),
+    (6, 20, True, True),
+
+    # max configs >= number of configs => no warning
+    (20, 20, False, False),
+    (20, 20, False, False)
+])
+def test_max_configs(tmp_path, max_configs, number_of_configs, check_config, expected_warn):
+    test_file = tmp_path / 'test.cpp'
+    with open(test_file, "w") as f:
+        for i in range(1,number_of_configs):
+            dir = 'if' if i == 1 else 'elif'
+            f.write(f'#{dir} defined(X{i})\nx = {i};\n')
+        f.write('#endif\n')
+
+    args = ['--enable=information', '--template=simple', str(test_file)]
+
+    if max_configs is None:
+        max_configs = 12  # default value
+    else:
+        args = [f'--max-configs={max_configs}'] + args
+
+    if check_config:
+        args = ['--check-config'] + args
+
+    # default max configs is set to 12, warn if code contains more configurations than that
+    _, _, stderr = cppcheck(args)
+    if not expected_warn:
+        assert stderr.splitlines() == []
+    else:
+        assert stderr.splitlines() == [
+            '{}:0:0: information: Too many #ifdef configurations - cppcheck only checks {} of {} configurations. Use --force to check all configurations. [toomanyconfigs]'
+            .format(test_file, max_configs, number_of_configs)
+        ]

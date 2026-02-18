@@ -69,7 +69,6 @@ struct CPPCHECKLIB Directive {
 
     /** record a directive (possibly filtering src) */
     Directive(const simplecpp::Location & _loc, std::string _str);
-    Directive(std::string _file, int _linenr, std::string _str);
 };
 
 class CPPCHECKLIB RemarkComment {
@@ -140,15 +139,14 @@ public:
      */
     void dump(std::ostream &out) const;
 
-    static bool hasErrors(const simplecpp::Output &output);
+    bool reportOutput(const simplecpp::OutputList &outputList, bool showerror);
 
-protected:
-    void reportOutput(const simplecpp::OutputList &outputList, bool showerror);
-
-    static bool hasErrors(const simplecpp::OutputList &outputList);
+    void error(const std::string &filename, unsigned int linenr, unsigned int col, const std::string &msg, simplecpp::Output::Type type);
 
 private:
-    void handleErrors(const simplecpp::OutputList &outputList, bool throwError);
+    static bool hasErrors(const simplecpp::Output &output);
+
+    bool handleErrors(const simplecpp::OutputList &outputList, bool throwError);
 
     static void simplifyPragmaAsmPrivate(simplecpp::TokenList &tokenList);
 
@@ -160,8 +158,9 @@ private:
         SystemHeader
     };
 
-    void missingInclude(const std::string &filename, unsigned int linenr, const std::string &header, HeaderTypes headerType);
-    void error(const std::string &filename, unsigned int linenr, const std::string &msg);
+    void missingInclude(const std::string &filename, unsigned int linenr, unsigned int col, const std::string &header, HeaderTypes headerType);
+    void invalidSuppression(const std::string &filename, unsigned int linenr, unsigned int col, const std::string &msg);
+    void error(const std::string &filename, unsigned int linenr, unsigned int col, const std::string &msg, const std::string& id);
 
     void addRemarkComments(const simplecpp::TokenList &tokens, std::vector<RemarkComment> &remarkComments) const;
 
@@ -175,7 +174,7 @@ private:
     simplecpp::FileDataCache mFileCache;
 
     /** filename for cpp/c file - useful when reporting errors */
-    std::string mFile0;
+    std::string mFile0; // TODO: this is never set
     Standards::Language mLang{Standards::Language::None};
 
     /** simplecpp tracking info */

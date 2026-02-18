@@ -49,23 +49,14 @@ public:
     TestPreprocessor() : TestFixture("TestPreprocessor") {}
 
 private:
-    class PreprocessorTest : public Preprocessor
-    {
-        friend class TestPreprocessor;
-    public:
-        PreprocessorTest(simplecpp::TokenList& tokens, const Settings& settings, ErrorLogger &errorLogger, Standards::Language lang)
-            : Preprocessor(tokens, settings, errorLogger, lang)
-        {}
-    };
-
     template<size_t size>
     std::string expandMacros(const char (&code)[size], ErrorLogger &errorLogger) const {
         simplecpp::OutputList outputList;
         std::vector<std::string> files;
         simplecpp::TokenList tokens1 = simplecpp::TokenList(code, files, "file.cpp", &outputList);
-        PreprocessorTest p(tokens1, settingsDefault, errorLogger, Path::identify(tokens1.getFiles()[0], false));
+        Preprocessor p(tokens1, settingsDefault, errorLogger, Path::identify(tokens1.getFiles()[0], false));
         simplecpp::TokenList tokens2 = p.preprocess("", files, true);
-        p.reportOutput(outputList, true);
+        (void)p.reportOutput(outputList, true);
         return tokens2.stringify();
     }
 
@@ -128,16 +119,16 @@ private:
 
         simplecpp::TokenList tokens(code, size, files, Path::simplifyPath(filename), &outputList);
         // TODO: we should be using the actual Preprocessor implementation
-        PreprocessorTest preprocessor(tokens, settings, errorlogger, Path::identify(tokens.getFiles()[0], false));
+        Preprocessor preprocessor(tokens, settings, errorlogger, Path::identify(tokens.getFiles()[0], false));
+
+        // TODO: should be possible without a Preprocessor instance
+        if (preprocessor.reportOutput(outputList, true))
+            return {};
+
         if (inlineSuppression)
             preprocessor.inlineSuppressions(*inlineSuppression);
         preprocessor.removeComments();
         preprocessor.simplifyPragmaAsm();
-
-        preprocessor.reportOutput(outputList, true);
-
-        if (PreprocessorTest::hasErrors(outputList))
-            return {};
 
         std::map<std::string, std::string> cfgcode;
         if (cfgs.empty())
@@ -320,6 +311,8 @@ private:
         TEST_CASE(getConfigs8);  // #if A==1  => cfg: A=1
         TEST_CASE(getConfigs10); // #5139
         TEST_CASE(getConfigs11); // #9832 - include guards
+        TEST_CASE(getConfigs12); // #14222
+        TEST_CASE(getConfigs13); // #14222
         TEST_CASE(getConfigsError);
 
         TEST_CASE(getConfigsD1);
@@ -366,12 +359,14 @@ private:
     }
 
     template<size_t size>
-    std::string getConfigsStr(const char (&code)[size], const char *arg = nullptr) {
+    std::string getConfigsStr(const char (&code)[size], const char *arg = nullptr, const char *library = nullptr) {
         Settings settings;
         if (arg && std::strncmp(arg,"-D",2)==0)
             settings.userDefines = arg + 2;
         if (arg && std::strncmp(arg,"-U",2)==0)
             settings.userUndefs.insert(arg+2);
+        if (library)
+            ASSERT(settings.library.load("", library, false).errorcode == Library::ErrorCode::OK);
         std::vector<std::string> files;
         // TODO: this adds an empty filename
         simplecpp::TokenList tokens(code,files);
@@ -446,7 +441,7 @@ private:
         const auto settings = dinit(Settings, $.userDefines = "__cplusplus");
         const char code[] = "#error hello world!\n";
         (void)getcodeforcfg(settings, *this, code, "X", "test.c");
-        ASSERT_EQUALS("[test.c:1:0]: (error) #error hello world! [preprocessorErrorDirective]\n", errout_str());
+        ASSERT_EQUALS("[test.c:1:2]: (error) #error hello world! [preprocessorErrorDirective]\n", errout_str());
     }
 
     // Ticket #2919 - wrong filename reported for #error
@@ -456,7 +451,7 @@ private:
             const auto settings = dinit(Settings, $.userDefines = "TEST");
             const char code[] = "#file \"ab.h\"\n#error hello world!\n#endfile";
             (void)getcodeforcfg(settings, *this, code, "TEST", "test.c");
-            ASSERT_EQUALS("[ab.h:1:0]: (error) #error hello world! [preprocessorErrorDirective]\n", errout_str());
+            ASSERT_EQUALS("[ab.h:1:2]: (error) #error hello world! [preprocessorErrorDirective]\n", errout_str());
         }
 
         // After including a file
@@ -464,7 +459,7 @@ private:
             const auto settings = dinit(Settings, $.userDefines = "TEST");
             const char code[] = "#file \"ab.h\"\n\n#endfile\n#error aaa";
             (void)getcodeforcfg(settings, *this, code, "TEST", "test.c");
-            ASSERT_EQUALS("[test.c:2:0]: (error) #error aaa [preprocessorErrorDirective]\n", errout_str());
+            ASSERT_EQUALS("[test.c:2:2]: (error) #error aaa [preprocessorErrorDirective]\n", errout_str());
         }
     }
 
@@ -1538,7 +1533,7 @@ private:
             const std::map<std::string, std::string> actual = getcode(settings0, *this, filedata);
 
             ASSERT_EQUALS(0, actual.size());
-            ASSERT_EQUALS("[file.c:2:0]: (error) No pair for character ('). Can't process file. File is either invalid or unicode, which is currently not supported. [preprocessorErrorDirective]\n", errout_str());
+            ASSERT_EQUALS("[file.c:2:14]: (error) No pair for character ('). Can't process file. File is either invalid or unicode, which is currently not supported. [syntaxError]\n", errout_str());
         }
     }
 
@@ -1553,7 +1548,7 @@ private:
             const std::string actual(expandMacros(filedata, *this));
 
             ASSERT_EQUALS("", actual);
-            ASSERT_EQUALS("[file.cpp:3:0]: (error) No pair for character (\"). Can't process file. File is either invalid or unicode, which is currently not supported. [preprocessorErrorDirective]\n", errout_str());
+            ASSERT_EQUALS("[file.cpp:3:1]: (error) No pair for character (\"). Can't process file. File is either invalid or unicode, which is currently not supported. [syntaxError]\n", errout_str());
         }
 
         {
@@ -1566,7 +1561,7 @@ private:
             const std::string actual(expandMacros(filedata, *this));
 
             ASSERT_EQUALS("", actual);
-            ASSERT_EQUALS("[abc.h:2:0]: (error) No pair for character (\"). Can't process file. File is either invalid or unicode, which is currently not supported. [preprocessorErrorDirective]\n", errout_str());
+            ASSERT_EQUALS("[abc.h:2:1]: (error) No pair for character (\"). Can't process file. File is either invalid or unicode, which is currently not supported. [syntaxError]\n", errout_str());
         }
 
         {
@@ -1579,7 +1574,7 @@ private:
             const std::string actual(expandMacros(filedata, *this));
 
             ASSERT_EQUALS("", actual);
-            ASSERT_EQUALS("[file.cpp:2:0]: (error) No pair for character (\"). Can't process file. File is either invalid or unicode, which is currently not supported. [preprocessorErrorDirective]\n", errout_str());
+            ASSERT_EQUALS("[file.cpp:2:1]: (error) No pair for character (\"). Can't process file. File is either invalid or unicode, which is currently not supported. [syntaxError]\n", errout_str());
         }
 
         {
@@ -1591,7 +1586,7 @@ private:
             const std::string actual(expandMacros(filedata, *this));
 
             ASSERT_EQUALS("", actual);
-            ASSERT_EQUALS("[file.cpp:2:0]: (error) No pair for character (\"). Can't process file. File is either invalid or unicode, which is currently not supported. [preprocessorErrorDirective]\n", errout_str());
+            ASSERT_EQUALS("[file.cpp:2:11]: (error) No pair for character (\"). Can't process file. File is either invalid or unicode, which is currently not supported. [syntaxError]\n", errout_str());
         }
 
         {
@@ -1607,7 +1602,7 @@ private:
             // expand macros..
             (void)expandMacros(filedata, *this);
 
-            ASSERT_EQUALS("[file.cpp:7:0]: (error) No pair for character (\"). Can't process file. File is either invalid or unicode, which is currently not supported. [preprocessorErrorDirective]\n", errout_str());
+            ASSERT_EQUALS("[file.cpp:7:12]: (error) No pair for character (\"). Can't process file. File is either invalid or unicode, which is currently not supported. [syntaxError]\n", errout_str());
         }
     }
 
@@ -1660,7 +1655,7 @@ private:
         // Compare results..
         ASSERT_EQUALS(1, actual.size());
         ASSERT_EQUALS("", actual.at(""));
-        ASSERT_EQUALS("[file.c:6:0]: (error) failed to expand 'BC', Wrong number of parameters for macro 'BC'. [preprocessorErrorDirective]\n", errout_str());
+        ASSERT_EQUALS("[file.c:6:3]: (error) failed to expand 'BC', Wrong number of parameters for macro 'BC'. [syntaxError]\n", errout_str());
     }
 
     void newline_in_macro() {
@@ -1977,12 +1972,12 @@ private:
 
     void invalid_define_1() {
         (void)getcode(settings0, *this, "#define =\n");
-        ASSERT_EQUALS("[file.c:1:0]: (error) Failed to parse #define [preprocessorErrorDirective]\n", errout_str());
+        ASSERT_EQUALS("[file.c:1:2]: (error) Failed to parse #define [syntaxError]\n", errout_str());
     }
 
     void invalid_define_2() {  // #4036
         (void)getcode(settings0, *this, "#define () {(int f(x) }\n");
-        ASSERT_EQUALS("[file.c:1:0]: (error) Failed to parse #define [preprocessorErrorDirective]\n", errout_str());
+        ASSERT_EQUALS("[file.c:1:2]: (error) Failed to parse #define [syntaxError]\n", errout_str());
     }
 
     void inline_suppressions() {
@@ -2128,7 +2123,7 @@ private:
         const char code[] = "#elif (){\n";
         const std::string actual = getcodeforcfg(settings0, *this, code, "TEST", "test.c");
         ASSERT_EQUALS("", actual);
-        ASSERT_EQUALS("[test.c:1:0]: (error) #elif without #if [preprocessorErrorDirective]\n", errout_str());
+        ASSERT_EQUALS("[test.c:1:2]: (error) #elif without #if [syntaxError]\n", errout_str());
     }
 
     void getConfigs1() {
@@ -2273,6 +2268,20 @@ private:
         ASSERT_EQUALS("\n", getConfigsStr(filedata));
     }
 
+    void getConfigs12() { // #14222
+        const char filedata[] = "#ifdef INT8_MAX\n"
+                                "INT8_MAX\n"
+                                "#endif\n";
+        ASSERT_EQUALS("\n", getConfigsStr(filedata, nullptr, "std.cfg"));
+    }
+
+    void getConfigs13() { // #14222
+        const char filedata[] = "#ifdef __builtin_bswap16\n"
+                                "__builtin_bswap16(x);\n"
+                                "#endif\n";
+        ASSERT_EQUALS("\n", getConfigsStr(filedata, nullptr, "gnu.cfg"));
+    }
+
     void getConfigsError() {
         const char filedata1[] = "#ifndef X\n"
                                  "#error \"!X\"\n"
@@ -2377,8 +2386,8 @@ private:
         // Preprocess => don't crash..
         (void)getcode(settings0, *this, filedata);
         ASSERT_EQUALS(
-            "[file.c:1:0]: (error) Syntax error in #ifdef [preprocessorErrorDirective]\n"
-            "[file.c:1:0]: (error) Syntax error in #ifdef [preprocessorErrorDirective]\n", errout_str());
+            "[file.c:1:2]: (error) Syntax error in #ifdef [syntaxError]\n"
+            "[file.c:1:2]: (error) Syntax error in #ifdef [syntaxError]\n", errout_str());
     }
 
     void garbage() {
@@ -2394,7 +2403,7 @@ private:
         const auto settings = dinit(Settings, $.userDefines = "foo");
         const char code[] = "#error hello world!\n";
         (void)getcodeforcfg(settings, *this, code, "X", "./././test.c");
-        ASSERT_EQUALS("[test.c:1:0]: (error) #error hello world! [preprocessorErrorDirective]\n", errout_str());
+        ASSERT_EQUALS("[test.c:1:2]: (error) #error hello world! [preprocessorErrorDirective]\n", errout_str());
     }
 
     // test for existing local include
@@ -2424,7 +2433,7 @@ private:
         const char code[] = "#include \"header.h\"";
         (void)getcodeforcfg(settings, *this, code, "", "test.c");
 
-        ASSERT_EQUALS("test.c:1:0: information: Include file: \"header.h\" not found. [missingInclude]\n", errout_str());
+        ASSERT_EQUALS("test.c:1:2: information: Include file: \"header.h\" not found. [missingInclude]\n", errout_str());
     }
 
     // test for missing local include - no include path given
@@ -2440,7 +2449,7 @@ private:
         const char code[] = "#include \"header.h\"";
         (void)getcodeforcfg(settings, *this, code, "", "test.c");
 
-        ASSERT_EQUALS("test.c:1:0: information: Include file: \"header.h\" not found. [missingInclude]\n", errout_str());
+        ASSERT_EQUALS("test.c:1:2: information: Include file: \"header.h\" not found. [missingInclude]\n", errout_str());
     }
 
     // test for existing local include - include path provided
@@ -2490,7 +2499,7 @@ private:
         std::string code("#include \"" + header + "\"");
         (void)getcodeforcfg(settings, *this, code.data(), code.size(), "", "test.c");
 
-        ASSERT_EQUALS("test.c:1:0: information: Include file: \"" + header + "\" not found. [missingInclude]\n", errout_str());
+        ASSERT_EQUALS("test.c:1:2: information: Include file: \"" + header + "\" not found. [missingInclude]\n", errout_str());
     }
 
     // test for missing system include - system includes are not searched for in relative path
@@ -2506,7 +2515,7 @@ private:
         const char code[] = "#include <header.h>";
         (void)getcodeforcfg(settings, *this, code, "", "test.c");
 
-        ASSERT_EQUALS("test.c:1:0: information: Include file: <header.h> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]\n", errout_str());
+        ASSERT_EQUALS("test.c:1:2: information: Include file: <header.h> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]\n", errout_str());
     }
 
     // test for missing system include
@@ -2520,7 +2529,7 @@ private:
         const char code[] = "#include <header.h>";
         (void)getcodeforcfg(settings, *this, code, "", "test.c");
 
-        ASSERT_EQUALS("test.c:1:0: information: Include file: <header.h> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]\n", errout_str());
+        ASSERT_EQUALS("test.c:1:2: information: Include file: <header.h> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]\n", errout_str());
     }
 
     // test for existing system include in system include path
@@ -2570,7 +2579,7 @@ private:
         std::string code("#include <" + header + ">");
         (void)getcodeforcfg(settings, *this, code.data(), code.size(), "", "test.c");
 
-        ASSERT_EQUALS("test.c:1:0: information: Include file: <" + header + "> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]\n", errout_str());
+        ASSERT_EQUALS("test.c:1:2: information: Include file: <" + header + "> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]\n", errout_str());
     }
 
     // test for missing local and system include
@@ -2590,9 +2599,9 @@ private:
                             "#include \"header2.h\"";
         (void)getcodeforcfg(settings, *this, code, "", "test.c");
 
-        ASSERT_EQUALS("test.c:1:0: information: Include file: \"missing.h\" not found. [missingInclude]\n"
-                      "test.c:2:0: information: Include file: <header.h> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]\n"
-                      "test.c:3:0: information: Include file: <missing2.h> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]\n", errout_str());
+        ASSERT_EQUALS("test.c:1:2: information: Include file: \"missing.h\" not found. [missingInclude]\n"
+                      "test.c:2:2: information: Include file: <header.h> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]\n"
+                      "test.c:3:2: information: Include file: <missing2.h> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]\n", errout_str());
     }
 
     void testMissingIncludeCheckConfig() {
@@ -2626,12 +2635,12 @@ private:
                          "#include <" + missing4 + ">\n");
         (void)getcodeforcfg(settings, *this, code.data(), code.size(), "", "test.c");
 
-        ASSERT_EQUALS("test.c:1:0: information: Include file: \"missing.h\" not found. [missingInclude]\n"
-                      "test.c:2:0: information: Include file: <header.h> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]\n"
-                      "test.c:3:0: information: Include file: <missing2.h> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]\n"
-                      "test.c:6:0: information: Include file: \"header4.h\" not found. [missingInclude]\n"
-                      "test.c:9:0: information: Include file: \"" + missing3 + "\" not found. [missingInclude]\n"
-                      "test.c:11:0: information: Include file: <" + missing4 + "> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]\n", errout_str());
+        ASSERT_EQUALS("test.c:1:2: information: Include file: \"missing.h\" not found. [missingInclude]\n"
+                      "test.c:2:2: information: Include file: <header.h> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]\n"
+                      "test.c:3:2: information: Include file: <missing2.h> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]\n"
+                      "test.c:6:2: information: Include file: \"header4.h\" not found. [missingInclude]\n"
+                      "test.c:9:2: information: Include file: \"" + missing3 + "\" not found. [missingInclude]\n"
+                      "test.c:11:2: information: Include file: <" + missing4 + "> not found. Please note: Cppcheck does not need standard library headers to get proper results. [missingIncludeSystem]\n", errout_str());
     }
 
     void hasInclude() {
@@ -2640,7 +2649,7 @@ private:
 
         settings.standards.setStd("c++11");
         ASSERT_EQUALS("", getcodeforcfg(settings, *this, code, "", "test.cpp"));
-        ASSERT_EQUALS("[test.cpp:1:0]: (error) failed to evaluate #if condition, undefined function-like macro invocation: __has_include( ... ) [preprocessorErrorDirective]\n", errout_str());
+        ASSERT_EQUALS("[test.cpp:1:2]: (error) failed to evaluate #if condition, undefined function-like macro invocation: __has_include( ... ) [syntaxError]\n", errout_str()); // TODO: use individual ID
 
         settings.standards.setStd("c++17");
         ASSERT_EQUALS("", getcodeforcfg(settings, *this, code, "", "test.cpp"));

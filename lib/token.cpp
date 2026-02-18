@@ -2459,7 +2459,7 @@ std::pair<const Token*, const Token*> Token::typeDecl(const Token* tok, bool poi
                     typeBeg = previousBeforeAstLeftmostLeaf(tok2);
                     typeEnd = tok2;
                 }
-                if (typeBeg)
+                if (typeBeg && typeBeg != typeEnd)
                     result = { typeBeg->next(), typeEnd }; // handle smart pointers/iterators first
             }
             if (astIsRangeBasedForDecl(var->nameToken()) && astIsContainer(var->nameToken()->astParent()->astOperand2())) { // range-based for
@@ -2630,7 +2630,6 @@ const ValueFlow::Value* Token::getMovedValue() const
     return it == mImpl->mValues->end() ? nullptr : &*it;
 }
 
-// cppcheck-suppress unusedFunction
 const ValueFlow::Value* Token::getContainerSizeValue(const MathLib::bigint val) const
 {
     if (!mImpl->mValues)

@@ -1022,6 +1022,11 @@ const Token* isInLoopCondition(const Token* tok)
     return Token::Match(top->previous(), "for|while (") ? top : nullptr;
 }
 
+bool isDesignatedInitializer(const Token* tok)
+{
+    return tok && tok->isUnaryOp(".");
+}
+
 /// If tok2 comes after tok1
 bool precedes(const Token * tok1, const Token * tok2)
 {
@@ -1425,7 +1430,7 @@ static bool compareKnownValue(const Token * const tok1, const Token * const tok2
     if (v1 == tok1->values().end()) {
         return false;
     }
-    if (v1->isNonValue() || v1->isContainerSizeValue() || v1->isSymbolicValue())
+    if (v1->isNonValue() || v1->isContainerSizeValue() || v1->isBufferSizeValue() || v1->isSymbolicValue())
         return false;
     const auto v2 = std::find_if(tok2->values().cbegin(), tok2->values().cend(), isKnownFn);
     if (v2 == tok2->values().end()) {
@@ -2617,6 +2622,14 @@ bool isVariableChangedByFunctionCall(const Token *tok, int indirect, const Setti
     return false;
 }
 
+static bool hasOverloadedMemberAccess(const Token* tok)
+{
+    if (!Token::simpleMatch(tok, "."))
+        return false;
+    const Token* varTok = tok->astOperand2();
+    return !varTok || !varTok->variable() || !varTok->variable()->valueType() || varTok->variable()->valueType()->pointer == 0;
+}
+
 bool isVariableChanged(const Token *tok, int indirect, const Settings &settings, int depth)
 {
     if (!isMutableExpression(tok))
@@ -2631,7 +2644,7 @@ bool isVariableChanged(const Token *tok, int indirect, const Settings &settings,
            (Token::simpleMatch(tok2->astParent(), ".") && !Token::Match(tok2->astParent()->astParent(), "[(,]")) ||
            (tok2->astParent() && tok2->astParent()->isUnaryOp("&") && Token::simpleMatch(tok2->astParent()->astParent(), ".") && tok2->astParent()->astParent()->originalName()=="->") ||
            (Token::simpleMatch(tok2->astParent(), "[") && tok2 == tok2->astParent()->astOperand1())) {
-        if (tok2->astParent() && (tok2->astParent()->isUnaryOp("*") || (astIsLHS(tok2) && tok2->astParent()->originalName() == "->")))
+        if (tok2->astParent() && (tok2->astParent()->isUnaryOp("*") || (astIsLHS(tok2) && tok2->astParent()->originalName() == "->" && !hasOverloadedMemberAccess(tok2))))
             derefs++;
         if (derefs > indirect)
             break;

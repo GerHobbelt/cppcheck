@@ -68,6 +68,7 @@ private:
         TEST_CASE(testautovar14); // ticket #4776 - assignment of function parameter, goto
         TEST_CASE(testautovar15); // ticket #6538
         TEST_CASE(testautovar16); // ticket #8114
+        TEST_CASE(testautovar17);
         TEST_CASE(testautovar_array1);
         TEST_CASE(testautovar_array2);
         TEST_CASE(testautovar_array3);
@@ -504,6 +505,17 @@ private:
         ASSERT_EQUALS("", errout_str());
     }
 
+    void testautovar17() {
+        check("struct S { int* p; };\n" // #14257
+              "int a[10];\n"
+              "void f(int** q) {\n"
+              "    S s;\n"
+              "    s.p = a;\n"
+              "    *q = &s.p[0];\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+    }
+
     void testautovar_array1() {
         check("void func1(int* arr[2])\n"
               "{\n"
@@ -558,6 +570,13 @@ private:
               "    *s = &a[0];\n"
               "}\n");
         ASSERT_EQUALS("", errout_str());
+
+        check("void f(int* p[]) {\n" // #7167
+              "    int a[4] = { 1, 2, 3 };\n"
+              "    p[0] = a;\n"
+              "};\n");
+        ASSERT_EQUALS("[test.cpp:3:5]: (error) Address of local auto-variable assigned to a function parameter. [autoVariables]\n",
+                      errout_str());
     }
 
     void testautovar_normal() {
@@ -3937,6 +3956,48 @@ private:
         ASSERT_EQUALS(
             "[test.cpp:6:30] -> [test.cpp:6:30] -> [test.cpp:6:21] -> [test.cpp:5:21] -> [test.cpp:8:12]: (error) Returning object that points to local variable 'a' that will be invalid when returning. [returnDanglingLifetime]\n",
             errout_str());
+
+        check("struct A { int& x; };\n" // #14247
+              "A f() {\n"
+              "    int x = 0;\n"
+              "    A a{.x = x};\n"
+              "    return a;\n"
+              "}\n");
+        ASSERT_EQUALS(
+            "[test.cpp:4:14] -> [test.cpp:3:9] -> [test.cpp:5:12]: (error) Returning object that points to local variable 'x' that will be invalid when returning. [returnDanglingLifetime]\n",
+            errout_str());
+
+        check("struct A { int x; int& r};\n"
+              "A f(int& r) {\n"
+              "    int x = 0;\n"
+              "    A a{.x = x, .r = r};\n"
+              "    return a;\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        check("struct A { int& x; };\n"
+              "A f() {\n"
+              "    int x = 0;\n"
+              "    A a{ .x{x} };\n"
+              "    return a;\n"
+              "}\n");
+        ASSERT_EQUALS(
+            "[test.cpp:4:13] -> [test.cpp:3:9] -> [test.cpp:5:12]: (error) Returning object that points to local variable 'x' that will be invalid when returning. [returnDanglingLifetime]\n",
+            errout_str());
+
+        check("struct A { int x; int& r};\n"
+              "A f(int& r) {\n"
+              "    int x = 0;\n"
+              "    A a{ .x{x}, .r{r} };\n"
+              "    return a;\n"
+              "}\n");
+        ASSERT_EQUALS("", errout_str());
+
+        check("struct S { int i; bool b; };\n" // #14260
+              "void f() {\n"
+              "    struct S s = { .i = 0, true };\n"
+              "}\n"); // don't crash
+        ASSERT_EQUALS("", errout_str());
     }
 
     void danglingLifetimeInitList() {

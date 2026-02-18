@@ -4811,7 +4811,7 @@ void Tokenizer::setVarIdPass1()
                 if (cpp || mSettings.standards.c >= Standards::C23) {
                     declTypeTok = Token::findmatch(tok, "decltype|typeof (", tok2);
                 } else {
-                    declTypeTok = Token::findsimplematch(tok, "__typeof (");
+                    declTypeTok = Token::findsimplematch(tok, "__typeof (", tok2);
                 }
 
                 if (declTypeTok) {
@@ -7631,16 +7631,20 @@ void Tokenizer::simplifyStaticConst()
             }
 
             // Move the qualifier to the left-most position in the declaration
+            const int column = tok->next()->column();
             tok->deleteNext();
             if (!leftTok) {
                 list.front()->insertToken(qualifiers[i]);
                 list.front()->swapWithNext();
+                list.front()->column(column);
                 tok = list.front();
             } else if (leftTok->next()) {
                 leftTok->next()->insertTokenBefore(qualifiers[i]);
+                leftTok->next()->column(column);
                 tok = leftTok->next();
             } else {
                 leftTok->insertToken(qualifiers[i]);
+                leftTok->next()->column(column);
                 tok = leftTok;
             }
         }
@@ -8851,7 +8855,7 @@ void Tokenizer::findGarbageCode() const
                     syntaxError(tok, code);
             }
         }
-        if (Token::Match(tok, "%num%|%bool%|%char%|%str% %num%|%bool%|%char%|%str%") && !Token::Match(tok, "%str% %str%"))
+        if (Token::Match(tok, "%num%|%bool%|%char%|%str% %num%|%bool%|%char%|%str%|::") && !Token::Match(tok, "%str% %str%"))
             syntaxError(tok);
         if (Token::Match(tok, "%num%|%bool%|%char%|%str% {|(")) {
             if (tok->strAt(1) == "(")
@@ -8920,7 +8924,7 @@ void Tokenizer::findGarbageCode() const
         if (Token::Match(tok, "!|~ %comp%") &&
             !(cpp && tok->strAt(1) == ">" && Token::simpleMatch(tok->tokAt(-1), "operator")))
             syntaxError(tok);
-        if (Token::Match(tok, "] %name%") && (!cpp || !(tok->tokAt(-1) && Token::simpleMatch(tok->tokAt(-2), "delete [")))) {
+        if (Token::Match(tok, "] %name%") && (!cpp || !(tok->tokAt(1)->isKeyword() || (tok->tokAt(-1) && Token::simpleMatch(tok->tokAt(-2), "delete ["))))) {
             if (tok->next()->isUpperCaseName())
                 unknownMacroError(tok->next());
             else
@@ -9222,15 +9226,18 @@ void Tokenizer::simplifyStructDecl()
                 while (!Token::Match(start, "struct|class|union|enum")) {
                     after->insertToken(start->str());
                     after = after->next();
+                    after->column(start->column());
                     start->deleteThis();
                 }
                 tok = start;
                 if (!after)
                     break; // see #4869 segmentation fault in Tokenizer::simplifyStructDecl (invalid code)
                 after->insertToken(type->str());
+                after->next()->column(type->column());
                 if (start->str() != "class") {
                     after->insertToken(start->str());
                     after = after->next();
+                    after->column(start->column());
                 }
 
                 after = after->tokAt(2);

@@ -2868,13 +2868,20 @@ static void valueFlowLifetimeClassConstructor(Token* tok,
                 "Passed to constructor of '" + t->name() + "'.",
                 ValueFlow::Value::LifetimeKind::SubObject,
                 [&](LifetimeStore& ls) {
+                const bool isDesignatedInitializerArg = isDesignatedInitializer(ls.argtok->astOperand1());
                 // Skip static variable
-                it = std::find_if(it, scope->varlist.cend(), [](const Variable& var) {
-                    return !var.isStatic();
+                it = std::find_if(it, scope->varlist.cend(), [&](const Variable &var) {
+                    if (var.isStatic())
+                        return false;
+                    if (!isDesignatedInitializerArg)
+                        return true;
+                    return var.name() == ls.argtok->astOperand1()->astOperand1()->str();
                 });
                 if (it == scope->varlist.cend())
                     return;
-                const Variable& var = *it;
+                if (isDesignatedInitializerArg)
+                    ls.argtok = ls.argtok->astOperand2();
+                const Variable &var = *it;
                 if (var.valueType() && var.valueType()->container && var.valueType()->container->stdStringLike && !var.valueType()->container->view)
                     return; // TODO: check in isLifetimeBorrowed()?
                 if (var.isReference() || var.isRValueReference()) {
@@ -2882,7 +2889,10 @@ static void valueFlowLifetimeClassConstructor(Token* tok,
                 } else if (ValueFlow::isLifetimeBorrowed(ls.argtok, settings)) {
                     ls.byVal(tok, tokenlist, errorLogger, settings);
                 }
-                it++;
+                if (isDesignatedInitializerArg) // TODO: handle mixed initialization?
+                    it = scope->varlist.cbegin();
+                else
+                    it++;
             });
         } else {
             const Function* constructor = findConstructor(scope, tok, args);
@@ -5497,7 +5507,7 @@ static void valueFlowForLoopSimplifyAfter(Token* fortok, nonneg int varid, const
     }
 }
 
-static void valueFlowForLoop(TokenList &tokenlist, const SymbolDatabase& symboldatabase, ErrorLogger &errorLogger, const Settings &settings)
+static void valueFlowForLoop(const TokenList &tokenlist, const SymbolDatabase& symboldatabase, ErrorLogger &errorLogger, const Settings &settings)
 {
     for (const Scope &scope : symboldatabase.scopeList) {
         if (scope.type != ScopeType::eFor)

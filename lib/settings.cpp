@@ -25,6 +25,8 @@
 #include "vfvalue.h"
 
 #include <cctype>
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <map>
@@ -40,6 +42,9 @@
 
 
 std::atomic<bool> Settings::mTerminated;
+
+const int Settings::maxConfigsNotAssigned = 0;
+const int Settings::maxConfigsDefault = 12;
 
 const char Settings::SafeChecks::XmlRootName[] = "safe-checks";
 const char Settings::SafeChecks::XmlClasses[] = "class-public";
@@ -714,4 +719,10 @@ Settings::ExecutorType Settings::defaultExecutor()
         ExecutorType::Thread;
 #endif
     return defaultExecutor;
+}
+
+bool Settings::unusedFunctionOnly()
+{
+    const char* unusedFunctionOnly = std::getenv("UNUSEDFUNCTION_ONLY");
+    return unusedFunctionOnly && (std::strcmp(unusedFunctionOnly, "1") == 0);
 }

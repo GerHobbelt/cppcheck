@@ -857,6 +857,9 @@ std::size_t CppCheck::calculateHash(const Preprocessor& preprocessor, const std:
     toolinfo << (mSettings.severity.isEnabled(Severity::portability) ? 'p' : ' ');
     toolinfo << (mSettings.severity.isEnabled(Severity::information) ? 'i' : ' ');
     toolinfo << mSettings.userDefines;
+    toolinfo << (mSettings.checkConfiguration ? 'c' : ' '); // --check-config
+    toolinfo << (mSettings.force ? 'f' : ' ');
+    toolinfo << mSettings.maxConfigsOption;
     toolinfo << std::to_string(static_cast<std::uint8_t>(mSettings.checkLevel));
     for (const auto &a : mSettings.addonInfos) {
         toolinfo << a.name;
@@ -904,6 +907,8 @@ unsigned int CppCheck::checkInternal(const FileWithDetails& file, const std::str
     // TODO: move to constructor when CppCheck no longer owns the settings
     if (mSettings.checks.isEnabled(Checks::unusedFunction) && !mUnusedFunctionsCheck)
         mUnusedFunctionsCheck.reset(new CheckUnusedFunctions());
+
+    const int maxConfigs = mSettings.getMaxConfigs();
 
     mLogger->resetExitCode();
 
@@ -977,29 +982,10 @@ unsigned int CppCheck::checkInternal(const FileWithDetails& file, const std::str
         std::vector<std::string> files;
         simplecpp::TokenList tokens1 = createTokenList(files, &outputList);
 
-        // If there is a syntax error, report it and stop
-        const auto output_it = std::find_if(outputList.cbegin(), outputList.cend(), [](const simplecpp::Output &output){
-            return Preprocessor::hasErrors(output);
-        });
-        if (output_it != outputList.cend()) {
-            const simplecpp::Output &output = *output_it;
-            std::string locfile = Path::fromNativeSeparators(output.location.file());
-            if (mSettings.relativePaths)
-                locfile = Path::getRelativePath(locfile, mSettings.basePaths);
-
-            ErrorMessage::FileLocation loc1(locfile, output.location.line, output.location.col);
-
-            ErrorMessage errmsg({std::move(loc1)},
-                                "", // TODO: is this correct?
-                                Severity::error,
-                                output.msg,
-                                "syntaxError",
-                                Certainty::normal);
-            mErrorLogger.reportErr(errmsg);
-            return mLogger->exitcode();
-        }
-
         Preprocessor preprocessor(tokens1, mSettings, mErrorLogger, file.lang());
+
+        if (preprocessor.reportOutput(outputList, true))
+            return mLogger->exitcode();
 
         if (!preprocessor.loadFiles(files))
             return mLogger->exitcode();
@@ -1048,7 +1034,7 @@ unsigned int CppCheck::checkInternal(const FileWithDetails& file, const std::str
 
         // Get configurations..
         std::set<std::string> configurations;
-        if ((mSettings.checkAllConfigurations && mSettings.userDefines.empty()) || mSettings.force) {
+        if (maxConfigs > 1) {
             Timer::run("Preprocessor::getConfigs", mSettings.showtime, &s_timerResults, [&]() {
                 configurations = preprocessor.getConfigs();
             });
@@ -1059,6 +1045,9 @@ unsigned int CppCheck::checkInternal(const FileWithDetails& file, const std::str
         if (mSettings.checkConfiguration) {
             for (const std::string &config : configurations)
                 (void)preprocessor.getcode(config, files, false);
+
+            if (configurations.size() > maxConfigs)
+                tooManyConfigsError(Path::toNativeSeparators(file.spath()), configurations.size());
 
             if (analyzerInformation)
                 mLogger->setAnalyzerInfo(nullptr);
@@ -1078,14 +1067,6 @@ unsigned int CppCheck::checkInternal(const FileWithDetails& file, const std::str
             executeRules("define", tokenlist);
         }
 #endif
-
-        if (!mSettings.force && configurations.size() > mSettings.maxConfigs) {
-            if (mSettings.severity.isEnabled(Severity::information)) {
-                tooManyConfigsError(Path::toNativeSeparators(file.spath()),configurations.size());
-            } else {
-                mTooManyConfigs = true;
-            }
-        }
 
         FilesDeleter filesDeleter;
 
@@ -1111,8 +1092,17 @@ unsigned int CppCheck::checkInternal(const FileWithDetails& file, const std::str
 
             // Check only a few configurations (default 12), after that bail out, unless --force
             // was used.
-            if (!mSettings.force && ++checkCount > mSettings.maxConfigs)
+            if (!mSettings.force && ++checkCount > maxConfigs) {
+                // If maxConfigs is not assigned then report information message that configurations are skipped.
+                // If maxConfigs is assigned then the user is explicitly skipping configurations so
+                // the information message is not reported, the whole purpose of setting i.e. --max-configs=1 is to
+                // skip configurations. When --check-config is used then tooManyConfigs will be reported even if the
+                // value is non-default.
+                if (!mSettings.isMaxConfigsAssigned() && mSettings.severity.isEnabled(Severity::information))
+                    tooManyConfigsError(Path::toNativeSeparators(file.spath()), configurations.size());
+
                 break;
+            }
 
             std::string currentConfig;
 
@@ -1209,7 +1199,7 @@ unsigned int CppCheck::checkInternal(const FileWithDetails& file, const std::str
                     }
 
                     // Skip if we already met the same simplified token list
-                    if (mSettings.force || mSettings.maxConfigs > 1) {
+                    if (maxConfigs > 1) {
                         const std::size_t hash = tokenizer.list.calculateHash();
                         if (hashes.find(hash) != hashes.end()) {
                             if (mSettings.debugwarnings)
@@ -1232,19 +1222,7 @@ unsigned int CppCheck::checkInternal(const FileWithDetails& file, const std::str
 
                 if (!hasValidConfig && currCfg == *configurations.rbegin()) {
                     // If there is no valid configuration then report error..
-                    std::string locfile = Path::fromNativeSeparators(o.location.file());
-                    if (mSettings.relativePaths)
-                        locfile = Path::getRelativePath(locfile, mSettings.basePaths);
-
-                    ErrorMessage::FileLocation loc1(locfile, o.location.line, o.location.col);
-
-                    ErrorMessage errmsg({std::move(loc1)},
-                                        file.spath(),
-                                        Severity::error,
-                                        o.msg,
-                                        "preprocessorErrorDirective",
-                                        Certainty::normal);
-                    mErrorLogger.reportErr(errmsg);
+                    preprocessor.error(o.location.file(), o.location.line, o.location.col, o.msg, o.type);
                 }
                 continue;
 
@@ -1340,8 +1318,7 @@ void CppCheck::checkNormalTokens(const Tokenizer &tokenizer, AnalyzerInformation
 
     // TODO: this should actually be the behavior if only "--enable=unusedFunction" is specified - see #10648
     // TODO: log message when this is active?
-    const char* unusedFunctionOnly = std::getenv("UNUSEDFUNCTION_ONLY");
-    const bool doUnusedFunctionOnly = unusedFunctionOnly && (std::strcmp(unusedFunctionOnly, "1") == 0);
+    const bool doUnusedFunctionOnly = Settings::unusedFunctionOnly();
 
     if (!doUnusedFunctionOnly) {
         const std::time_t maxTime = mSettings.checksMaxTime > 0 ? std::time(nullptr) + mSettings.checksMaxTime : 0;
@@ -1662,32 +1639,14 @@ void CppCheck::executeAddonsWholeProgram(const std::list<FileWithDetails> &files
 
 void CppCheck::tooManyConfigsError(const std::string &file, const int numberOfConfigurations)
 {
-    if (!mSettings.severity.isEnabled(Severity::information) && !mTooManyConfigs)
-        return;
-
-    mTooManyConfigs = false;
-
-    if (mSettings.severity.isEnabled(Severity::information) && file.empty())
-        return;
-
     std::list<ErrorMessage::FileLocation> loclist;
     if (!file.empty()) {
         loclist.emplace_back(file, 0, 0);
     }
 
     std::ostringstream msg;
-    msg << "Too many #ifdef configurations - cppcheck only checks " << mSettings.maxConfigs;
-    if (numberOfConfigurations > mSettings.maxConfigs)
-        msg << " of " << numberOfConfigurations << " configurations. Use --force to check all configurations.\n";
-    if (file.empty())
-        msg << " configurations. Use --force to check all configurations. For more details, use --enable=information.\n";
-    msg << "The checking of the file will be interrupted because there are too many "
-        "#ifdef configurations. Checking of all #ifdef configurations can be forced "
-        "by --force command line option or from GUI preferences. However that may "
-        "increase the checking time.";
-    if (file.empty())
-        msg << " For more details, use --enable=information.";
-
+    msg << "Too many #ifdef configurations - cppcheck only checks " << mSettings.getMaxConfigs()
+        << " of " << numberOfConfigurations << " configurations. Use --force to check all configurations.";
 
     ErrorMessage errmsg(std::move(loclist),
                         "",
@@ -1701,8 +1660,6 @@ void CppCheck::tooManyConfigsError(const std::string &file, const int numberOfCo
 
 void CppCheck::purgedConfigurationMessage(const std::string &file, const std::string& configuration)
 {
-    mTooManyConfigs = false;
-
     if (mSettings.severity.isEnabled(Severity::information) && file.empty())
         return;
 
@@ -1731,7 +1688,6 @@ void CppCheck::getErrorMessages(ErrorLogger &errorlogger)
 
     CppCheck cppcheck(settings, supprs, errorlogger, true, nullptr);
     cppcheck.purgedConfigurationMessage("","");
-    cppcheck.mTooManyConfigs = true;
     cppcheck.tooManyConfigsError("",0U);
     // TODO: add functions to get remaining error messages
 
